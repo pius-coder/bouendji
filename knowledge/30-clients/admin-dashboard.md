@@ -2,10 +2,16 @@
 id: admin-dashboard
 title: Dashboard admin — console Next.js servie sous /admin/
 tags: [admin, nextjs, dashboard, export-statique, apercu]
-status: verified
+status: stale
 updated: 2026-10-20
 related: [roles-and-commissions, api-routes, brand-build]
 ---
+
+> **Supprimé le 2026-10-20 (soir).** Le dashboard a été rejeté et
+> `apps/admin/` a été retiré. Ce nœud reste comme **trace de ce qui a été
+> essayé** — notamment les écrans, les faits mesurés et les pièges — pour que la
+> réécriture ne les redécouvre pas. Ne pas s'en servir comme description de
+> l'état actuel. Voir D32/D33 dans `00-brief/decisions.md`.
 
 # Dashboard admin — console Next.js
 

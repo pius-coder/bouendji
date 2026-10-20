@@ -115,4 +115,32 @@ elle est fausse si `finance` est un rôle de partenaire.
 comptable), ou le rattacher à une seule communauté — auquel cas la ligne
 `anyRole(["finance"])` de `permitted()` doit disparaître.
 
+## O15 — Le balayage périodique sur Vercel
+
+`server.ts` entretient un tick de 60 s (expiration d'endpoints, `poolWatch`,
+`purgeExpired`). Une fonction serverless ne vit pas entre deux requêtes : ce
+tick disparaît. Trois options, aucune retenue :
+
+- **(a)** Cron Vercel à la minute — **plan Pro obligatoire**, sur Hobby le cron
+  est limité à **une exécution par jour** (vérifié dans la doc Vercel).
+- **(b)** Déclencheur externe appelant une route protégée.
+- **(c)** Calcul paresseux : ne plus balayer, mais filtrer par
+  `expires_at > now()` à chaque lecture du pool. Seule option qui ne dépend
+  d'aucun plan, et elle rend le tick inutile pour le pool — reste à décider pour
+  `purgeExpired` (rétention) et l'alerte Telegram de déploiement.
+
+**Besoin** : (a), (b) ou (c) — et si (c), qui déclenche l'alerte Telegram ?
+
+## O16 — Adaptateur Fastify → Vercel
+
+L'API est écrite pour un serveur qui écoute (`app.listen`). Vercel appelle une
+fonction par requête. La conversion est mécanique mais **non faite et non
+vérifiée** : `rawBody` (signature d'appareil), `@fastify/rate-limit`, CORS et
+les hooks `preHandler` doivent être exercés dans ce runtime avant qu'on puisse
+dire que l'API fonctionne là-bas.
+
+**Besoin** : décider si on adapte Fastify (léger, réutilise les 94 tests) ou si
+on réécrit la couche HTTP en `api/*.ts` natifs Vercel (plus idiomatique, mais
+jette les tests de routes).
+
 

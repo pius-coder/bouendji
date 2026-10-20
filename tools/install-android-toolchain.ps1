@@ -32,7 +32,17 @@ function Step($message) {
 }
 
 function Fetch($url, $target) {
-    if (Test-Path $target) { Remove-Item -Force $target }
+    # Une archive deja presente et plausible est reutilisee : le reseau de cette
+    # machine coupe les gros transferts (EOF), et une archive de plus de 10 Mo
+    # est consideree comme complete. Sinon on repart de zero.
+    if (Test-Path $target) {
+        $existing = (Get-Item $target).Length
+        if ($existing -gt 10MB) {
+            Write-Host "archive deja la : $target ($([math]::Round($existing / 1MB, 1)) Mo)"
+            return
+        }
+        Remove-Item -Force $target
+    }
     Write-Host "telechargement : $url"
     # curl/schannel echoue ici sur certaines poignees TLS (erreur 35). .NET
     # passe par SChannel egalement mais accepte mieux les redirections longues ;

@@ -6,7 +6,7 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "dev": "pnpm --filter @vpn/api dev",
-    "build": "pnpm --filter @vpn/contract build && pnpm --filter @vpn/api build && pnpm --filter @vpn/admin build",
+    "build": "pnpm --filter @vpn/contract build && pnpm --filter @vpn/api build",
     "test": "pnpm --filter @vpn/api test",
     "typecheck": "pnpm -r typecheck",
     "db:seed": "pnpm --filter @vpn/api seed"

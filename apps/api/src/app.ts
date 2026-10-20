@@ -1,10 +1,6 @@
 ﻿import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
-import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { env } from "./config.js";
 import type { Database } from "./db.js";
 import { rateLimitError } from "./lib/attempts.js";
@@ -106,8 +102,12 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
 
   /* -------------------------------------------------------------- plugins */
 
-  // The admin SPA is served from this same origin, so CORS only matters for
-  // local tooling and the separate dev server.
+  // Le dashboard vit sur Vercel (D32) : l'API est désormais appelée en
+  // cross-origin par le navigateur. `ALLOWED_ORIGINS` doit donc lister l'origine
+  // Vercel, sinon la console sera bloquée par le navigateur — pas par l'API.
+  // `credentials: false` reste : les jetons voyagent en en-tête Authorization,
+  // jamais en cookie, donc aucune origine n'a besoin d'être « de confiance »
+  // pour lire une session.
   await app.register(cors, {
     origin: env.allowedOrigins,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
@@ -135,23 +135,13 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     errorResponseBuilder: rateLimitError,
   });
 
-  // Served here so the dashboard is one URL, no separate hosting, no CORS.
-  // The dashboard is a Next.js static export: `out/` is produced by
-  // `pnpm --filter @vpn/admin build`, not committed. Without it, `/admin` says
-  // so in plain words instead of returning a 404 that looks like a bug.
-  const adminRoot = fileURLToPath(new URL("../../admin/out", import.meta.url));
-  const adminBuilt = existsSync(join(adminRoot, "index.html"));
-
-  if (adminBuilt) {
-    await app.register(fastifyStatic, {
-      root: adminRoot,
-      prefix: "/admin/",
-      index: ["index.html"],
-      decorateReply: false,
-    });
-  } else {
-    app.log.warn({ adminRoot }, "dashboard non compilé : lancez pnpm --filter @vpn/admin build");
-  }
+  // Le dashboard n'est plus servi par l'API : il vit sur Vercel (D32). Garder
+  // ici une copie statique créait deux origines pour la même console, et deux
+  // façons de la déployer. C'est un seul endroit : Vercel.
+  //
+  // L'API reste l'unique origine des données ; le navigateur l'appelle en
+  // cross-origin, donc CORS est configuré plus haut à partir de
+  // `env.allowedOrigins`.
 
   /* --------------------------------------------------------------- probes */
 
@@ -179,27 +169,6 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerAdminRoutes(app, db);
   registerAdminAuthRoutes(app, db);
   registerOfflineRoutes(app, db);
-
-  if (!adminBuilt) {
-    // Sans export Next, `/admin/` ne doit pas ressembler à une route oubliée :
-    // c'est une étape de build manquante, et le message le dit.
-    app.get("/admin/", async (_req, reply) =>
-      reply
-        .code(503)
-        .type("text/html; charset=utf-8")
-        .send(
-          "<!doctype html><meta charset=utf-8><title>Dashboard non compilé</title>" +
-            "<body style=\"font:16px/1.6 system-ui;max-width:40rem;margin:10vh auto;padding:0 1.5rem\">" +
-            "<h1>Dashboard non compilé</h1>" +
-            "<p>L'API tourne, mais l'export statique du dashboard est absent.</p>" +
-            "<pre>pnpm --filter @vpn/admin build</pre>" +
-            "<p>Le résultat est écrit dans <code>apps/admin/out</code>, servi ici sous <code>/admin/</code>.</p>",
-        ),
-    );
-  }
-
-  // `/admin` without the trailing slash would 404 on a static prefix.
-  app.get("/admin", async (_req, reply) => reply.redirect("/admin/", 302));
 
   return app;
 }

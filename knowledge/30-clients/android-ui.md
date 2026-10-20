@@ -2,10 +2,16 @@
 id: android-ui
 title: Interface Compose — écrans, commande principale, manifeste
 tags: [android, compose, ui, ecrans, identites, motion, manifeste]
-status: decided
+status: stale
 updated: 2026-10-20
 related: [ui-identities, android-app, brand-build]
 ---
+
+> **Supprimée le 2026-10-20 (soir).** La couche `ui/` (19 fichiers) a été
+> retirée : réécriture complète. Ce nœud reste comme **trace** — structure des
+> écrans, commande principale, identités, motion — pour que la réécriture ne
+> reparte pas de zéro sur les décisions déjà prises. `MainActivity.kt` n'est plus
+> qu'un point d'entrée vide. Voir D33.
 
 # Interface Compose
 

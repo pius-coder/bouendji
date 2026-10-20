@@ -28,6 +28,23 @@ function masterKey(): Buffer {
   return Buffer.alloc(32, 7); // deterministic dev key
 }
 
+/**
+ * Signing key for access tokens.
+ *
+ * In production it is **required**: a random per-process default would mean
+ * that two Cloud Run revisions reject each other's tokens, and that every
+ * deploy silently logs everyone out. Failing at boot is the honest behaviour.
+ */
+function jwtSecret(): string {
+  const raw = process.env.JWT_SECRET;
+  if (raw !== undefined && raw.length >= 32) return raw;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("JWT_SECRET is required in production (32 characters minimum)");
+  }
+  if (isTest) return "test-secret-test-secret-test-secret";
+  return randomBytes(32).toString("base64");
+}
+
 const dataDir = resolve(process.cwd(), "data");
 if (!existsSync(dataDir) && !process.env.DATABASE_URL?.startsWith("postgres")) {
   mkdirSync(dataDir, { recursive: true });
@@ -42,7 +59,7 @@ export const env = {
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "http://localhost:8080",
   databaseUrl: process.env.DATABASE_URL ?? resolve(dataDir, "pg"),
   masterKey: masterKey(),
-  jwtSecret: process.env.JWT_SECRET ?? (isTest ? "test-secret-test-secret-test-secret" : randomBytes(32).toString("base64")),
+  jwtSecret: jwtSecret(),
   accessTokenTtlSeconds: int(process.env.ACCESS_TOKEN_TTL, 900),
   refreshTokenTtlDays: int(process.env.REFRESH_TOKEN_TTL_DAYS, 45),
   allowedOrigins: (process.env.ALLOWED_ORIGINS ?? "http://localhost:5173,http://localhost:8080").split(","),

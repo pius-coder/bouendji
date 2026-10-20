@@ -145,3 +145,28 @@ ici, pas laissée en double.
   La version précédente, écrite en JavaScript sans build, est conservée dans
   `apps/admin-legacy/` à titre de référence (comportements et libellés), et
   n'est plus servie.
+
+## Hébergement et réécriture (2026-10-20, soirée)
+
+- **D32** — **Vercel**, pas Cloud Run, pour le **dashboard et l'API**. Cloud Run
+  est abandonné : l'accès était limité à son interface, l'endpoint ne pouvait de
+  toute façon pas y vivre avec notre contenu, et le compte ne permettait ni
+  Secret Manager ni IAM fin. Conséquence directe : l'API Fastify tourne en
+  **fonction serverless** (un adaptateur, un seul point d'entrée) et la base
+  devient **Postgres managé** — PGlite n'a pas de disque persistant là-bas.
+  `D31` est **remplacé** : l'API ne sert plus `/admin/`, le dashboard vit sur sa
+  propre origine. Voir `10-infrastructure/vercel.md` pour les limites relevées.
+- **D33** — Le dashboard **et** la couche d'interface Android sont **supprimés**
+  et réécrits entièrement : le rendu précédent a été rejeté, sur le visuel comme
+  sur le code. Retirés : `apps/admin/`, `apps/admin-legacy/`,
+  `apps/android/app/src/main/java/cm/bouendji/vpn/ui/` (19 fichiers), le
+  `Dockerfile` et `.dockerignore` de la racine, `dist/`.
+  **Conservés** : l'API et ses 94 tests, `packages/contract`, le socle Android
+  (Keystore, ApiClient, VpnService, socle crypto), `infra/endpoint/`, `tools/`,
+  `knowledge/` et l'historique git. `MainActivity.kt` n'est plus qu'un point
+  d'entrée vide : il existe pour que le manifeste ne pointe pas sur une classe
+  fantôme, et doit être remplacé par la nouvelle vague UI.
+- **D34** — L'**endpoint** (xray/VLESS) ne peut pas être sur Vercel : la
+  plateforme sert du HTTP serverless, elle n'ouvre aucun port brut. Il reste sur
+  un VPS ou dans un conteneur, et c'est toujours lui qui s'enregistre auprès de
+  l'API.
