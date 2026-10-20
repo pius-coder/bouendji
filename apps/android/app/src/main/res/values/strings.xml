@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Textes visibles. Une seule voix, quel que soit le thème : les quatre identités
+  changent la forme et le mouvement, pas le discours. Le nom de la marque vient
+  de BrandTokens.appName et n'est jamais dupliqué ici.
+-->
+<resources>
+
+    <!-- Barre haute -->
+    <string name="top_account">Compte</string>
+    <string name="top_settings">Réglages</string>
+    <string name="top_help">Aide</string>
+    <string name="action_back">Retour</string>
+    <string name="action_dismiss">Fermer</string>
+
+    <!-- États du tunnel -->
+    <string name="state_idle">Prêt</string>
+    <string name="state_connecting">Connexion</string>
+    <string name="state_connected">Connecté</string>
+    <string name="state_degraded">Reconnexion</string>
+
+    <!-- Écran principal -->
+    <string name="home_idle_title">Prêt à protéger</string>
+    <string name="home_connecting_title">Ouverture du tunnel</string>
+    <string name="home_connected_title">Trafic protégé</string>
+    <string name="home_degraded_title">Bascule en cours</string>
+    <string name="home_idle_sub">Le tunnel n\'est pas encore établi. Rien ne passe par lui.</string>
+    <string name="home_connecting_sub">Négociation avec la sortie la plus proche.</string>
+    <string name="home_connected_sub">Vos requêtes passent par le tunnel.</string>
+    <string name="home_degraded_sub">Votre choix ne répondait plus — bascule automatique.</string>
+    <string name="action_connect">Se connecter</string>
+    <string name="action_disconnect">Se déconnecter</string>
+    <string name="action_cancel">Annuler</string>
+    <string name="session_duration">Durée de session</string>
+    <string name="renewal_in">Renouvellement dans %1$s</string>
+    <string name="node_label">Nœud</string>
+    <string name="node_auto">Sélection automatique</string>
+    <string name="node_none">Aucun nœud</string>
+    <string name="region_label">Région</string>
+    <string name="region_unknown">Région inconnue</string>
+    <string name="expires_on">Expire le %1$s</string>
+    <string name="plan_label">Formule</string>
+    <string name="plan_none">Aucune formule active</string>
+    <string name="see_plans">Voir les forfaits</string>
+    <plurals name="node_count">
+        <item quantity="one">%1$d sortie disponible</item>
+        <item quantity="other">%1$d sorties disponibles</item>
+    </plurals>
+    <plurals name="plan_days">
+        <item quantity="one">%1$d jour restant</item>
+        <item quantity="other">%1$d jours restants</item>
+    </plurals>
+
+    <!-- Aucune connexion / états bloqués -->
+    <string name="unavailable_title">Aucune connexion disponible</string>
+    <string name="unavailable_body">Aucune sortie ne répond, ou aucune configuration n\'est installée. L\'application ne prétendra pas vous protéger.</string>
+    <string name="unavailable_reason_engine">Le moteur de tunnel n\'est pas intégré à cette version.</string>
+    <string name="unavailable_reason_brand">Ce build n\'a pas reçu sa configuration de marque.</string>
+    <string name="unavailable_reason_android">Android 12 ou plus récent est requis pour chiffrer les accès.</string>
+    <string name="unavailable_reason_empty">Aucune configuration n\'est enregistrée sur cet appareil.</string>
+    <string name="unavailable_contact">Contacter l\'administrateur</string>
+    <string name="unavailable_retry">Réessayer</string>
+    <string name="unavailable_hint">La reprise est automatique, avec un délai croissant. Aucune action n\'est nécessaire pour rester connecté plus tard.</string>
+    <string name="expired_title">Abonnement expiré</string>
+    <string name="expired_body">Le tunnel s\'arrête : les accès ont expiré côté serveur. Renouvelez votre formule pour reprendre.</string>
+    <string name="revoked_title">Appareil révoqué</string>
+    <string name="revoked_body">Cet appareil a été retiré du compte. Réenrôlez-le depuis votre espace, ou contactez l\'administrateur.</string>
+
+    <!-- Compte -->
+    <string name="account_title">Compte</string>
+    <string name="account_signed_out">Aucune session ouverte sur cet appareil.</string>
+    <string name="account_email">Adresse e-mail</string>
+    <string name="account_password">Mot de passe</string>
+    <string name="account_sign_in">Se connecter</string>
+    <string name="account_signing_in">Connexion…</string>
+    <string name="account_sign_out">Fermer la session</string>
+    <string name="account_name">Nom</string>
+    <string name="account_devices">Appareils</string>
+    <string name="account_devices_value">%1$d sur %2$d</string>
+    <string name="account_device_current">Appareil courant</string>
+    <string name="account_activation_pending">Cet appareil attend une place libre.</string>
+    <string name="account_activate">Activer cet appareil</string>
+    <string name="account_refresh_access">Actualiser les accès</string>
+    <string name="account_access_title">Accès</string>
+    <string name="account_access_none">Aucun accès enregistré pour l\'instant.</string>
+    <string name="account_enrol_hint">La première connexion enrôle cet appareil : une paire de clés est créée dans le Keystore et la clé publique part seule au serveur.</string>
+    <string name="account_security_note">Aucun identifiant matériel n\'est transmis. Les clés ne quittent pas le Keystore et aucun identifiant d\'accès n\'est affichable ni copiable.</string>
+    <string name="field_required">Champ requis.</string>
+    <string name="account_loading">Lecture du compte…</string>
+
+    <!-- Forfaits -->
+    <string name="plans_title">Forfaits</string>
+    <string name="plans_current">Formule actuelle</string>
+    <string name="plans_active">Active</string>
+    <string name="plans_inactive">Inactive</string>
+    <string name="plans_ends">Fin le %1$s</string>
+    <string name="plans_starts">Début le %1$s</string>
+    <string name="plans_devices">Appareils inclus : %1$d</string>
+    <string name="plans_no_catalog">Les formules et les tarifs ne sont pas exposés par cette version de l\'application : demandez la liste à votre administrateur.</string>
+    <string name="plans_contact">Demander la liste</string>
+    <string name="plans_signed_out">Connectez-vous pour voir votre formule.</string>
+    <string name="plans_loading">Lecture de l\'abonnement…</string>
+    <string name="plans_none">Aucune formule enregistrée pour ce compte.</string>
+
+    <!-- Réglages -->
+    <string name="settings_title">Réglages</string>
+    <string name="settings_appearance">Apparence</string>
+    <string name="appearance_auto">Auto</string>
+    <string name="appearance_light">Clair</string>
+    <string name="appearance_dark">Sombre</string>
+    <string name="settings_motion">Réduire les animations</string>
+    <string name="settings_motion_hint">Supprime les rotations et les pulsations. Les changements d\'état restent lisibles.</string>
+    <string name="settings_identity">Identité</string>
+    <string name="settings_identity_hint">Définie à la compilation, jamais tirée au hasard au lancement.</string>
+    <string name="identity_halo_desc">Verre, cercles, anneau de session, lumière froide.</string>
+    <string name="identity_mono_desc">Éditorial suisse : angles vifs, filets, monospace.</string>
+    <string name="identity_vector_desc">Tube cathodique : trame, paliers, vert phosphore.</string>
+    <string name="identity_otaku_desc">Manga : contours épais, ombre pleine, trames.</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_notifications_hint">La notification permanente rend l\'état du tunnel visible même hors de l\'application.</string>
+    <string name="settings_notifications_grant">Autoriser les notifications</string>
+    <string name="settings_notifications_granted">Autorisées</string>
+    <string name="settings_notifications_denied">Refusées — l\'état reste visible dans l\'application.</string>
+    <string name="settings_always_on">Toujours actif</string>
+    <string name="settings_always_on_hint">Réglage système. À activer seulement si vous acceptez de perdre le réseau quand le tunnel échoue.</string>
+    <string name="settings_open_vpn_settings">Ouvrir les réglages VPN</string>
+    <string name="settings_support">Support</string>
+    <string name="settings_support_hint">Contact de l\'administrateur de la marque.</string>
+    <string name="settings_clear">Effacer les accès enregistrés</string>
+    <string name="settings_clear_hint">Supprime la liste chiffrée des sorties. La session en cours doit être arrêtée.</string>
+    <string name="settings_clear_confirm_title">Effacer les accès ?</string>
+    <string name="settings_clear_confirm_body">Les configurations seront supprimées de cet appareil. Il faudra les retélécharger.</string>
+    <string name="settings_clear_unavailable">Arrêtez d\'abord la session en cours.</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_version_value">%1$s · %2$s</string>
+    <string name="settings_privacy">Aucune donnée de navigation n\'est conservée, aucun URI de configuration n\'est affiché ni copiable.</string>
+    <string name="action_clear">Effacer</string>
+
+    <!-- Aide -->
+    <string name="help_title">Aide</string>
+    <string name="help_body">Cette application établit un tunnel. Elle ne vend rien, ne conserve pas votre historique et n\'affiche jamais vos identifiants d\'accès.</string>
+    <string name="help_q1">Pourquoi « aucune connexion disponible » ?</string>
+    <string name="help_a1">Aucune sortie ne répond, ou aucune configuration n\'est installée. L\'application préfère le dire plutôt que d\'afficher un faux « protégé ».</string>
+    <string name="help_q2">Que se passe-t-il lors d\'une bascule ?</string>
+    <string name="help_a2">Après deux échecs consécutifs, l\'application teste les autres sorties et déplace la sortie active, sans redémarrer le tunnel si possible. Un bandeau vous prévient.</string>
+    <string name="help_q3">Mes clés sont-elles exportables ?</string>
+    <string name="help_a3">Non. Elles sont générées dans le Keystore Android et n\'en sortent jamais.</string>
+    <string name="help_q4">Puis-je choisir mon nœud ?</string>
+    <string name="help_a4">Le choix reste une préférence : après deux échecs, l\'application bascule et vous pouvez revenir à votre choix.</string>
+    <string name="help_contact">Écrire à l\'administrateur</string>
+
+    <!-- Notices -->
+    <string name="notice_network">Serveur injoignable. Vérifiez votre connexion.</string>
+    <string name="notice_brand_invalid">Ce build n\'a pas reçu sa configuration de marque.</string>
+    <string name="notice_unknown">Action impossible pour l\'instant.</string>
+    <string name="notice_bundle_updated">Accès mis à jour.</string>
+    <string name="notice_bundle_unchanged">Les accès sont déjà à jour.</string>
+    <string name="notice_login_ok">Session ouverte.</string>
+    <string name="notice_logout_ok">Session fermée.</string>
+    <string name="notice_activated">Appareil activé.</string>
+    <string name="notice_cleared">Accès effacés de cet appareil.</string>
+    <string name="notice_no_session">Connectez-vous d\'abord.</string>
+    <string name="notice_brand_contact_missing">Aucun contact n\'est configuré dans ce build.</string>
+    <string name="notice_no_browser">Aucun navigateur ne peut ouvrir ce lien.</string>
+
+</resources>

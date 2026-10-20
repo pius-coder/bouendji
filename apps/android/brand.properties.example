@@ -1,0 +1,12 @@
+# Modèle de configuration de marque.
+# Copier en `brand.properties` avant un build de marque.
+# Les valeurs ci-dessous sont celles de la marque de référence.
+#
+# Le workflow de marque doit aussi réécrire
+# app/src/main/java/cm/bouendji/vpn/brand/BrandTokens.kt : ce fichier ne couvre
+# que l'identité Gradle, pas les jetons d'affichage ni l'URL d'API.
+
+packageName=cm.bouendji.vpn
+appName=Bouendji VPN
+versionCode=1
+versionName=0.1.0

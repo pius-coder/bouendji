@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="same-origin">
+<title>Administration — plateforme VPN</title>
+<meta name="description" content="Console d’administration : communautés, membres, commandes, réseau, bundles hors-ligne, journal d’audit.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip-link" href="#view">Aller au contenu</a>
+
+<header class="topbar">
+  <p class="brand">
+    <span class="brand-name">Administration</span>
+    <span class="brand-sub">Plateforme VPN</span>
+  </p>
+  <div class="topbar-actions">
+    <p id="identity" class="identity" hidden></p>
+    <button id="logout" class="button button-quiet" type="button" hidden>Fermer la session</button>
+  </div>
+</header>
+
+<nav id="nav" class="nav" aria-label="Navigation principale" hidden>
+  <ul>
+    <li><a href="#/overview" data-screen="overview">Vue d’ensemble</a></li>
+    <li><a href="#/communities" data-screen="communities">Communautés</a></li>
+    <li><a href="#/members" data-screen="members">Membres</a></li>
+    <li><a href="#/orders" data-screen="orders">Commandes et commissions</a></li>
+    <li><a href="#/network" data-screen="network">Réseau</a></li>
+    <li><a href="#/bundles" data-screen="bundles">Bundles hors-ligne</a></li>
+    <li><a href="#/audit" data-screen="audit">Journal d’audit</a></li>
+  </ul>
+</nav>
+
+<div id="banner" class="banner" role="alert" hidden></div>
+
+<main id="view" tabindex="-1" aria-busy="true">
+  <p class="muted">Chargement de l’interface…</p>
+  <noscript>
+    <div class="panel error-panel">
+      <h2>JavaScript désactivé</h2>
+      <p>Cette console interroge l’API depuis le navigateur. Sans JavaScript, aucun écran ni aucune donnée ne peut être affiché.</p>
+    </div>
+  </noscript>
+</main>
+
+<footer class="footer">
+  <p>Interface statique, sans build ni dépendance. Le jeton de session reste en mémoire de l’onglet : il n’est jamais écrit dans le stockage du navigateur ni dans l’URL.</p>
+</footer>
+
+<script>
+  /*
+    app.js est un module ES natif quand la page est servie par l'API.
+    Ouvert en file://, un module est refusé par le navigateur (origine « null »,
+    pas d'en-tête CORS) : le même fichier est alors chargé comme script
+    classique. Il n'utilise donc ni import ni export et s'exécute à l'identique
+    dans les deux modes. Aucun contenu n'est chargé depuis un CDN.
+  */
+  (function () {
+    var script = document.createElement('script');
+    script.src = 'app.js';
+    if (window.location.protocol !== 'file:') {
+      script.type = 'module';
+    }
+    script.onerror = function () {
+      var view = document.getElementById('view');
+      if (view) {
+        view.setAttribute('aria-busy', 'false');
+        view.textContent = 'Impossible de charger app.js. Vérifiez que le fichier se trouve à côté de index.html, puis rechargez la page.';
+      }
+    };
+    document.head.appendChild(script);
+  })();
+</script>
+</body>
+</html>

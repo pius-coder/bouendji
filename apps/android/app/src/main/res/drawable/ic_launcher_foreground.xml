@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Avant-plan de l'icône adaptative : un anneau, dessiné (aucune image produite).
+
+  Le fond est celui de `@color/ic_launcher_background` ; l'anneau reprend
+  l'accent de l'identité Halo par défaut. Un build de marque peut remplacer ce
+  fichier comme il remplace `BrandTokens.kt`.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Anneau extérieur (rayon 26, dans la zone sûre de 72 dp). -->
+    <path
+        android:fillColor="#7FB6FF"
+        android:pathData="M54,28a26,26 0 1,0 0,52a26,26 0 1,0 0,-52z" />
+
+    <!-- Évidement : même teinte que le fond, donc invisible sur l'icône. -->
+    <path
+        android:fillColor="#0B1322"
+        android:pathData="M54,39a15,15 0 1,0 0,30a15,15 0 1,0 0,-30z" />
+
+    <!-- Point de session, en bas de l'anneau. -->
+    <path
+        android:fillColor="#7FB6FF"
+        android:pathData="M54,72a4,4 0 1,0 0,8a4,4 0 1,0 0,-8z" />
+</vector>

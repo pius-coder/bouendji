@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifeste — socle.
+
+  Principe : permissions minimales, un seul composant exporté en dehors du
+  lanceur (le service VPN, protégé par la permission système `BIND_VPN_SERVICE`
+  que seule la plateforme détient), une seule activité.
+
+  Ce qui n'est PAS déclaré, volontairement :
+    - `RECEIVE_BOOT_COMPLETED` : le redémarrage au boot n'est pas encore une
+      préférence exposée ; un récepteur déclaré maintenant écouterait un
+      réglage que personne ne peut activer.
+    - `QUERY_ALL_PACKAGES`, `READ_PHONE_STATE`, aucun identifiant matériel.
+    - aucun `intent-filter` sur `MainActivity` hors `MAIN`/`LAUNCHER` : aucun
+      schéma d'import, aucun lien profond qui ferait entrer une configuration
+      par une porte que l'interface ne contrôle pas.
+
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Android 13+ : sans cette permission, le service tourne mais la
+         notification permanente n'est pas visible. L'UI doit la demander. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:name=".VpnApplication"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="${appName}"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="false">
+
+        <!--
+          Activité unique. `enableEdgeToEdge()` dans `onCreate` s'appuie sur le
+          thème de fenêtre ci-dessous : barres transparentes et fond
+          `brand_window`, pour qu'aucune frame blanche n'apparaisse avant que
+          Compose ne dessine.
+
+          `launchMode="singleTop"` : rouvrir depuis le lanceur ne crée pas une
+          seconde instance qui reconstruirait un second `AppState` et
+          réabonnerait le bus d'état du tunnel.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Bouendji"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          `android:exported="true"` + `android:permission="BIND_VPN_SERVICE"`
+          est la forme documentée par Android pour un VpnService : le composant
+          est joignable par le système (qui détient la permission signature),
+          et par personne d'autre. Le passer à `false` empêcherait la
+          plateforme de le lier.
+
+          `foregroundServiceType="specialUse"` : un VpnService doit déclarer un
+          type depuis Android 14. « specialUse » est le type utilisé par les
+          applications VPN ; il impose une justification en fiche Play, à
+          préparer avant publication (non vérifié).
+        -->
+        <service
+            android:name=".vpn.VpnTunnelService"
+            android:exported="true"
+            android:foregroundServiceType="specialUse"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="vpn_tunnel" />
+        </service>
+
+    </application>
+
+</manifest>

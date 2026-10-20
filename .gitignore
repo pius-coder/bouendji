@@ -1,0 +1,42 @@
+# Dépendances
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+build/
+*.tsbuildinfo
+coverage/
+
+# Dashboard Next.js (l'export est produit avant de servir /admin)
+apps/admin/.next/
+apps/admin/out/
+apps/admin/next-env.d.ts
+
+# Secrets — jamais commités, jamais copiés dans une image
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.jks
+*.keystore
+
+# Données locales (PGlite, exports)
+data/
+*.sqlite
+*.db
+
+# Android
+apps/android/.gradle/
+apps/android/local.properties
+apps/android/app/release/
+apps/android/app/debug/
+*.apk
+*.aab
+
+# Divers
+*.log
+.DS_Store
+.idea/
+.vscode/

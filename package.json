@@ -1,0 +1,14 @@
+{
+  "name": "vpn-platform",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "pnpm@12.8.1",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "pnpm --filter @vpn/api dev",
+    "build": "pnpm --filter @vpn/contract build && pnpm --filter @vpn/api build && pnpm --filter @vpn/admin build",
+    "test": "pnpm --filter @vpn/api test",
+    "typecheck": "pnpm -r typecheck",
+    "db:seed": "pnpm --filter @vpn/api seed"
+  }
+}

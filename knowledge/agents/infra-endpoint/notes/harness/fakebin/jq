@@ -1,0 +1,17 @@
+#!/bin/sh
+# Stub de test : ne gère QUE les appels émis par infra/endpoint/entrypoint.sh.
+# Sert à vérifier la logique de l'entrypoint sans Docker.
+all="$*"
+
+case "$all" in
+    *".uuid"*)          printf '%s' "${FAKE_UUID}" ;;
+    *".ws_path"*)       printf '%s' "${FAKE_WS_PATH}" ;;
+    *".expires_at"*)    printf '%s' "${FAKE_EXPIRES}" ;;
+    *".endpoint_id"*)   printf '%s' "ep_TEST" ;;
+    *".pool_revision"*) printf '%s' "8" ;;
+    *".status"*)        printf '%s' "active" ;;
+    *".error.message"*) printf '%s' "" ;;
+    *"--arg uuid"*)     printf '%s\n' '{"mock":"config"}' ;;
+    *"public_host"*)    printf '%s\n' '{"mock":"register-payload"}' ;;
+    *)                  printf '%s\n' '{"deployment_key":"k"}' ;;
+esac

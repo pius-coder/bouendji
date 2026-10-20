@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Thème de fenêtre. Il ne porte aucune couleur d'identité : Compose prend le
+  relais dès la première frame avec `BrandTokens.theme`. Il sert uniquement à
+  éviter un flash blanc au lancement et à laisser la barre système
+  transparente (le fond dessiné passe derrière).
+-->
+<resources>
+    <style name="Theme.Bouendji" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/brand_window</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

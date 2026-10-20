@@ -1,0 +1,14 @@
+{
+  "_comment": "Exemple complet. Copier, remplacer chaque valeur, passer le fichier à tools/inject-brand.mjs. Le champ _comment est ignoré.",
+  "theme": "halo",
+  "appName": "Marque Exemple",
+  "packageName": "com.marque.exemple",
+  "apiBaseUrl": "https://api.marque-exemple.com",
+  "appId": "018f2b6e-4c1a-7a3b-9d21-5b0c7f9a1234",
+  "supportUrl": "https://wa.me/237600000000",
+  "accent": "#0F6F62",
+  "offlineBundleSigningKeyB64": "",
+  "defaultLocale": "fr",
+  "versionCode": 1,
+  "versionName": "1.0.0"
+}

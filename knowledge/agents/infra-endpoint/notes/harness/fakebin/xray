@@ -1,0 +1,6 @@
+#!/bin/sh
+# Stub de test de xray : accepte -test, sinon reste vivant jusqu'au SIGTERM.
+case "$*" in
+    *-test*) exit 0 ;;
+esac
+sleep 300

@@ -1,0 +1,6 @@
+# Contexte minimal : seuls les fichiers utiles au runtime entrent dans l'image.
+# Tout ajout doit être une ligne « !fichier » explicite après ce bloc.
+*
+!Dockerfile
+!entrypoint.sh
+!config.example.json

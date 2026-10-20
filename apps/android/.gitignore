@@ -1,0 +1,15 @@
+# Build
+.gradle/
+build/
+app/build/
+captures/
+.cxx/
+
+# Configuration locale
+local.properties
+brand.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store

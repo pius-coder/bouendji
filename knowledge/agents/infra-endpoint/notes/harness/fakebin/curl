@@ -1,0 +1,41 @@
+#!/bin/sh
+# Stub de test de curl : renvoie les réponses du contrat d'ingestion.
+url=""
+out=""
+prev=""
+for a in "$@"; do
+    if [ "$prev" = "-o" ]; then out="$a"; fi
+    prev="$a"
+    case "$a" in
+        http://*|https://*) url="$a" ;;
+    esac
+done
+
+if [ -n "${FAKE_CALLS:-}" ]; then
+    printf '%s\n' "$url" >> "$FAKE_CALLS"
+fi
+
+case "$url" in
+    */v1/internal/endpoints/register)
+        body='{"endpoint_id":"ep_TEST","uuid":"'"${FAKE_UUID}"'","ws_path":"'"${FAKE_WS_PATH}"'","expires_at":"'"${FAKE_EXPIRES}"'","status":"pending","pool_revision":7}'
+        ;;
+    */v1/internal/endpoints/ready)
+        body='{"status":"active","pool_revision":8}'
+        ;;
+    */v1/internal/endpoints/heartbeat)
+        body='{"status":"active","expires_at":"'"${FAKE_EXPIRES}"'"}'
+        ;;
+    http://127.0.0.1:*)
+        # Sonde de port : Xray renvoie 400 à un GET sans Upgrade.
+        printf '%s' 400
+        exit 0
+        ;;
+    *)
+        body='{"error":{"code":"NOT_FOUND","message":"mock"}}'
+        ;;
+esac
+
+if [ -n "$out" ]; then
+    printf '%s' "$body" > "$out"
+fi
+printf '%s' 200
