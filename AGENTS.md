@@ -59,13 +59,18 @@ Un rapport de sous-agent doit contenir :
 ## État du code
 
 - `apps/api` : `config.ts`, `schema.ts`, `db.ts`, `lib/*`, `services/*`,
-  `routes/{internal,auth,devices,bundle,me,orders,payments,admin}.ts`, `app.ts`,
-  `server.ts`, `seed.ts` écrits. Tests : `test/*.test.ts` (ingest, auth, bundle,
-  payments, admin).
+  `routes/{internal,auth,devices,bundle,me,orders,payments,admin,adminAuth,
+  offline}.ts`, `app.ts`, `server.ts`, `seed.ts` écrits. Tests :
+  `test/*.test.ts` — unitaires (ingest, auth, bundle, payments, admin) **et un
+  parcours E2E sur vrai HTTP** (`test/e2e.test.ts` : inscription → commande →
+  paiement simulé → webhook → abonnement → bundle chiffré → déchiffrement).
 - `infra/endpoint/` : conteneur d'endpoint (register → config → xray → ready →
   heartbeat).
-- `apps/admin` : SPA statique, sans build ni CDN.
-- `apps/android` : socle Gradle + VpnService + Keystore + client signé.
+- `apps/admin/` : **supprimé** (D33). Le dashboard est à réécrire et vivra sur
+  Vercel (D32).
+- `apps/android` : socle Gradle + VpnService + Keystore + client signé. La
+  couche `ui/` a été **supprimée** (D33) ; `MainActivity.kt` n'est qu'un point
+  d'entrée vide.
 
 ## Ce que « vérifié » veut dire ici
 
@@ -77,6 +82,16 @@ Un rapport de sous-agent doit contenir :
 
 ## Limites de la machine
 
-Pas de JDK, pas d'Android SDK, pas de Gradle, pas d'`adb`, Docker arrêté.
-L'application Android ne peut pas être compilée ici : tout code Android écrit
-doit être relu en conséquence et sa vérification réelle reste à faire.
+Le réseau coupe les gros transferts côté Windows (`EOF`, `SSL unexpected eof`).
+**WSL tient** : il sert de chemin de téléchargement, mais Windows reste la
+machine — JDK, Gradle, SDK, émulateur, `adb` et compilation sont sous Windows.
+
+- Chaîne Android : `tools/fetch-android-archives.sh` (téléchargement **vérifié**,
+  dans WSL) puis `tools/install-android-toolchain.ps1` (installation, Windows).
+  Un transfert interrompu plusieurs fois produit une archive de bonne taille et
+  illisible : vérifier avant de décompresser, jamais se fier à la taille.
+- Docker tourne **dans WSL**, pas via Docker Desktop.
+- Hébergement : Vercel (D32), pas Cloud Run. Aucun `gcloud` n'est nécessaire.
+
+Tant qu'aucun `gradlew assembleDebug` n'a réussi, tout code Android écrit doit
+être relu et sa vérification réelle reste à faire.

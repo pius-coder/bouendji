@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Couleurs de la fenêtre avant que Compose ne dessine, et fond de l'icône
-  adaptative. Les vraies couleurs d'identité vivent dans `ui/theme/Tokens.kt` :
-  elles dépendent de la marque et ne peuvent pas être des ressources figées.
+  adaptative. Les vraies couleurs d'identité ne vivent pas ici : elles dépendent
+  de la marque et ne peuvent pas être des ressources figées. La couche `ui/` qui
+  les portait a été supprimée (D33) et sera réécrite ; ces deux valeurs-ci sont
+  des garde-fous de fenêtre, pas une palette.
 -->
 <resources>
     <color name="brand_window">#F7FAFF</color>
