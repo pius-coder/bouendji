@@ -82,16 +82,23 @@ Un rapport de sous-agent doit contenir :
 
 ## Limites de la machine
 
-Le réseau coupe les gros transferts côté Windows (`EOF`, `SSL unexpected eof`).
-**WSL tient** : il sert de chemin de téléchargement, mais Windows reste la
-machine — JDK, Gradle, SDK, émulateur, `adb` et compilation sont sous Windows.
+Le réseau coupe les gros transferts (`EOF`, `SSL unexpected eof`, `(35)
+schannel`, `(56) Send failure`, `Remote host terminated the handshake`) — y
+compris les poignées de main TLS de Gradle vers `dl.google.com` et Maven
+Central. Tout est fait **sous Windows**, WSL n'est plus utilisé.
 
-- Chaîne Android : `tools/fetch-android-archives.sh` (téléchargement **vérifié**,
-  dans WSL) puis `tools/install-android-toolchain.ps1` (installation, Windows).
-  Un transfert interrompu plusieurs fois produit une archive de bonne taille et
-  illisible : vérifier avant de décompresser, jamais se fier à la taille.
+- Téléchargement : `tools/fetch-segmented.ps1` (plages parallèles, reprise sur
+  le `.part` existant, **vérification du zip** avant mise en place). Une taille
+  correcte ne prouve rien : un transfert interrompu plusieurs fois donne une
+  archive de bonne taille et illisible.
+- Installation Android : `tools/install-android-toolchain.ps1`. Le SDK s'installe
+  avec le nouveau CLI, qui veut des noms en `/` (`platforms/android-35`) alors
+  que `avdmanager -k` veut des `;` — voir `30-clients/android-toolchain`.
+- Compilation : `tools/build-apk.ps1` (reprises multiples ; Gradle conserve son
+  cache, donc chaque tentative progresse). Voir `30-clients/android-toolchain`.
 - Docker tourne **dans WSL**, pas via Docker Desktop.
 - Hébergement : Vercel (D32), pas Cloud Run. Aucun `gcloud` n'est nécessaire.
+- Appareil de test : Pixel 8 en USB, API 37, autorisé (`adb devices` → `device`).
 
 Tant qu'aucun `gradlew assembleDebug` n'a réussi, tout code Android écrit doit
 être relu et sa vérification réelle reste à faire.

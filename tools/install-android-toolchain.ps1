@@ -36,7 +36,14 @@ $Jdk       = "$Toolchain\jdk17"
 $GradleDir = "$Toolchain\gradle-8.7"
 $AvdName   = 'vpn35'
 $ApiLevel  = '35'
-$Image     = "system-images;android-$ApiLevel;google_apis;x86_64"
+# Deux écritures du même paquet, et ce n'est pas un détail :
+#   - `;` est la forme que comprend `avdmanager -k` ;
+#   - `/` est la forme que comprend l'Android CLI (l'appel derrière sdkmanager
+#     depuis 2026). Passer `;` au CLI ne donne pas une erreur claire : **cmd**
+#     traite le point-virgule comme un séparateur d'arguments, et le CLI
+#     répond « Package platforms not found / Package android-35 not found ».
+$ImagePkg  = "system-images;android-$ApiLevel;google_apis;x86_64"
+$ImageArg  = "system-images/android-$ApiLevel/google_apis/x86_64"
 $Repo      = 'C:\Users\HP\Documents\Codex\2026-10-19\es\outputs\vpn-platform'
 
 function Step($message) {
@@ -227,8 +234,8 @@ Step 'Paquets SDK indispensables (petits, bloquants)'
 # du fichier attendu, pas le code de sortie de l'outil.
 $indispensables = @(
     @{ Pkg = 'platform-tools';                 Check = "$Sdk\platform-tools\adb.exe" },
-    @{ Pkg = "platforms;android-$ApiLevel";    Check = "$Sdk\platforms\android-$ApiLevel\android.jar" },
-    @{ Pkg = 'build-tools;35.0.0';             Check = "$Sdk\build-tools\35.0.0\aapt2.exe" }
+    @{ Pkg = "platforms/android-$ApiLevel";    Check = "$Sdk\platforms\android-$ApiLevel\android.jar" },
+    @{ Pkg = 'build-tools/35.0.0';             Check = "$Sdk\build-tools\35.0.0\aapt2.exe" }
 )
 foreach ($item in $indispensables) {
     if (Test-Path $item.Check) {
