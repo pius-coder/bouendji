@@ -21,7 +21,12 @@
 # Usage :
 #   powershell -ExecutionPolicy Bypass -File tools/install-android-toolchain.ps1
 
-$ErrorActionPreference = 'Stop'
+# `Continue` et non `Stop` : sous PowerShell 5.1, la moindre sortie sur stderr
+# d'une commande native (java -version, sdkmanager, gradle) leve une erreur
+# FATALE quand la preference vaut Stop. Le script mourrait a la premiere ligne
+# de java -version. Les echecs sont donc verifies explicitement : `throw`, et
+# controles de presence apres chaque decompression.
+$ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -164,7 +169,9 @@ if (-not (Test-Path "$Jdk\bin\java.exe")) {
 }
 $env:JAVA_HOME = $Jdk
 $env:PATH = "$Jdk\bin;$env:PATH"
-& "$Jdk\bin\java.exe" -version
+$javaOut = & "$Jdk\bin\java.exe" -version 2>&1
+if ($LASTEXITCODE -ne 0) { throw "java.exe ne repond pas : $Jdk" }
+Write-Host ($javaOut | Select-Object -First 1)
 
 # ---------------------------------------------------------------------------
 Step 'Gradle 8.7'
@@ -176,6 +183,9 @@ if (-not (Test-Path "$GradleDir\bin\gradle.bat")) {
 } else {
     Write-Host "deja present : $GradleDir"
 }
+# Avec `Continue`, une decompression ratee ne stoppe plus le script : on le
+# verifie donc a la main.
+if (-not (Test-Path "$GradleDir\bin\gradle.bat")) { throw "Gradle inutilisable : $GradleDir" }
 $env:PATH = "$GradleDir\bin;$env:PATH"
 
 # ---------------------------------------------------------------------------
@@ -199,6 +209,7 @@ $env:ANDROID_HOME = $Sdk
 $env:ANDROID_SDK_ROOT = $Sdk
 $sdkmanager = "$Sdk\cmdline-tools\latest\bin\sdkmanager.bat"
 $avdmanager = "$Sdk\cmdline-tools\latest\bin\avdmanager.bat"
+if (-not (Test-Path $sdkmanager)) { throw "sdkmanager inutilisable : $sdkmanager" }
 
 # ---------------------------------------------------------------------------
 Step 'Licences Android'
@@ -210,9 +221,28 @@ Step 'Paquets SDK indispensables (petits, bloquants)'
 # Ce qu'il faut pour compiler un APK, et rien de plus. L'emulateur et son image
 # pesent plus d'un gigaoctet et viennent apres : leur echec ne doit pas laisser
 # une chaine sans adb ni build-tools.
-foreach ($pkg in @('platform-tools', "platforms;android-$ApiLevel", 'build-tools;35.0.0')) {
-    Write-Host "-- $pkg"
-    & $sdkmanager --sdk_root=$Sdk $pkg | Out-Host
+#
+# Chaque paquet est retente : `sdkmanager` ne reprend pas un telechargement
+# interrompu, et ce reseau en interrompt. On verifie ensuite la presence reelle
+# du fichier attendu, pas le code de sortie de l'outil.
+$indispensables = @(
+    @{ Pkg = 'platform-tools';                 Check = "$Sdk\platform-tools\adb.exe" },
+    @{ Pkg = "platforms;android-$ApiLevel";    Check = "$Sdk\platforms\android-$ApiLevel\android.jar" },
+    @{ Pkg = 'build-tools;35.0.0';             Check = "$Sdk\build-tools\35.0.0\aapt2.exe" }
+)
+foreach ($item in $indispensables) {
+    if (Test-Path $item.Check) {
+        Write-Host "-- $($item.Pkg) : deja present"
+        continue
+    }
+    $ok = $false
+    for ($essai = 1; $essai -le 4; $essai++) {
+        Write-Host "-- $($item.Pkg) (essai $essai)"
+        & $sdkmanager --sdk_root=$Sdk $item.Pkg | Out-Host
+        if (Test-Path $item.Check) { $ok = $true; break }
+        Start-Sleep -Seconds 5
+    }
+    if (-not $ok) { throw "paquet SDK non installe malgre 4 essais : $($item.Pkg)" }
 }
 
 # ---------------------------------------------------------------------------
