@@ -1,0 +1,20 @@
+# CODEOWNERS — monorepo Bouendji
+# Android = @pius-coder · API + admin = @mani-iks
+# Un fichier listé ici exige la review de son propriétaire avant merge.
+
+/apps/android/ @pius-coder
+/tools/inject-brand.mjs @pius-coder
+/tools/build-libbox.ps1 @pius-coder
+/.github/workflows/android-brand.yml @pius-coder
+/preview/ @pius-coder
+
+/apps/api/ @mani-iks
+/packages/contract/ @mani-iks
+/infra/endpoint/ @mani-iks
+/apps/admin/ @mani-iks
+
+/vercel.json @pius-coder @mani-iks
+/apps/api/middleware.ts @pius-coder @mani-iks
+/apps/api/src/lib/decoy.ts @pius-coder @mani-iks
+/CONTRIBUTING.md @pius-coder @mani-iks
+/knowledge/ @pius-coder @mani-iks

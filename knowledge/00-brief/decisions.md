@@ -298,3 +298,21 @@ ici, pas laissée en double.
   les états bloquants. Les écrans `nji` et invitation restent exclus (D40).
   L'identité reste injectée au build (D2/D30), jamais choisie au lancement.
 
+## Travail à deux et leurre (2026-10-22)
+
+- **D42** — **Monorepo à deux : Android = @pius-coder, API + admin = @mani-iks.**
+  Branches `android/*` / `api/*` / `admin/*`, PR squash, review du propriétaire
+  via `.github/CODEOWNERS`. `CONTRIBUTING.md` fait foi. Deux projets Vercel sur
+  le même repo : `bouendji-api` (Root `apps/api`, domaine
+  `bouendji.numzer0.store`), `bouendji-admin` (Root `apps/admin`, à recréer
+  D32/D33). `DECOY_URL` en variable Vercel (Preview = test, Production = vrai
+  site SMS). Répond à O9 (qui construit quoi).
+- **D43** — **Rideau anti-curieux, pas une sécurité.** Le domaine API est
+  visible après reverse (inévitable). Navigateur sans `X-App-Id` (+ UA
+  `vpn-android`) → `302` vers `DECOY_URL` (placeholder
+  `https://example-sms.com` en attendant le vrai site SMS). Client JSON sans
+  métadonnées → JSON d'erreur normal, jamais 302 (sinon tests/dashboard
+  cassés). Bypass : `/healthz`, `/readyz`, `/v1/payments/webhook/*` (D14).
+  Deux couches : `apps/api/middleware.ts` (Edge) + `apps/api/src/lib/decoy.ts`
+  (Fastify, vérifié par 5 tests). La sécurité réelle reste D4/D5.
+

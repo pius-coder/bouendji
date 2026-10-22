@@ -4,6 +4,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { env } from "./config.js";
 import type { Database } from "./db.js";
 import { rateLimitError } from "./lib/attempts.js";
+import { registerDecoyGuard } from "./lib/decoy.js";
 import { ApiFailure } from "./lib/errors.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminAuthRoutes } from "./routes/adminAuth.js";
@@ -135,6 +136,10 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       req.url.startsWith("/v1/payments/webhook/"),
     errorResponseBuilder: rateLimitError,
   });
+
+  // Rideau anti-curieux (couche Fastify, doublon de middleware.ts Edge).
+  // Navigateur sans X-App-Id → 302 vers DECOY_URL. Bypass : sondes + webhook.
+  await registerDecoyGuard(app);
 
   // Le dashboard n'est plus servi par l'API : il vit sur Vercel (D32). Garder
   // ici une copie statique créait deux origines pour la même console, et deux

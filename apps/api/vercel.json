@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "projects": {
+    "note": "2 projets Vercel partagent ce repo. Ce fichier documente l'API (bouendji.numzer0.store). Le projet admin aura son propre vercel.json dans apps/admin quand il sera recréé (D32/D33)."
+  },
+  "functions": {
+    "api/index.ts": { "maxDuration": 30 }
+  },
+  "headers": [
+    {
+      "source": "/v1/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    }
+  ],
+  "env": {
+    "DECOY_URL": "https://example-sms.com"
+  }
+}
