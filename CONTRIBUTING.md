@@ -2,6 +2,22 @@
 
 Deux personnes, deux périmètres, une seule `master` à protéger.
 
+## Reprendre le contexte `knowledge` (obligatoire)
+
+Au début de chaque session, après une compaction et à chaque reprise d'un
+chantier interrompu, exécuter depuis la racine :
+
+```bash
+node knowledge/cli.mjs context
+node knowledge/cli.mjs report
+```
+
+Avant de modifier une fonctionnalité, lire avec `node knowledge/cli.mjs read
+<id>` les nœuds concernés. Pendant le travail, consigner chaque décision, fait
+vérifié et piège découvert dans le nœud approprié ; inscrire toute nouvelle
+décision dans `knowledge/00-brief/decisions.md` avec sa date. Ne pas se fier à
+la mémoire de conversation quand `knowledge/` contient l'état du projet.
+
 ## Périmètres (qui touche à quoi)
 
 | Chemin | Propriétaire | Review obligatoire |
@@ -23,6 +39,7 @@ de son périmètre.
 - `android/*` : @pius-coder. Ex : `android/libbox-arm64`.
 - `api/*` : @mani-iks. Ex : `api/catalog-public`.
 - `admin/*` : @mani-iks. Ex : `admin/login`.
+- `knowledge/*` : documentation de décisions et de contexte projet.
 - `chore/*` : commun (docs, CI, vercel). Ex : `chore/decoy-url`.
 
 Cycle : branche → PR → CI verte → review du propriétaire → squash-merge.

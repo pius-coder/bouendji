@@ -316,3 +316,11 @@ ici, pas laissée en double.
   Deux couches : `apps/api/middleware.ts` (Edge) + `apps/api/src/lib/decoy.ts`
   (Fastify, vérifié par 5 tests). La sécurité réelle reste D4/D5.
 
+- **D44** (2026-10-22) — **Les APK de marque sont stockés dans Cloudflare R2.**
+  Le workflow de build téléverse chaque APK vers un bucket privé, conserve les
+  métadonnées nécessaires (marque/app, version, SHA-256, clé d'objet), puis
+  l'admin authentifié télécharge son APK via un lien à durée limitée fourni par
+  le dashboard/API. Les artefacts GitHub Actions peuvent servir au diagnostic,
+  mais R2 est le stockage durable et la voie de distribution. À implémenter ;
+  aucun téléversement R2 ni flux de téléchargement n'est encore vérifié.
+
