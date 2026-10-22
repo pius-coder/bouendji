@@ -3,7 +3,7 @@ id: brand-build
 title: Marque blanche — injection au build et CI
 tags: [marque, ci, github-actions, apk, signature, brandtokens]
 status: verified
-updated: 2026-10-20
+updated: 2026-10-22
 related: [android-app, ui-identities]
 ---
 
@@ -61,6 +61,19 @@ produirait un APK qui démarre avec l'API d'une autre marque.
 7. appelle `build_callback_url` si fourni (`continue-on-error`) — la route de
    rappel n'existe pas encore côté API, donc l'entrée est vide par défaut.
 
+## Stockage et remise de l'APK (décision D44, 2026-10-22)
+
+L'APK de chaque marque doit être conservé dans **Cloudflare R2** après le build,
+et non uniquement comme artefact temporaire de GitHub Actions. Le bucket doit
+rester privé ; le dashboard/API authentifie l'administrateur de la marque et
+lui fournit un lien de téléchargement à durée limitée. Enregistrer les
+métadonnées du build (app/marque, version, empreinte SHA-256 et clé d'objet R2)
+pour retrouver et auditer les APK.
+
+Ce flux est **décidé mais pas implémenté ni vérifié** : le workflow actuel publie
+l'artefact GitHub Actions et peut créer une GitHub Release ; il ne téléverse pas
+vers R2. La remise depuis le dashboard/API reste donc à construire.
+
 Secrets attendus : `ANDROID_KEYSTORE_B64`, `ANDROID_KEY_ALIAS`,
 `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD`, `BUILD_CALLBACK_TOKEN`.
 
@@ -83,11 +96,13 @@ décision de version, pas une rotation de routine.
   dans l'URL — sortie **78** avec un message qui nomme le champ ;
 - `node tools/offline-keygen.mjs --out` : deux fichiers, 65 et 61 octets.
 
-## Non vérifié
+## Vérification
 
-Aucun build Gradle n'a été lancé (pas de JDK ni de SDK sur la machine). Le
-workflow est relu, pas exécuté : la première exécution réelle doit confirmer les
-versions d'AGP/Kotlin, la présence du wrapper et l'acceptation de `apksigner`.
+- Build **debug** vérifié le 2026-10-21 : `:app:compileDebugKotlin` et
+  `:app:assembleDebug` réussis ; APK installé sur l'émulateur (`android-ui-research`).
+- Le build **release par marque** du workflow GitHub Actions n'a pas été exécuté.
+- Le téléversement R2, l'enregistrement des métadonnées et le téléchargement
+  authentifié depuis le dashboard/API ne sont pas implémentés ni vérifiés.
 
 ## Discrétion du nom (contexte produit, 2026-10-21)
 
