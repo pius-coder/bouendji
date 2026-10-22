@@ -100,10 +100,20 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
-    // libbox (sing-box) N'EST PAS ajouté ici : aucune version n'a été vérifiée.
-    // Voir TunnelEngine.kt — l'implémentation est une interface sans adaptateur
-    // branché. Ajouter la dépendance quand la version est connue :
-    //   implementation("io.nekohasekai:libbox:<version vérifiée>")
+    // libbox (sing-box) — moteur compile depuis les sources par
+    // `tools/build-libbox.ps1`. Il n'existe sur AUCUN depot Maven (verifie :
+    // 0 resultat sur Maven Central), donc le .aar est produit localement puis
+    // copie dans `app/libs/` (hors controle de version : ~29 Mo de binaire GPL,
+    // reproductible a partir du tag v1.14.3).
+    //
+    // Le controle est explicite : sans lui, Gradle echoue plus loin avec un
+    // message incomprehensible (`ExtractAarTransform`, chemin introuvable).
+    val libboxAar = file("libs/libbox.aar")
+    require(libboxAar.exists()) {
+        "libbox.aar absent de app/libs/ : lancer tools/build-libbox.ps1 " +
+            "(compilation du moteur sing-box depuis les sources)."
+    }
+    implementation(files(libboxAar))
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

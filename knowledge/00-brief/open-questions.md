@@ -143,4 +143,99 @@ dire que l'API fonctionne là-bas.
 on réécrit la couche HTTP en `api/*.ts` natifs Vercel (plus idiomatique, mais
 jette les tests de routes).
 
+## O17 — RÉSOLU le 2026-10-21 : prix fixé par la communauté (D35)
+
+Résolu par **D35** (2026-10-21) : le prix est fixé par la communauté ; la
+plateforme encaisse 100 %, réserve **30 % du CA généré** en enveloppe de
+commissions répartie au prorata, et garde **70 %**. Détail :
+`40-money/pricing-and-split`.
+
+Correction du constat initial : `plans` n'est pas « global » au sens plateforme.
+Il est indexé par `app_id` (`UNIQUE(app_id, code)`), et chaque `apps` appartient
+à une communauté (`apps.community_id`). Le produit étant **white label**, une
+app = une marque = une communauté : les prix sont donc **déjà par marque**. Ce
+qui manque n'est pas une table de prix, mais les routes admin de gestion des
+forfaits et un endpoint public par app.
+
+## O18 — RÉSOLU le 2026-10-21 : calcul de la commission (D35)
+
+D35 fixe le modèle : **30 % du seul CA généré par les communautés**, réparti
+**au prorata du CA**. Les trois détails d'implémentation sont tranchés :
+
+1. **Assiette** : **brut**, avant frais Fapshi. La plateforme absorbe les frais
+   sur ses 70 %.
+2. **Plafond de prix** : **aucun**. Le produit est white label : chaque app
+   porte le nom et la marque de son administrateur, donc un prix élevé engage sa
+   réputation, pas celle de la plateforme.
+3. **Arrondi** : **`floor`**, la plateforme ne paie jamais plus de 30 % ; un
+   remboursement après versement se déduit de l'enveloppe suivante.
+
+C'est codé (`MAX_COMMISSION_BPS = 3000`, contrainte SQL, `commissionFor`) et
+vérifié par `tsc --noEmit` et 100 tests. Détail : `40-money/pricing-and-split`.
+
+## O19 — RÉSOLU le 2026-10-21 : pas de consommation par utilisateur (D39)
+
+**Tranché** : UUID partagé au lancement, donc **pas de consommation par
+utilisateur**. Seuls des **totaux par nœud** restent possibles, et ils ne sont
+pas nécessaires tout de suite. La consommation par utilisateur revient avec
+l'UUID par appareil (D39, reporté). L'analyse ci-dessous reste la référence
+technique pour ce moment-là.
+
+**Question** : peut-on connaître la consommation de **chaque utilisateur** grâce
+au conteneur Xray, et comment le conteneur remonte-t-il cette donnée ?
+
+**Fait vérifié** : aujourd'hui non, pas par utilisateur.
+
+- `endpoints.identity_mode` vaut toujours `'shared'` (valeur écrite en dur dans
+  `registerEndpoint`, `services/endpoints.ts` ~159) : **un seul UUID par
+  endpoint**, partagé par tous les clients.
+- `endpointToConfig(row, identity)` sait lire `per_device`, mais aucun code ne
+  passe d'identité et rien ne stocke un UUID par appareil.
+- Le conteneur GCP n'envoie que `register`, `ready` et `heartbeat` : **aucune
+  donnée de trafic** ne remonte.
+- Sur un **VPS avec 3x-ui**, le mode `per_device` fournit déjà le trafic **par
+  client** toutes les 5 s et la révocation individuelle
+  (`50-security/revocation`). Le problème y est différent : rendre le panneau
+  joignable par l'API sans l'exposer publiquement — voir
+  `10-infrastructure/node-control`.
+- Xray peut exposer des compteurs par `email`/UUID via son API stats, mais
+  seulement si chaque client a une identité distincte dans l'inbound.
+
+**Trois options** :
+
+| Option | Ce qu'on obtient | Coût |
+|---|---|---|
+| A. UUID partagé (actuel) | Totaux **par endpoint** | Nul |
+| B. UUID par utilisateur + liste de clients tirée par le nœud + stats poussées vers l'API | Consommation **par utilisateur** | Élevé : rechargement de config, distribution des UUID, bundle modifié |
+| C. Un conteneur par utilisateur | Isolation parfaite, stats triviales | Très élevé |
+
+**Recommandation** : A maintenant (le dashboard affiche les totaux par nœud,
+suffisants pour la capacité), B seulement si une offre au Go ou une politique de
+fair-use est vendue. Détail technique : `10-infrastructure/traffic-stats`.
+
+Sous-questions à trancher : granularité (jour ?), rétention, et si la
+consommation devient une règle commerciale (quota, bridage, suspension).
+
+## O20 — RÉSOLU le 2026-10-21 : UUID partagé au lancement, par appareil plus tard (D39)
+
+**Tranché** : UUID **partagé** pour le premier déploiement. Accès immédiat,
+aucun délai d'activation, pas de synchronisation de clients. Le passage à l'UUID
+par appareil est reporté au moment où les stats par utilisateur ou la révocation
+immédiate deviendront une exigence commerciale.
+
+Le nœud peut recevoir une identité de deux façons :
+
+- **UUID partagé** : un seul client par endpoint (`email: "shared"`). Accès
+  immédiat, aucun délai d'activation, mais **aucune statistique par utilisateur**
+  et **aucune révocation individuelle**.
+- **UUID par appareil** : un client par appareil (`email = "d-<device_id>"`).
+  Donne les stats et la révocation, mais impose que le nœud ait la liste avant
+  la première connexion : l'app doit accepter un `pending` le temps que
+  `applied_revision` rattrape (`10-infrastructure/node-control`).
+
+**Déclencheur de réévaluation** : une offre au Go, un fair-use, ou une exigence
+de révocation immédiate. Sans l'un des trois, l'UUID partagé reste le bon choix.
+
+
+
 

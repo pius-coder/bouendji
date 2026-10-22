@@ -183,10 +183,15 @@ export function planRevision(plan: {
  * Commission en XAF entiers. Arrondi vers le bas : on ne promet jamais à une
  * communauté plus que ce qui a été encaissé, et la somme des commissions ne
  * peut pas dépasser le montant de la commande.
+ *
+ * D35 : l'enveloppe est plafonnée à 30 % du montant encaissé. Le taux est
+ * toujours lu sur la communauté, jamais fourni par le client.
  */
+export const MAX_COMMISSION_BPS = 3000;
+
 export function commissionFor(amountXaf: number, bps: number): number {
   if (amountXaf <= 0 || bps <= 0) return 0;
-  return Math.floor((amountXaf * Math.min(bps, 10_000)) / 10_000);
+  return Math.floor((amountXaf * Math.min(bps, MAX_COMMISSION_BPS)) / 10_000);
 }
 
 const iso = (value: Date | string | null): string | undefined =>
@@ -318,7 +323,7 @@ export async function createOrder(
   const orderId = newId();
   const now = new Date();
   const expiresAt = addMinutes(now, ORDER_TTL_MINUTES);
-  const bps = Math.max(0, Math.min(Number(plan.commission_bps) || 0, 10_000));
+  const bps = Math.max(0, Math.min(Number(plan.commission_bps) || 0, MAX_COMMISSION_BPS));
 
   await db.query(
     `INSERT INTO orders (id, user_id, app_id, plan_id, community_id, amount_xaf, currency, status,

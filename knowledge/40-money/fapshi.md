@@ -35,6 +35,35 @@ seconde demande de paiement.
 - Une transaction au résultat incertain est marquée, jamais rejouée à l'aveugle.
 - Un remboursement annule la commission correspondante.
 
+### État vérifié du code (2026-10-21)
+
+- Un seul jeu d'identifiants Fapshi par déploiement (`env.fapshi.apiUser` /
+  `apiKey`) : **pas de compte d'encaissement par communauté**. L'argent d'une
+  commande arrive donc sur le compte plateforme.
+- `POST /v1/admin/communities/:id/payouts` calcule le montant depuis les
+  commissions disponibles ; le montant n'est jamais fourni par le client
+  (`apps/api/src/routes/admin.ts` ~874-936).
+- `POST /v1/admin/payouts/:id/approve` ne fait que passer
+  `status='approved'` (`admin.ts` ~938-966). **Aucun appel `fapshi.payout()`
+  n'est câblé** : la méthode existe dans `lib/fapshi.ts` mais n'a aucun
+  appelant. Les « routes api-money » citées en commentaire n'existent pas
+  (`apps/api/src/routes/` ne contient pas `money.ts`).
+- Conséquence : aujourd'hui, un versement approuvé **n'envoie pas d'argent**.
+
+## Sens des flux
+
+```
+client final --(lien Fapshi)--> compte plateforme
+                                      |
+                                      +--> commission calculée (community_id)
+                                      |
+                                      +--> versement approuvé --> communauté
+```
+
+Le revendeur ne reverse rien par un lien de paiement : il est **bénéficiaire**
+d'une commission, pas débiteur. Un modèle « le revendeur encaisse puis doit
+reverser » n'existe ni en décision ni en code.
+
 ## Détention du compte
 
 L'utilisateur détient le compte Fapshi et les clés. C'est lui qui déclenche ou

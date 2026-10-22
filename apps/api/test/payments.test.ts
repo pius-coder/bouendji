@@ -275,7 +275,7 @@ test("la commission utilise le taux figé à l'achat, pas le taux courant", asyn
   const order = await newOrder();
   // Le community_admin change son taux APRÈS la commande : l'historique ne
   // doit pas bouger.
-  await db.query("UPDATE communities SET commission_bps = 5000 WHERE id = $1", [COMMUNITY]);
+  await db.query("UPDATE communities SET commission_bps = 3000 WHERE id = $1", [COMMUNITY]);
   try {
     await providerSays(order.orderId, "paid");
     await webhook({ transId: order.providerRef, status: "SUCCESSFUL", amount: 2000 });
@@ -292,6 +292,20 @@ test("la commission utilise le taux figé à l'achat, pas le taux courant", asyn
   } finally {
     await db.query("UPDATE communities SET commission_bps = 2000 WHERE id = $1", [COMMUNITY]);
   }
+});
+
+test("la commission est plafonnée à 30 % et arrondie vers le bas", async () => {
+  // D35 : même si un taux supérieur arrivait par une autre voie, le calcul
+  // s'arrête à 3000 bps.
+  assert.equal(commissionFor(10_000, 3000), 3000);
+  assert.equal(commissionFor(10_000, 5000), 3000);
+  assert.equal(commissionFor(1999, 3000), 599); // floor(599,7)
+
+  // La base refuse un taux hors enveloppe, même en SQL direct.
+  await assert.rejects(
+    db.query("UPDATE communities SET commission_bps = 3001 WHERE id = $1", [COMMUNITY]),
+    /communities_commission_bps_range|check constraint/i,
+  );
 });
 
 test("le remboursement annule la commission sans solde négatif", async () => {

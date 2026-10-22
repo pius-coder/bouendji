@@ -9,6 +9,7 @@ import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminAuthRoutes } from "./routes/adminAuth.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerBundleRoutes } from "./routes/bundle.js";
+import { registerCatalogRoutes } from "./routes/catalog.js";
 import { registerDeviceRoutes } from "./routes/devices.js";
 import { registerInternalRoutes } from "./routes/internal.js";
 import { registerMeRoutes } from "./routes/me.js";
@@ -163,6 +164,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerAuthRoutes(app, db);
   registerDeviceRoutes(app, db);
   registerBundleRoutes(app, db);
+  registerCatalogRoutes(app, db);
   registerMeRoutes(app, db);
   registerOrderRoutes(app, db);
   registerPaymentRoutes(app, db);

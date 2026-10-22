@@ -9,6 +9,11 @@ captures/
 local.properties
 brand.properties
 
+# Moteur sing-box compile localement (tools/build-libbox.ps1).
+# Il se reconstruit a partir d'un tag precis ; le commiter ferait entrer 40 Mo
+# de binaire GPL dans l'historique sans jamais dire quelle version il contient.
+app/libs/*.aar
+
 # IDE
 .idea/
 *.iml

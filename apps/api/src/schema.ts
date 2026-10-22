@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS communities (
   name          text NOT NULL,
   slug          text NOT NULL UNIQUE,
   status        text NOT NULL DEFAULT 'active',
-  commission_bps integer NOT NULL DEFAULT 2000,
+  commission_bps integer NOT NULL DEFAULT 3000,
   payout_phone  text,
   payout_name   text,
   created_at    timestamptz NOT NULL DEFAULT now()
@@ -444,6 +444,15 @@ ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS replaced_at    timestamptz;
 -- The chain is walked in both directions (forward via replaced_by_id, backward
 -- by looking for rows that point at it), so the reverse lookup needs an index.
 CREATE INDEX IF NOT EXISTS sessions_replaced_by_idx ON auth_sessions(replaced_by_id);
+
+-- D35: the reseller envelope is capped at 30 % of what was collected. Existing
+-- rows above the cap are clamped once, then the constraint keeps them there.
+-- 3000 is the product default; an owner may grant less, never more.
+UPDATE communities SET commission_bps = 3000 WHERE commission_bps > 3000;
+ALTER TABLE communities ALTER COLUMN commission_bps SET DEFAULT 3000;
+ALTER TABLE communities DROP CONSTRAINT IF EXISTS communities_commission_bps_range;
+ALTER TABLE communities ADD CONSTRAINT communities_commission_bps_range
+  CHECK (commission_bps >= 0 AND commission_bps <= 3000);
 
 -- Append-only at the database level: an UPDATE or DELETE issued by any code
 -- path (including a future bug or a psql session) is a no-op instead of a

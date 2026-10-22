@@ -234,3 +234,135 @@ les versions du catalogue sont résolues par Gradle mais jamais compilées.
 Même une fois l'APK compilé, le tunnel ne s'établit pas : `TunnelEngine` n'a pas
 d'adaptateur `libbox` branché. L'APK prouve la chaîne de compilation et l'écran,
 pas le transport.
+
+## Image système de l'émulateur installée à la main (2026-10-21)
+
+L'utilisateur a fourni une archive locale au lieu de laisser Android Studio
+télécharger :
+
+```
+source   C:\Users\HP\Downloads\Compressed\x86_64-37.0_r06.zip   2,33 Go
+cible    %LOCALAPPDATA%\Android\Sdk\system-images\android-37.0\google_apis_playstore\x86_64\
+```
+
+`source.properties` de l'archive (lu avant extraction, pas deviné) :
+
+```
+SystemImage.TagId=google_apis_playstore,ai_glasses_compatible
+AndroidVersion.ApiLevel=37.0      Pkg.Revision=6
+AndroidVersion.ExtensionLevel=22  Pkg.Dependencies=emulator#36.5.11
+```
+
+Procédure réellement exécutée :
+
+1. `tar -xf <zip> -C <cible>` — la racine de l'archive est déjà `x86_64/`, donc
+   elle atterrit exactement sur le bon chemin. 27 s, 32 fichiers, 2,74 Go.
+   `system.img` = 2 809 135 104 o, `vendor.img` = 72 351 744 o.
+   **`userdata.img` est absent : c'est normal**, l'image le crée au premier boot.
+2. Le zip **ne contient pas `package.xml`** : sans lui, `sdkmanager`,
+   `avdmanager` et le Device Manager d'Android Studio ne voient pas l'image,
+   même complète. Fichier écrit à la main dans le dossier `x86_64/`, avec
+   `path="system-images;android-37.0;google_apis_playstore;x86_64"`,
+   `type-details xsi:type="ns3:sysImgDetailsType"`, `api-level 37.0`,
+   `extension-level 22`, `tag/id google_apis_playstore`, `abi x86_64`,
+   `revision major 6`.
+3. Preuve que le dépôt local l'accepte :
+   `avdmanager create avd -n Pixel_8_API_37 -k "system-images;android-37.0;google_apis_playstore;x86_64" -d pixel_8`
+   → `Auto-selecting single ABI x86_64`, AVD `Pixel_8_API_37` créé.
+
+Émulateur présent : `37.2.12.0`, supérieur au minimum `36.5.11` exigé par
+l'image. **Boot de l'AVD non encore exécuté** : l'image est reconnue, pas prouvée
+démarrable. L'appareil de référence reste le Pixel 8 en USB.
+
+## Piège Kotlin : commentaire imbriqué
+
+`ApiClient.kt` ne compilait pas (`Syntax error: Unclosed comment`, ligne 713).
+Cause : **Kotlin imbrique les commentaires bloc**. Un KDoc contenant `routes/*.ts`
+ou `/v1/auth/*` ouvre un second commentaire qui ne se referme jamais. Correctif :
+ne jamais écrire la séquence `/*` dans un commentaire ; nommer les fichiers
+(`apps/api/src/routes`) ou un chemin réel (`/v1/auth/login`). Un `grep '/\*'`
+qui ne regarde que les ouvertures ne suffit pas : il faut vérifier chaque ligne
+qui contient `/*` sans `*/`.
+## Premier APK réellement exécuté (2026-10-21)
+
+Chaîne prouvée de bout en bout, pour la première fois :
+
+```
+:app:compileDebugKotlin   BUILD SUCCESSFUL  1 min 23 s
+:app:assembleDebug        BUILD SUCCESSFUL  44 s
+app-debug.apk             85,3 Mo
+adb install -r            Success
+am start                  Starting: Intent { cmp=cm.bouendji.vpn/.MainActivity }
+```
+
+**`compileDebugKotlin` a échoué jusque-là à cause d'un commentaire imbriqué**,
+pas d'un problème d'outillage : voir la section « Piège Kotlin » plus haut.
+
+**API 37 : installation prouvée sur émulateur**, pas encore sur le Pixel 8
+(appareil absent au moment du test). L'APK cible `targetSdk 35` et s'installe
+sur `android-37.0` sans avertissement de compatibilité.
+
+### Émulateur
+
+`Pixel_8_API_37` (image `google_apis_playstore` x86_64, API 37.0, révision 6).
+WHPX est installé et utilisable (`emulator -accel-check` → `WHPX(10.0.22000) is
+installed and usable`). `avdmanager` avait écrit `hw.gpu.enabled=no` et
+`PlayStore.enabled=no` ; corrigé à la main en `hw.gpu.enabled=yes`,
+`hw.gpu.mode=host`, `hw.ramSize=3072`, `PlayStore.enabled=yes`. Boot complet en
+moins de 5 minutes, `sys.boot_completed=1`, appareil `emulator-5554`.
+
+### Ce que l'écran montre, et ce qu'il ne prouve pas
+
+Première capture réelle : barre 1 + 3 conforme, orbe central, cartes de verre,
+état `Hors ligne`, mention « Le moteur sing-box n'est pas chargé dans cette
+version. »
+
+- **C'est normal sur l'émulateur** : `libbox.aar` est compilé **arm64-v8a
+  uniquement**. Aucun `libbox.so` x86_64 n'existe, donc
+  `TunnelEngine.isAvailable()` renvoie `false`. Le tunnel ne peut pas être
+  prouvé sur émulateur ; il faut le Pixel 8 (arm64).
+- **L'écran n'est pas encore l'atelier** : l'accent Halo du code Compose est
+  `#7DE2D1` (menthe) alors que l'atelier impose `#0A7CFF` (bleu), et l'orbe
+  n'affiche pas l'arc de progression à 6 px avec `drop-shadow`. Écart de
+  matière à corriger avant de montrer l'app comme « finie ».
+- **Aperçus Android Studio** : `ui/Previews.kt` déclare sept `@Preview`
+  (Halo sombre/clair, Mono, Vector, Otaku, aucune sortie) pour juger la matière
+  sans appareil. `ui-tooling-preview` et `ui-tooling` sont déjà au catalogue.
+
+
+## Accent Halo aligné sur l'atelier (2026-10-21, vérifié)
+
+L'atelier impose --accent:#0a7cff en clair comme en sombre (aucune surcharge
+dark de l'accent, vérifié dans preview/halo/atelier.css:26 et :368-377).
+Le code Compose utilisait #7DE2D1 (sombre) et #0FAE96 (clair) : corrigé
+dans ui/theme/Identity.kt vers  xFF0A7CFF + ccentInk blanc + glow bleu
+des deux côtés. Rebuild ssembleDebug 6 s, réinstall sur emulator-5554,
+orce-stop + relance (l'instance chaude gardait l'ancien APK), capture
+%TEMP%\opencode\android-4.png : pastille et bouton bleus, conforme.
+
+## Orbe Halo fidèle à l'atelier (2026-10-21, vérifié)
+
+Constat utilisateur : « l'aperçu est moche ». Écarts mesurés contre
+preview/halo/atelier.css et corrigés dans ui/HomeScreen.kt (PowerControl)
+et ui/Atmosphere.kt (haloBackdrop), ui/theme/Identity.kt :
+- anneau 1 px + traits « lunette » inventés → piste 6u + arc 6u (u = largeur/210),
+  traits et pulsations supprimés (absents de l'atelier) ;
+- halo de l'arc en trois passes (14u @ 10 %, 10u @ 22 %, 6u @ 100 %), équivalent
+  du drop-shadow(0 0 9px rgba(10,124,255,.42)) ;
+- disque 0.62 → 0.90 de la taille (atelier : 186/210 = 0.886), dégradé radial
+  verbatim .halo-orb-in (clair : #FFFFFF → #D1FFFFFF → #9EF0F7FF → #8CE2EEFF ;
+  sombre : #22304A → #F0182236 → #F50E1522), reflet haut inset 0 1px 0,
+  ombre portée 16 dp, bordure blanche .95 en clair ;
+- aurore : blobs #A9CCFF/#CBB8FF/#BFE4FF aux alphas atelier (.65/.65/.50 clair,
+  × .34 en sombre = opacité du conteneur), fond en dégradé vertical verbatim ;
+- chrono Halo : display 42sp Light → 34sp/640/-0.7sp (halo-time) ; titre
+  21sp → 27sp/640 (halo-h). Usages 	ype.display/	ype.title vérifiés :
+  tous sont des chronos ou des titres, aucun détournement.
+- anneau complet seulement si CONNECTED (tunnel établi = fait réel) ; STOPPED =
+  piste seule, jamais de progression inventée.
+
+Piège Kotlin rencontré : le paramètre size: Dp de PowerControl masque
+DrawScope.size dans les lambdas Canvas{} → erreur Function invocation
+'width(...)' expected. Correctif : qualifier 	his.size dans les blocs Canvas.
+ssembleDebug BUILD SUCCESSFUL, réinstall + force-stop + relance sur
+emulator-5554, capture %TEMP%\opencode\android-5.png.

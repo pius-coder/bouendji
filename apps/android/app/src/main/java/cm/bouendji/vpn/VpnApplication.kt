@@ -8,8 +8,8 @@ import cm.bouendji.vpn.net.ApiClient
 import cm.bouendji.vpn.net.DeviceAuth
 import cm.bouendji.vpn.offline.ConfigVault
 import cm.bouendji.vpn.offline.OfflineBundle
+import cm.bouendji.vpn.vpn.LibboxTunnelEngine
 import cm.bouendji.vpn.vpn.TunnelEngine
-import cm.bouendji.vpn.vpn.UnavailableTunnelEngine
 
 /**
  * Point d'entrée du processus.
@@ -66,11 +66,12 @@ class AppContainer(application: Application) {
     }
 
     /**
-     * Moteur par défaut : aucun. `libbox` n'est pas intégré (aucune version
-     * vérifiée), et le service doit le dire plutôt que d'afficher « connecté ».
-     * Remplacer ici, et seulement ici, quand un adaptateur est vérifié.
+     * Le moteur réel : `libbox` (sing-box 1.14.3), compilé depuis les sources
+     * et embarqué en `.aar`. `isAvailable()` interroge la frontière JNI : si la
+     * bibliothèque native ne se charge pas, l'application le dit au lieu de
+     * prétendre protéger l'appareil.
      */
-    val tunnelEngine: TunnelEngine = UnavailableTunnelEngine()
+    val tunnelEngine: TunnelEngine = LibboxTunnelEngine(application)
 
     /**
      * Vrai quand l'appareil peut réellement participer : Android 12+ (clé

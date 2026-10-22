@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Revue — application VPN</title>
+<link rel="stylesheet" href="skin.css">
+</head>
+<body>
+
+<header class="chrome">
+  <div class="brand">Revue de l'application</div>
+  <div class="spacer"></div>
+
+  <div class="seg-ctl" id="idSeg">
+    <button data-id="halo" aria-pressed="true">Halo</button>
+    <button data-id="mono" aria-pressed="false">Mono</button>
+    <button data-id="vector" aria-pressed="false">Vector</button>
+    <button data-id="otaku" aria-pressed="false">Otaku</button>
+  </div>
+
+  <label class="picker">
+    <span>Écran</span>
+    <select id="screenSel"></select>
+  </label>
+
+  <label class="picker">
+    <span>État</span>
+    <select id="tunnelSel">
+      <option value="stopped">arrêté</option>
+      <option value="connecting">connexion</option>
+      <option value="connected" selected>connecté</option>
+      <option value="no-egress">aucune sortie</option>
+    </select>
+  </label>
+
+  <button class="pill" id="modeBtn">Mode : sombre</button>
+</header>
+
+<div class="notice">
+  Maquette. La <b>structure et les parcours</b> viennent du prototype « Le Billet » ; l'<b>habillage</b> est l'identité choisie.
+  Les montants sont des exemples, non contractuels. Aucun débit n'est affiché : nous ne le mesurons pas encore.
+</div>
+
+<main class="stage">
+  <div class="phone">
+    <div class="screen" id="screen" data-id="halo" data-mode="dark" data-tunnel="connected"></div>
+  </div>
+
+  <aside class="panel">
+    <div class="panel-title" id="panelName">Halo — verre dépoli</div>
+    <div class="swatches" id="swatches"></div>
+    <dl id="panelTokens"></dl>
+    <div class="panel-note">
+      Les valeurs ci-dessus sont celles que le thème injecte au build
+      (<code>ui/theme/Identity.kt</code>). Clique sur l'orbe pour faire tourner
+      les états, sur les lignes pour naviguer.
+    </div>
+  </aside>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

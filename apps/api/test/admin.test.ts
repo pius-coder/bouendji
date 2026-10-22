@@ -187,12 +187,12 @@ await db.query(
 
 await db.query(
   `INSERT INTO commissions (id, community_id, order_id, bps, amount_xaf, status, available_at)
-   VALUES ('cm_a1', $1, 'ord_a1', 2000, 400, 'pending', now() - interval '1 hour')`,
+   VALUES ('cm_a1', $1, 'ord_a1', 2000, 400, 'available', now() - interval '1 hour')`,
   [COM_A],
 );
 await db.query(
   `INSERT INTO commissions (id, community_id, order_id, bps, amount_xaf, status, available_at)
-   VALUES ('cm_a2', $1, 'ord_a2', 2000, 200, 'pending', now() - interval '1 hour')`,
+   VALUES ('cm_a2', $1, 'ord_a2', 2000, 200, 'available', now() - interval '1 hour')`,
   [COM_A],
 );
 
@@ -573,6 +573,86 @@ test("support lit les commandes de sa communauté sans les montants", async () =
   assert.equal(admin.status, 200);
   const adminItems = (admin.body as { items: Array<Record<string, unknown>> }).items;
   assert.ok(adminItems.some((item) => typeof item.amountXaf === "number"));
+});
+
+test("les forfaits sont propres à une marque et modifiables par son administrateur", async () => {
+  // Lecture : l'admin de A voit les offres de A, jamais celles de B.
+  const mine = await call("GET", "/apps/app_a/plans", ADMIN_A);
+  assert.equal(mine.status, 200);
+  const mineItems = (mine.body as { items: Array<Record<string, unknown>> }).items;
+  assert.ok(mineItems.some((plan) => plan.id === "plan_a"));
+  assert.ok(mineItems.every((plan) => typeof plan.revision === "number"));
+
+  const cross = await call("GET", "/apps/app_b/plans", ADMIN_A);
+  assert.equal(cross.status, 403);
+
+  // Création : le prix est la décision de la marque, pas de la plateforme.
+  const created = await call("POST", "/apps/app_a/plans", ADMIN_A, {
+    code: "annuel",
+    name: "Annuel",
+    description: "12 mois",
+    priceXaf: 20_000,
+    durationDays: 365,
+    deviceLimit: 2,
+    featured: true,
+    sortOrder: 2,
+  });
+  assert.equal(created.status, 201, created.text);
+  const plan = created.body as { id: string; priceXaf: number; revision: number; deviceLimit: number };
+  assert.equal(plan.priceXaf, 20_000);
+  assert.equal(plan.deviceLimit, 2);
+  assert.equal(typeof plan.revision, "number");
+
+  // Modification du prix : la révision change, donc une app qui affiche
+  // l'ancien prix reçoit le 409 attendu au lieu d'acheter à l'ancien tarif.
+  const patched = await call("PATCH", `/plans/${plan.id}`, ADMIN_A, { priceXaf: 25_000 });
+  assert.equal(patched.status, 200, patched.text);
+  const patchedBody = patched.body as { priceXaf: number; revision: number };
+  assert.equal(patchedBody.priceXaf, 25_000);
+  assert.notEqual(patchedBody.revision, plan.revision);
+
+  assert.equal(await auditRows("plan.create"), 1);
+  assert.equal(await auditRows("plan.update"), 1);
+
+  // Frontières : une offre d'une autre marque n'est pas modifiable, un rôle
+  // non commercial ne touche pas aux prix, et un code déjà pris est un conflit.
+  const crossPatch = await call("PATCH", "/plans/plan_b", ADMIN_A, { priceXaf: 1000 });
+  assert.equal(crossPatch.status, 403);
+
+  const supportPatch = await call("PATCH", `/plans/${plan.id}`, SUPPORT_A, { priceXaf: 1000 });
+  assert.equal(supportPatch.status, 403);
+
+  const duplicate = await call("POST", "/apps/app_a/plans", ADMIN_A, {
+    code: "mensuel",
+    name: "Doublon",
+    priceXaf: 1000,
+    durationDays: 30,
+  });
+  assert.equal(duplicate.status, 409);
+
+  const free = await call("PATCH", `/plans/${plan.id}`, ADMIN_A, { priceXaf: 0 });
+  assert.equal(free.status, 400, "une offre à 0 XAF n'est pas payable");
+});
+
+test("le catalogue public ne sert que les offres actives de l'app demandée", async () => {
+  const publicList = await app.inject({ method: "GET", url: "/v1/apps/app_a/plans" });
+  assert.equal(publicList.statusCode, 200);
+  const body = publicList.json() as { app: { id: string; name: string }; items: Array<Record<string, unknown>> };
+  assert.equal(body.app.id, "app_a");
+  assert.equal(body.app.name, "App A");
+  assert.ok(body.items.length >= 1);
+  assert.ok(body.items.every((plan) => typeof plan.priceXaf === "number"));
+  assert.ok(body.items.every((plan) => (plan as { id: string }).id !== "plan_b"), "jamais les offres de B");
+
+  const hidden = await call("PATCH", "/plans/plan_a", ADMIN_A, { active: false });
+  assert.equal(hidden.status, 200);
+  const afterHide = await app.inject({ method: "GET", url: "/v1/apps/app_a/plans" });
+  const afterBody = afterHide.json() as { items: Array<{ id: string }> };
+  assert.ok(afterBody.items.every((plan) => plan.id !== "plan_a"));
+  await call("PATCH", "/plans/plan_a", ADMIN_A, { active: true });
+
+  const unknown = await app.inject({ method: "GET", url: "/v1/apps/app_inconnue/plans" });
+  assert.equal(unknown.statusCode, 404);
 });
 
 test("désactiver un compte coupe l'accès au prochain appel, pas dans 8 h", async () => {

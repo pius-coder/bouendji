@@ -72,7 +72,7 @@ object BrandTokens {
     const val supportUrl: String = "https://support.invalid"
 
     /** Couleur d'accent `#RRGGBB`, ou `null` pour suivre le thème. */
-    const val accent: String? = null
+    val accent: String? = null
 
     /**
      * Clé publique Ed25519 (SPKI DER, base64) qui signe les bundles hors-ligne.

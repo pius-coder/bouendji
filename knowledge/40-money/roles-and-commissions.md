@@ -25,7 +25,8 @@ privilèges. `owner` est une identité unique, pas un niveau de plus.
 | Capacité | owner | community_admin | support | finance |
 |---|---|---|---|---|
 | Créer / suspendre une communauté | ✅ | — | — | — |
-| Fixer le % de commission | ✅ | lecture | — | lecture |
+| Fixer le % de commission (≤ 30 %) | ✅ | lecture | — | lecture |
+| Fixer le prix des forfaits de sa marque | ✅ | sa communauté | — | — |
 | Voir les commandes | toutes | sa communauté | sa communauté (lecture) | toutes, montants |
 | Déclencher un versement | ✅ | — | — | prépare, owner valide |
 | Approuver un endpoint | ✅ | — | — | — |
@@ -45,10 +46,20 @@ privilèges. `owner` est une identité unique, pas un niveau de plus.
 
 ## Commission
 
-- Attachée à la **commande** : `community_id`, `app_id`, taux appliqué, montant.
+> **D35 (2026-10-21) remplace le modèle « prix global ».** Le prix de vente est
+> fixé par la communauté ; la plateforme encaisse 100 %, réserve **30 %** du CA
+> en enveloppe de commissions répartie **à la performance**, et garde **70 %**.
+> Voir `00-brief/decisions.md` et `00-brief/open-questions.md` (O18).
+
+- Attachée à la **commande** : `community_id`, `app_id`, prix réellement payé,
+  taux appliqué, montant.
+- Le taux est plafonné à **30 %** (`commission_bps <= 3000`) ; l'`owner` peut
+  accorder moins, jamais plus. Une communauté ne modifie pas son propre taux.
 - Indépendante des UTM, qui ne servent qu'au suivi de campagne.
 - Renouvellements : règle configurable (premier achat seulement, ou récurrent).
 - Remboursement → annulation de la commission, jamais de solde négatif silencieux.
+- Prix, taux et montant sont **figés dans la commande** au paiement : changer le
+  prix d'un forfait ne réécrit pas les commandes passées.
 
 ## Dashboard
 

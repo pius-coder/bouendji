@@ -88,3 +88,15 @@ décision de version, pas une rotation de routine.
 Aucun build Gradle n'a été lancé (pas de JDK ni de SDK sur la machine). Le
 workflow est relu, pas exécuté : la première exécution réelle doit confirmer les
 versions d'AGP/Kotlin, la présence du wrapper et l'acceptation de `apksigner`.
+
+## Discrétion du nom (contexte produit, 2026-10-21)
+
+Les noms de marque observés sur les captures (pays, « illimiter », bouendji,
+etc.) servent aussi à **ne pas ressembler à un client VPN grand public** : le
+nom ne dit ni « VPN », ni protocole, ni fournisseur. C'est un choix de
+discrétion commerciale, pas une contrainte technique.
+
+Conséquence pour `inject-brand.mjs` : le nom, le libellé et l'icône sont libres,
+mais le `package_name` et le namespace Kotlin restent stables. Aucun texte de
+l'interface ne doit exposer `vless://`, le nom du protocole ou l'hôte du nœud.
+

@@ -26,6 +26,7 @@ import { requireAdmin, roleInCommunity, scopedCommunity, type AdminContext, type
 import { hashPassword, newId } from "../lib/crypto.js";
 import { fail } from "../lib/errors.js";
 import { issueOfflineBundle } from "../services/offlineBundles.js";
+import { MAX_COMMISSION_BPS, planRevision } from "../services/payments.js";
 
 const PREFIX = "/v1/admin";
 
@@ -56,15 +57,15 @@ const communityCreateSchema = z
   .object({
     name: z.string().trim().min(2).max(120),
     slug: slugSchema,
-    /** 0..10000 (base points). Default 2000 = 20 %. */
-    commissionBps: z.number().int().min(0).max(10_000).optional(),
+    /** 0..3000 (base points). Défaut 3000 = 30 % (D35). */
+    commissionBps: z.number().int().min(0).max(3000).optional(),
   })
   .strict();
 
 const communityPatchSchema = z
   .object({
     name: z.string().trim().min(2).max(120).optional(),
-    commissionBps: z.number().int().min(0).max(10_000).optional(),
+    commissionBps: z.number().int().min(0).max(3000).optional(),
     status: z.enum(["active", "suspended"]).optional(),
   })
   .strict()
@@ -109,6 +110,42 @@ const offlineBundleSchema = z
   })
   .strict();
 
+/* ------------------------------------------------------------- forfaits */
+
+const planCodeSchema = z
+  .string()
+  .trim()
+  .min(2)
+  .max(40)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Minuscules, chiffres et tirets uniquement.");
+
+/**
+ * L'offre appartient à une **app**, et une app appartient à une communauté
+ * (white label, D35). L'administrateur ne fixe donc que ses propres prix : le
+ * prix n'est jamais imposé par la plateforme.
+ */
+const planCreateSchema = z
+  .object({
+    code: planCodeSchema,
+    name: z.string().trim().min(2).max(80),
+    description: z.string().trim().max(500).optional(),
+    priceXaf: z.number().int().min(1).max(10_000_000),
+    durationDays: z.number().int().min(1).max(3650),
+    deviceLimit: z.number().int().min(1).max(10).optional(),
+    badge: z.string().trim().max(40).nullable().optional(),
+    featured: z.boolean().optional(),
+    active: z.boolean().optional(),
+    sortOrder: z.number().int().min(0).max(1000).optional(),
+  })
+  .strict();
+
+/** `code` est immuable : il fait partie de la révision que l'app compare. */
+const planPatchSchema = planCreateSchema
+  .omit({ code: true })
+  .partial()
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, "Aucun champ à modifier.");
+
 const listQuerySchema = z.object({
   cursor: z.string().max(512).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -133,6 +170,7 @@ type Capability =
   | "commission.read"
   | "payout.create"
   | "payout.approve"
+  | "plan.manage"
   | "endpoint.read"
   | "device.revoke"
   | "offline_bundle.issue"
@@ -151,6 +189,7 @@ type Capability =
  * | commission.read       | oui   | sa communauté   | non     | toutes  |
  * | payout.create         | oui   | non             | non     | sa comm.|
  * | payout.approve        | oui   | non             | non     | non     |
+ * | plan.manage           | oui   | sa communauté   | non     | non     |
  * | endpoint.read         | oui   | oui (lecture)   | oui     | non     |
  * | device.revoke         | oui   | sa communauté   | sa comm.| non     |
  * | offline_bundle.issue  | oui   | sa communauté   | sa comm.| non     |
@@ -181,6 +220,10 @@ function permitted(admin: AdminContext, capability: Capability, communityId: str
       return local === "finance";
     case "payout.approve":
       return false;
+    case "plan.manage":
+      // Le prix est la décision commerciale de la marque, pas une opération de
+      // caisse : `finance` et `support` n'y touchent pas.
+      return local === "community_admin";
     case "endpoint.read":
       return anyRole(["community_admin", "support"]);
     case "device.revoke":
@@ -242,6 +285,13 @@ function decodeCursor(raw: string): Cursor {
 async function mustCommunity(db: Queryable, communityId: string): Promise<void> {
   const row = await db.one("SELECT id FROM communities WHERE id = $1", [communityId]);
   if (!row) throw fail.notFound("Communauté introuvable.");
+}
+
+/** Une app porte la marque ; sa communauté est la frontière d'autorisation. */
+async function mustApp(db: Queryable, appId: string): Promise<Row> {
+  const row = await db.one<Row>("SELECT id, community_id, name FROM apps WHERE id = $1", [appId]);
+  if (!row) throw fail.notFound("Application introuvable.");
+  return row;
 }
 
 /** Dernier `community_admin` actif : le retirer verrouillerait la communauté. */
@@ -313,6 +363,32 @@ function communityDto(row: Row) {
     commissionBps: Number(row.commission_bps),
     createdAt: iso(row.created_at),
     suspended: row.status !== "active",
+  };
+}
+
+function planDto(row: Row) {
+  const plan = {
+    code: row.code as string,
+    price_xaf: Number(row.price_xaf),
+    duration_days: Number(row.duration_days),
+    device_limit: Number(row.device_limit),
+    active: row.active === true,
+  };
+  return {
+    id: row.id as string,
+    appId: row.app_id as string,
+    code: plan.code,
+    name: row.name as string,
+    description: row.description as string,
+    priceXaf: plan.price_xaf,
+    durationDays: plan.duration_days,
+    deviceLimit: plan.device_limit,
+    badge: (row.badge as string | null) ?? null,
+    featured: row.featured === true,
+    active: plan.active,
+    sortOrder: Number(row.sort_order),
+    /** Même valeur que le `409 CONFLICT` renvoyé par la création de commande. */
+    revision: planRevision(plan),
   };
 }
 
@@ -450,14 +526,14 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       await db.tx(async (q) => {
         await q.query(
           `INSERT INTO communities (id, name, slug, commission_bps) VALUES ($1, $2, $3, $4)`,
-          [id, input.name, input.slug, input.commissionBps ?? 2000],
+          [id, input.name, input.slug, input.commissionBps ?? 3000],
         );
         await appendAudit(q, admin, req, {
           action: "community.create",
           targetType: "community",
           targetId: id,
           communityId: id,
-          after: { name: input.name, slug: input.slug, commissionBps: input.commissionBps ?? 2000 },
+          after: { name: input.name, slug: input.slug, commissionBps: input.commissionBps ?? 3000 },
         });
       });
     } catch (err) {
@@ -510,6 +586,114 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
 
     const updated = await db.one<Row>("SELECT * FROM communities WHERE id = $1", [communityId]);
     return communityDto(updated as Row);
+  });
+
+  /* --------------------------------------------------------- forfaits (prix) */
+
+  app.get<{ Params: { appId: string } }>(`${PREFIX}/apps/:appId/plans`, async (req) => {
+    const admin = await requireAdmin(db, req);
+    const appRow = await mustApp(db, req.params.appId);
+    const communityId = scopedCommunity(admin, String(appRow.community_id)) as string;
+    authorize(admin, "community.read", communityId);
+    const rows = await db.query<Row>(
+      "SELECT * FROM plans WHERE app_id = $1 ORDER BY sort_order ASC, price_xaf ASC",
+      [req.params.appId],
+    );
+    return { items: rows.map(planDto) };
+  });
+
+  app.post<{ Params: { appId: string } }>(`${PREFIX}/apps/:appId/plans`, async (req, reply) => {
+    const admin = await requireAdmin(db, req);
+    const appRow = await mustApp(db, req.params.appId);
+    const communityId = scopedCommunity(admin, String(appRow.community_id)) as string;
+    authorize(admin, "plan.manage", communityId);
+    const input = parseBody(planCreateSchema, req.body);
+    const id = newId();
+
+    try {
+      await db.tx(async (q) => {
+        await q.query(
+          `INSERT INTO plans (id, app_id, code, name, description, price_xaf, duration_days,
+                              device_limit, badge, featured, active, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            id,
+            req.params.appId,
+            input.code,
+            input.name,
+            input.description ?? "",
+            input.priceXaf,
+            input.durationDays,
+            input.deviceLimit ?? 1,
+            input.badge ?? null,
+            input.featured ?? false,
+            input.active ?? true,
+            input.sortOrder ?? 0,
+          ],
+        );
+        await appendAudit(q, admin, req, {
+          action: "plan.create",
+          targetType: "plan",
+          targetId: id,
+          communityId,
+          after: { appId: req.params.appId, code: input.code, priceXaf: input.priceXaf },
+        });
+      });
+    } catch (err) {
+      if (isUniqueViolation(err)) throw fail.conflict("Ce code d'offre existe déjà pour cette application.");
+      throw err;
+    }
+
+    const created = await db.one<Row>("SELECT * FROM plans WHERE id = $1", [id]);
+    return reply.code(201).send(planDto(created as Row));
+  });
+
+  app.patch<{ Params: { planId: string } }>(`${PREFIX}/plans/:planId`, async (req) => {
+    const admin = await requireAdmin(db, req);
+    const before = await db.one<Row>(
+      `SELECT p.*, a.community_id FROM plans p JOIN apps a ON a.id = p.app_id WHERE p.id = $1`,
+      [req.params.planId],
+    );
+    if (!before) throw fail.notFound("Offre introuvable.");
+    const communityId = scopedCommunity(admin, String(before.community_id)) as string;
+    authorize(admin, "plan.manage", communityId);
+    const input = parseBody(planPatchSchema, req.body);
+
+    const name = input.name ?? (before.name as string);
+    const description = input.description ?? (before.description as string);
+    const priceXaf = input.priceXaf ?? Number(before.price_xaf);
+    const durationDays = input.durationDays ?? Number(before.duration_days);
+    const deviceLimit = input.deviceLimit ?? Number(before.device_limit);
+    const badge = input.badge !== undefined ? input.badge : ((before.badge as string | null) ?? null);
+    const featured = input.featured ?? before.featured === true;
+    const active = input.active ?? before.active === true;
+    const sortOrder = input.sortOrder ?? Number(before.sort_order);
+
+    await db.tx(async (q) => {
+      await q.query(
+        `UPDATE plans
+            SET name = $2, description = $3, price_xaf = $4, duration_days = $5,
+                device_limit = $6, badge = $7, featured = $8, active = $9, sort_order = $10
+          WHERE id = $1`,
+        [req.params.planId, name, description, priceXaf, durationDays, deviceLimit, badge, featured, active, sortOrder],
+      );
+      await appendAudit(q, admin, req, {
+        action: "plan.update",
+        targetType: "plan",
+        targetId: req.params.planId,
+        communityId,
+        before: {
+          name: before.name,
+          priceXaf: Number(before.price_xaf),
+          durationDays: Number(before.duration_days),
+          active: before.active,
+        },
+        after: { name, priceXaf, durationDays, active },
+      });
+    });
+
+    const updated = await db.one<Row>("SELECT * FROM plans WHERE id = $1", [req.params.planId]);
+    return planDto(updated as Row);
   });
 
   /* ----------------------------------------------------- personnel (staff) */
@@ -888,7 +1072,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       const totals = await q.one<Row>(
         `SELECT COALESCE(SUM(amount_xaf), 0) AS total, count(*) AS n
            FROM commissions
-          WHERE community_id = $1 AND status = 'pending' AND payout_id IS NULL AND available_at <= now()`,
+          WHERE community_id = $1 AND status = 'available' AND payout_id IS NULL AND available_at <= now()`,
         [communityId],
       );
       amountXaf = Number(totals?.total ?? 0);
@@ -904,7 +1088,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       );
       const attached = await q.query<Row>(
         `UPDATE commissions SET payout_id = $1
-          WHERE community_id = $2 AND status = 'pending' AND payout_id IS NULL AND available_at <= now()
+          WHERE community_id = $2 AND status = 'available' AND payout_id IS NULL AND available_at <= now()
           RETURNING id`,
         [id, communityId],
       );

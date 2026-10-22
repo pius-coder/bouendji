@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aperçu des identités — application VPN</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    min-height: 100vh;
+    background: #0a0a0c;
+    color: #e8e8ee;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0;
+  }
+
+  /* ---------------------------------------------------------------- barre */
+
+  .toolbar {
+    position: sticky; top: 0; z-index: 20;
+    grid-column: 1 / -1;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+    padding: 14px 22px;
+    background: #111116;
+    border-bottom: 1px solid #23232b;
+  }
+  .toolbar .brand {
+    font-size: 13px; letter-spacing: .16em; text-transform: uppercase; color: #8b8b9a;
+  }
+  .toolbar .spacer { flex: 1; }
+
+  .seg { display: flex; border: 1px solid #2c2c36; border-radius: 999px; overflow: hidden; }
+  .seg button {
+    appearance: none; border: 0; background: transparent; color: #b9b9c6;
+    padding: 8px 15px; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .seg button:hover { background: #1c1c24; color: #fff; }
+  .seg button[aria-pressed="true"] { background: #e9e9f2; color: #0b0b0f; font-weight: 600; }
+
+  .pill {
+    appearance: none; cursor: pointer; font-family: inherit; font-size: 13px;
+    padding: 8px 15px; border-radius: 999px;
+    border: 1px solid #2c2c36; background: transparent; color: #b9b9c6;
+  }
+  .pill:hover { background: #1c1c24; color: #fff; }
+
+  /* ---------------------------------------------------------------- scène */
+
+  .stage {
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 34px 24px 60px;
+  }
+
+  .device {
+    width: 390px; height: 844px;
+    border-radius: 46px;
+    padding: 10px;
+    background: linear-gradient(160deg, #2a2a33, #121216);
+    box-shadow: 0 40px 90px rgba(0,0,0,.65), inset 0 0 0 1px #3a3a45;
+    flex: 0 0 auto;
+  }
+
+  .screen {
+    position: relative;
+    width: 100%; height: 100%;
+    border-radius: 38px;
+    overflow: hidden;
+    background: var(--canvas);
+    color: var(--ink);
+    transition: background .35s ease, color .35s ease;
+    --radius-card: 28px;
+    --radius-chip: 999px;
+    --border: 1px;
+    --gutter: 20px;
+    --control: 268px;
+    --display-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --body-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --label-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --display-weight: 200;
+    --display-size: 42px;
+    --title-size: 21px;
+    --title-weight: 600;
+    --label-size: 10px;
+    --label-track: 1.8px;
+    --title-font: var(--display-font);
+  }
+
+  /* --- halos / trames, dessinés en CSS pur --- */
+  .backdrop { position: absolute; inset: 0; pointer-events: none; }
+
+  .screen[data-identity="halo"] .backdrop {
+    background:
+      radial-gradient(58% 42% at 16% 8%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
+      radial-gradient(52% 38% at 94% 40%, color-mix(in srgb, var(--canvas-alt) 70%, transparent), transparent 72%),
+      radial-gradient(60% 44% at 74% 96%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 74%);
+    filter: blur(6px);
+  }
+
+  .screen[data-identity="mono"] .backdrop {
+    background:
+      linear-gradient(90deg, transparent calc(8% - .5px), var(--line) calc(8% - .5px), var(--line) calc(8% + .5px), transparent calc(8% + .5px)),
+      linear-gradient(90deg, transparent calc(50% - .5px), var(--line) calc(50% - .5px), var(--line) calc(50% + .5px), transparent calc(50% + .5px)),
+      linear-gradient(90deg, transparent calc(92% - .5px), var(--line) calc(92% - .5px), var(--line) calc(92% + .5px), transparent calc(92% + .5px)),
+      linear-gradient(180deg, transparent 62%, var(--ink-soft) 62%, var(--ink-soft) 62.6%, transparent 62.6%);
+    opacity: .55;
+  }
+
+  .screen[data-identity="vector"] .backdrop::before,
+  .screen[data-identity="vector"] .backdrop::after {
+    content: ""; position: absolute; inset: 0;
+  }
+  .screen[data-identity="vector"] .backdrop::before {
+    background: repeating-linear-gradient(0deg, color-mix(in srgb, var(--accent) 6%, transparent) 0 1px, transparent 1px 3px);
+  }
+  .screen[data-identity="vector"] .backdrop::after {
+    background:
+      repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 13%, transparent) 0 1px, transparent 1px 24px),
+      radial-gradient(120% 80% at 50% 50%, transparent 55%, rgba(0,0,0,.45));
+  }
+
+  .screen[data-identity="otaku"] .backdrop::before,
+  .screen[data-identity="otaku"] .backdrop::after {
+    content: ""; position: absolute; inset: 0;
+  }
+  .screen[data-identity="otaku"] .backdrop::before {
+    background-image: radial-gradient(color-mix(in srgb, var(--ink) 16%, transparent) 1.7px, transparent 1.8px);
+    background-size: 14px 14px;
+    -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 42%, transparent 60%);
+            mask-image: linear-gradient(180deg, #000 0%, #000 42%, transparent 60%);
+    opacity: .8;
+  }
+  .screen[data-identity="otaku"] .backdrop::after {
+    background: repeating-linear-gradient(115deg, transparent 0 15px, color-mix(in srgb, var(--accent) 26%, transparent) 15px 17px);
+    -webkit-mask-image: radial-gradient(70% 40% at 88% 4%, #000 0%, transparent 72%);
+            mask-image: radial-gradient(70% 40% at 88% 4%, #000 0%, transparent 72%);
+    opacity: .55;
+  }
+
+  /* --------------------------------------------------------------- contenu */
+
+  .content {
+    position: relative; z-index: 2;
+    height: 100%;
+    padding: 54px var(--gutter) 26px;
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .content::-webkit-scrollbar { display: none; }
+
+  .topbar { display: flex; align-items: center; height: 56px; flex: 0 0 auto; }
+  .lead { display: flex; align-items: center; gap: 10px; }
+  .mark {
+    width: 10px; height: 10px; border-radius: 999px; background: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .screen[data-identity="otaku"] .mark { width: 14px; height: 14px; border-radius: 4px; }
+  .screen[data-identity="mono"] .mark { border-radius: 1px; }
+  .screen[data-identity="vector"] .mark { border-radius: 1px; box-shadow: 0 0 8px var(--accent); }
+  .appname {
+    font-family: var(--label-font); font-size: 10px; letter-spacing: var(--label-track);
+    text-transform: uppercase; color: var(--ink-soft);
+  }
+  .trail { margin-left: auto; display: flex; align-items: center; }
+  .iconbtn {
+    width: 44px; height: 44px; display: grid; place-items: center;
+    border: 0; background: transparent; color: var(--ink-soft); cursor: pointer;
+    border-radius: 999px; transition: color .2s, background .2s;
+  }
+  .iconbtn:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+  .iconbtn svg { width: 19px; height: 19px; }
+
+  .headline { margin-top: 16px; flex: 0 0 auto; }
+  .overline {
+    font-family: var(--label-font); font-size: var(--label-size); letter-spacing: var(--label-track);
+    text-transform: uppercase; color: var(--ink-faint);
+  }
+  h1 {
+    margin: 6px 0 0;
+    font-family: var(--title-font); font-size: var(--title-size); font-weight: var(--title-weight);
+    letter-spacing: -.01em; color: var(--ink);
+  }
+  .screen[data-identity="otaku"] h1 { font-style: italic; letter-spacing: -.03em; }
+  .screen[data-identity="mono"] h1 { letter-spacing: -.02em; }
+
+  /* --------------------------------------------------------- contrôle principal */
+
+  .controlwrap { margin: 22px auto 26px; position: relative; width: var(--control); height: var(--control); flex: 0 0 auto; }
+
+  button.control {
+    position: absolute; inset: 0; border: 0; padding: 0; background: transparent; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button.control:active .core { transform: scale(.965); }
+
+  .rings { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .rings .hair { fill: none; stroke: var(--line); stroke-width: 1; }
+  .rings .tick { stroke: var(--ink-faint); stroke-width: 1; opacity: .35; }
+  .rings .spin { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; opacity: 0; }
+  .rings .pulse { fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0; }
+
+  .screen[data-state="connecting"] .rings .spin,
+  .screen[data-state="reconnecting"] .rings .spin {
+    opacity: 1;
+    transform-origin: 50% 50%;
+    animation: spin 1.4s linear infinite;
+  }
+  .screen[data-state="connected"] .rings .pulse { animation: pulse 2.2s ease-out infinite; }
+  .screen[data-state="connected"] .rings .pulse.b { animation-delay: .55s; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse {
+    0%   { opacity: .55; transform: scale(.86); }
+    100% { opacity: 0;   transform: scale(1); }
+  }
+  .rings .pulse { transform-origin: 50% 50%; }
+
+  .core {
+    position: absolute; left: 50%; top: 50%;
+    width: 62%; height: 62%;
+    transform: translate(-50%, -50%);
+    border-radius: var(--radius-chip);
+    background: linear-gradient(180deg, var(--surface-strong), var(--surface));
+    border: var(--border) solid var(--line);
+    display: grid; place-items: center; text-align: center;
+    transition: transform .12s ease, border-color .3s, box-shadow .3s;
+  }
+  .screen[data-state="connected"] .core {
+    border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent),
+                0 24px 60px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .screen[data-identity="vector"].screen[data-state="connected"] .core {
+    box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 35%, transparent), inset 0 0 18px color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .timer {
+    font-family: var(--display-font); font-size: var(--display-size); font-weight: var(--display-weight);
+    color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1;
+    letter-spacing: .01em;
+  }
+  .screen[data-identity="otaku"] .timer { font-style: italic; font-weight: 900; letter-spacing: -.03em; }
+  .screen[data-identity="vector"] .timer { text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 55%, transparent); }
+
+  .corelabel {
+    margin-top: 8px;
+    font-family: var(--label-font); font-size: var(--label-size); letter-spacing: var(--label-track);
+    text-transform: uppercase; color: var(--state-color, var(--accent));
+  }
+
+  .powericon { color: var(--state-color, var(--accent)); }
+  .powericon svg { width: 38px; height: 38px; display: block; }
+
+  /* ----------------------------------------------------------------- cartes */
+
+  .card {
+    position: relative;
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    border: var(--border) solid var(--line);
+    padding: 18px;
+    margin-bottom: 14px;
+  }
+  .screen[data-identity="halo"] .card {
+    backdrop-filter: blur(14px) saturate(1.1);
+    -webkit-backdrop-filter: blur(14px) saturate(1.1);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent);
+  }
+  .screen[data-identity="otaku"] .card { box-shadow: 5px 5px 0 var(--ink); }
+  .screen[data-identity="mono"] .card { padding: 20px; }
+  .screen[data-identity="vector"] .card { background: color-mix(in srgb, var(--surface) 92%, transparent); }
+
+  .card h2 {
+    margin: 0 0 10px;
+    font-family: var(--label-font); font-size: var(--label-size); letter-spacing: var(--label-track);
+    text-transform: uppercase; color: var(--ink-faint); font-weight: 600;
+  }
+  .card p { margin: 0; font-family: var(--body-font); font-size: 14px; line-height: 1.5; color: var(--ink); }
+  .card p.muted { color: var(--ink-soft); }
+
+  .fact {
+    display: flex; align-items: center; gap: 12px;
+    padding: 6px 0;
+    font-family: var(--body-font); font-size: 13px; color: var(--ink-soft);
+  }
+  .fact b {
+    margin-left: auto; font-weight: 500;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 12px; color: var(--ink);
+  }
+
+  .footer { margin-top: 10px; }
+  .footer .promise { font-family: var(--body-font); font-size: 13px; color: var(--ink-soft); }
+  .footer .meta {
+    margin-top: 6px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 11px; color: var(--ink-faint);
+  }
+
+  /* ---------------------------------------------------------------- jetons */
+
+  .tokens {
+    width: 330px; padding: 34px 26px 60px 26px;
+    border-left: 1px solid #1e1e26;
+    background: #0d0d11;
+    position: sticky; top: 61px; align-self: start;
+    max-height: calc(100vh - 61px); overflow-y: auto;
+  }
+  .tokens h3 {
+    margin: 0 0 4px; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: #7f7f90;
+  }
+  .tokens .dir { font-size: 15px; font-weight: 600; color: #ececf4; margin-bottom: 18px; }
+  .tokens dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; font-size: 12.5px; }
+  .tokens dt { color: #83839a; }
+  .tokens dd { margin: 0; color: #dcdce8; font-family: ui-monospace, Consolas, monospace; text-align: right; }
+  .tokens .note {
+    margin-top: 20px; padding-top: 16px; border-top: 1px solid #1e1e26;
+    font-size: 12px; line-height: 1.6; color: #7c7c90;
+  }
+  .tokens .note code { color: #b9b9cc; font-size: 11.5px; }
+  .swatches { display: flex; gap: 6px; margin: 14px 0 18px; }
+  .swatch { width: 26px; height: 26px; border-radius: 7px; border: 1px solid #2a2a34; }
+
+  @media (max-width: 980px) {
+    body { grid-template-columns: 1fr; }
+    .tokens { width: auto; border-left: 0; border-top: 1px solid #1e1e26; position: static; max-height: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <div class="brand">Aperçu — identités de l'application</div>
+  <div class="spacer"></div>
+
+  <div class="seg" id="identitySeg">
+    <button data-identity="halo" aria-pressed="true">Halo</button>
+    <button data-identity="mono">Mono</button>
+    <button data-identity="vector">Vector</button>
+    <button data-identity="otaku">Otaku</button>
+  </div>
+
+  <button class="pill" id="modeBtn">Mode : sombre</button>
+  <button class="pill" id="stateBtn">État : arrêté</button>
+</div>
+
+<main class="stage">
+  <div class="device">
+    <div class="screen" id="screen" data-identity="halo" data-state="stopped">
+      <div class="backdrop"></div>
+
+      <div class="content">
+        <div class="topbar">
+          <div class="lead">
+            <span class="mark"></span>
+            <span class="appname">Bouendji VPN</span>
+          </div>
+          <div class="trail">
+            <button class="iconbtn" id="modeIcon" title="Basculer clair / sombre" aria-label="Basculer clair / sombre">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                <circle cx="12" cy="12" r="8.4"/>
+                <path d="M12 3.6a8.4 8.4 0 0 0 0 16.8z" fill="currentColor" stroke="none"/>
+              </svg>
+            </button>
+            <button class="iconbtn" title="Contacter le support" aria-label="Contacter le support">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                <path d="M6 18 18 6"/><path d="M10 6h8v8"/>
+              </svg>
+            </button>
+            <button class="iconbtn" title="Réglages" aria-label="Réglages">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                <path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>
+                <circle cx="15" cy="7" r="2" fill="var(--surface-strong)"/>
+                <circle cx="9" cy="12" r="2" fill="var(--surface-strong)"/>
+                <circle cx="14" cy="17" r="2" fill="var(--surface-strong)"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="headline">
+          <div class="overline">État du tunnel</div>
+          <h1 id="headline">Hors ligne</h1>
+        </div>
+
+        <div class="controlwrap">
+          <button class="control" id="control" aria-label="Connecter ou arrêter le tunnel">
+            <svg class="rings" viewBox="0 0 268 268">
+              <circle class="hair" cx="134" cy="134" r="133"/>
+              <circle class="pulse"   cx="134" cy="134" r="115"/>
+              <circle class="pulse b" cx="134" cy="134" r="99"/>
+              <circle class="spin"    cx="134" cy="134" r="110" stroke-dasharray="120 570"/>
+              <g id="ticks"></g>
+            </svg>
+            <div class="core" id="core"></div>
+          </button>
+        </div>
+
+        <section class="card">
+          <h2>Diagnostic</h2>
+          <p id="diagnostic">Le tunnel est arrêté. Rien ne sort par lui.</p>
+        </section>
+
+        <section class="card">
+          <h2>Interface</h2>
+          <div class="fact">Adresse <b>172.19.0.1/30</b></div>
+          <div class="fact">MTU <b>1500</b></div>
+          <div class="fact">DNS <b>1.1.1.1 · 1.0.0.1</b></div>
+          <div class="fact">Moteur <b id="engineLabel">libbox-1.14.3</b></div>
+        </section>
+
+        <div class="footer">
+          <div class="promise" id="promise">La lumière passe. Le tunnel reste.</div>
+          <div class="meta">Bouendji VPN · 0.1.0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="tokens">
+    <h3>Direction</h3>
+    <div class="dir" id="dirName">Halo — verre dépoli</div>
+
+    <div class="swatches" id="swatches"></div>
+
+    <dl>
+      <dt>Rayon des cartes</dt><dd id="tRadius">28px</dd>
+      <dt>Rayon des pastilles</dt><dd id="tChip">999px</dd>
+      <dt>Épaisseur du trait</dt><dd id="tBorder">1px</dd>
+      <dt>Marge latérale</dt><dd id="tGutter">20px</dd>
+      <dt>Diamètre du contrôle</dt><dd id="tControl">268px</dd>
+      <dt>Police d'affichage</dt><dd id="tFont">Système</dd>
+      <dt>Graisse du chrono</dt><dd id="tWeight">200</dd>
+      <dt>Chrono</dt><dd id="tSize">42px</dd>
+      <dt>Interlettrage libellés</dt><dd id="tTrack">1.8px</dd>
+    </dl>
+
+    <div class="note">
+      Ces valeurs sont celles du code Kotlin :<br>
+      <code>ui/theme/Identity.kt</code> (couleurs, rayons, typographies) et
+      <code>ui/HomeScreen.kt</code> (barre 1 + 3, contrôle, chrono à l'intérieur).<br><br>
+      Clique sur le disque pour voir les états : arrêté → connexion → connecté
+      (le chrono tourne) → aucune sortie.
+    </div>
+  </aside>
+</main>
+
+<script>
+  // --- Jetons : miroir exact de identityFor() côté Kotlin -------------------
+  const TOKENS = {
+    halo: {
+      dark: {
+        canvas: "#070A12", canvasAlt: "#0B1120",
+        surface: "rgba(18,26,43,.90)", surfaceStrong: "rgba(26,36,56,.95)",
+        ink: "#F3F7FF", inkSoft: "#A9B6CE", inkFaint: "#6B7896",
+        accent: "#7DE2D1", line: "rgba(255,255,255,.12)",
+        ok: "#5BE0A8", warn: "#FFC46B", bad: "#FF7A8A",
+        radiusCard: "28px", radiusChip: "999px", border: "1px", gutter: "20px", control: "268px",
+        displayFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        bodyFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        labelFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        displayWeight: "200", displaySize: "42px", titleSize: "21px", titleWeight: "600",
+        labelSize: "10px", labelTrack: "1.8px", fontName: "Système (sans)",
+        dir: "Halo — verre dépoli",
+        promise: "La lumière passe. Le tunnel reste."
+      },
+      light: {
+        canvas: "#EDF1F8", canvasAlt: "#E2E9F5",
+        surface: "rgba(255,255,255,.88)", surfaceStrong: "#FFFFFF",
+        ink: "#0A1020", inkSoft: "#54607A", inkFaint: "#8A94AA",
+        accent: "#0FAE96", line: "rgba(0,0,0,.09)",
+        ok: "#0E9E6E", warn: "#A96B00", bad: "#C93048",
+        radiusCard: "28px", radiusChip: "999px", border: "1px", gutter: "20px", control: "268px",
+        displayFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        bodyFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        labelFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        displayWeight: "200", displaySize: "42px", titleSize: "21px", titleWeight: "600",
+        labelSize: "10px", labelTrack: "1.8px", fontName: "Système (sans)",
+        dir: "Halo — verre dépoli",
+        promise: "La lumière passe. Le tunnel reste."
+      }
+    },
+    mono: {
+      dark: {
+        canvas: "#0B0B0B", canvasAlt: "#111111",
+        surface: "#141414", surfaceStrong: "#1C1C1C",
+        ink: "#F4F1EA", inkSoft: "#9E9A91", inkFaint: "#6A665F",
+        accent: "#F4F1EA", line: "#2A2A2A",
+        ok: "#9ED8A4", warn: "#E3C07A", bad: "#E2857F",
+        radiusCard: "2px", radiusChip: "2px", border: "1px", gutter: "24px", control: "252px",
+        displayFont: 'Georgia, "Times New Roman", "Iowan Old Style", serif',
+        bodyFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        labelFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        displayWeight: "400", displaySize: "38px", titleSize: "20px", titleWeight: "400",
+        labelSize: "9px", labelTrack: "2.4px", fontName: "Serif (Georgia)",
+        dir: "Mono — éditorial",
+        promise: "Rien à cacher, rien à montrer."
+      },
+      light: {
+        canvas: "#F6F3EC", canvasAlt: "#EFEAE0",
+        surface: "#FFFEFA", surfaceStrong: "#FFFFFF",
+        ink: "#141210", inkSoft: "#5B574F", inkFaint: "#8C877C",
+        accent: "#141210", line: "#DDD6C7",
+        ok: "#2C6E49", warn: "#8A5A00", bad: "#9B2C2C",
+        radiusCard: "2px", radiusChip: "2px", border: "1px", gutter: "24px", control: "252px",
+        displayFont: 'Georgia, "Times New Roman", "Iowan Old Style", serif',
+        bodyFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        labelFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        displayWeight: "400", displaySize: "38px", titleSize: "20px", titleWeight: "400",
+        labelSize: "9px", labelTrack: "2.4px", fontName: "Serif (Georgia)",
+        dir: "Mono — éditorial",
+        promise: "Rien à cacher, rien à montrer."
+      }
+    },
+    vector: {
+      dark: {
+        canvas: "#04070A", canvasAlt: "#06120D",
+        surface: "#08130F", surfaceStrong: "#0C1B15",
+        ink: "#C9FFDA", inkSoft: "#6FBF8B", inkFaint: "#3F7A57",
+        accent: "#39FF88", line: "#14301F",
+        ok: "#39FF88", warn: "#FFD166", bad: "#FF5C5C",
+        radiusCard: "4px", radiusChip: "2px", border: "1px", gutter: "16px", control: "256px",
+        displayFont: 'ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace',
+        bodyFont: 'ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace',
+        labelFont: 'ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace',
+        displayWeight: "400", displaySize: "36px", titleSize: "17px", titleWeight: "700",
+        labelSize: "9px", labelTrack: "1.6px", fontName: "Monospace",
+        dir: "Vector — tube cathodique",
+        promise: "Le signal, sans le bruit."
+      },
+      light: {
+        canvas: "#E9F6ED", canvasAlt: "#DCEFE2",
+        surface: "#F3FCF6", surfaceStrong: "#FFFFFF",
+        ink: "#0A2415", inkSoft: "#356B49", inkFaint: "#6C9A7C",
+        accent: "#0E8F4A", line: "#B9DCC5",
+        ok: "#0E8F4A", warn: "#8A6100", bad: "#B03030",
+        radiusCard: "4px", radiusChip: "2px", border: "1px", gutter: "16px", control: "256px",
+        displayFont: 'ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace',
+        bodyFont: 'ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace',
+        labelFont: 'ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace',
+        displayWeight: "400", displaySize: "36px", titleSize: "17px", titleWeight: "700",
+        labelSize: "9px", labelTrack: "1.6px", fontName: "Monospace",
+        dir: "Vector — tube cathodique",
+        promise: "Le signal, sans le bruit."
+      }
+    },
+    otaku: {
+      dark: {
+        canvas: "#101014", canvasAlt: "#16161C",
+        surface: "#1A1A22", surfaceStrong: "#22222C",
+        ink: "#FAFAFA", inkSoft: "#A6A6B4", inkFaint: "#6E6E7E",
+        accent: "#FF4D7D", line: "#33333F",
+        ok: "#57E2A0", warn: "#FFC24B", bad: "#FF5B5B",
+        radiusCard: "20px", radiusChip: "999px", border: "3px", gutter: "18px", control: "272px",
+        displayFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        bodyFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        labelFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        displayWeight: "900", displaySize: "40px", titleSize: "22px", titleWeight: "900",
+        labelSize: "10px", labelTrack: "1.2px", fontName: "Système (sans, 900)",
+        dir: "Otaku — manga",
+        promise: "Ton réseau, ton arc narratif."
+      },
+      light: {
+        canvas: "#FDFDFD", canvasAlt: "#F2F2F4",
+        surface: "#FFFFFF", surfaceStrong: "#FFFFFF",
+        ink: "#0B0B0B", inkSoft: "#585864", inkFaint: "#8A8A96",
+        accent: "#FF3B6B", line: "#0B0B0B",
+        ok: "#128F5B", warn: "#9A6A00", bad: "#C0283F",
+        radiusCard: "20px", radiusChip: "999px", border: "3px", gutter: "18px", control: "272px",
+        displayFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        bodyFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        labelFont: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+        displayWeight: "900", displaySize: "40px", titleSize: "22px", titleWeight: "900",
+        labelSize: "10px", labelTrack: "1.2px", fontName: "Système (sans, 900)",
+        dir: "Otaku — manga",
+        promise: "Ton réseau, ton arc narratif."
+      }
+    }
+  };
+
+  const screenEl = document.getElementById("screen");
+  const coreEl = document.getElementById("core");
+  const headlineEl = document.getElementById("headline");
+  const diagEl = document.getElementById("diagnostic");
+  const promiseEl = document.getElementById("promise");
+  const modeBtn = document.getElementById("modeBtn");
+  const stateBtn = document.getElementById("stateBtn");
+
+  let identity = "halo";
+  let mode = "dark";
+  let state = "stopped";
+  let connectedAt = 0;
+  let ticker = null;
+  let connectingTimer = null;
+
+  function current() { return TOKENS[identity][mode]; }
+
+  function apply() {
+    const t = current();
+    const s = screenEl.style;
+    s.setProperty("--canvas", t.canvas);
+    s.setProperty("--canvas-alt", t.canvasAlt);
+    s.setProperty("--surface", t.surface);
+    s.setProperty("--surface-strong", t.surfaceStrong);
+    s.setProperty("--ink", t.ink);
+    s.setProperty("--ink-soft", t.inkSoft);
+    s.setProperty("--ink-faint", t.inkFaint);
+    s.setProperty("--accent", t.accent);
+    s.setProperty("--line", t.line);
+    s.setProperty("--ok", t.ok);
+    s.setProperty("--warn", t.warn);
+    s.setProperty("--bad", t.bad);
+
+    s.setProperty("--radius-card", t.radiusCard);
+    s.setProperty("--radius-chip", t.radiusChip);
+    s.setProperty("--border", t.border);
+    s.setProperty("--gutter", t.gutter);
+    s.setProperty("--control", t.control);
+    s.setProperty("--display-font", t.displayFont);
+    s.setProperty("--body-font", t.bodyFont);
+    s.setProperty("--label-font", t.labelFont);
+    s.setProperty("--title-font", t.displayFont);
+    s.setProperty("--display-weight", t.displayWeight);
+    s.setProperty("--display-size", t.displaySize);
+    s.setProperty("--title-size", t.titleSize);
+    s.setProperty("--title-weight", t.titleWeight);
+    s.setProperty("--label-size", t.labelSize);
+    s.setProperty("--label-track", t.labelTrack);
+
+    screenEl.dataset.identity = identity;
+    screenEl.dataset.state = state;
+
+    document.getElementById("dirName").textContent = t.dir;
+    document.getElementById("promise").textContent = t.promise;
+    document.getElementById("tRadius").textContent = t.radiusCard;
+    document.getElementById("tChip").textContent = t.radiusChip;
+    document.getElementById("tBorder").textContent = t.border;
+    document.getElementById("tGutter").textContent = t.gutter;
+    document.getElementById("tControl").textContent = t.control;
+    document.getElementById("tFont").textContent = t.fontName;
+    document.getElementById("tWeight").textContent = t.displayWeight;
+    document.getElementById("tSize").textContent = t.displaySize;
+    document.getElementById("tTrack").textContent = t.labelTrack;
+    modeBtn.textContent = "Mode : " + (mode === "dark" ? "sombre" : "clair");
+
+    const sw = document.getElementById("swatches");
+    sw.innerHTML = "";
+    [t.canvas, t.surfaceStrong, t.accent, t.ink, t.ok, t.bad].forEach(function (color) {
+      const d = document.createElement("div");
+      d.className = "swatch";
+      d.style.background = color;
+      sw.appendChild(d);
+    });
+
+    render();
+  }
+
+  const STATE_COLOR = { connected: "var(--ok)", connecting: "var(--warn)", reconnecting: "var(--warn)", stopped: "var(--accent)", "no-connection": "var(--bad)" };
+
+  function render() {
+    screenEl.dataset.state = state;
+    screenEl.style.setProperty("--state-color", STATE_COLOR[state] || "var(--accent)");
+    coreEl.innerHTML = "";
+
+    if (state === "connected") {
+      const timer = document.createElement("div");
+      timer.className = "timer";
+      timer.id = "timer";
+      timer.textContent = "00:00";
+      const label = document.createElement("div");
+      label.className = "corelabel";
+      label.textContent = "Tunnel actif";
+      coreEl.appendChild(timer);
+      coreEl.appendChild(label);
+      headlineEl.textContent = "En ligne";
+      diagEl.textContent = "Le tunnel est monté et porte le trafic.";
+      diagEl.classList.remove("muted");
+    } else if (state === "connecting" || state === "reconnecting") {
+      const label = document.createElement("div");
+      label.className = "corelabel";
+      label.textContent = state === "connecting" ? "Connexion" : "Reprise";
+      const dots = document.createElement("div");
+      dots.className = "timer";
+      dots.style.opacity = ".7";
+      dots.textContent = "···";
+      coreEl.appendChild(label);
+      coreEl.appendChild(dots);
+      headlineEl.textContent = state === "connecting" ? "Connexion" : "Reconnexion";
+      diagEl.textContent = "Préparation du tunnel…";
+    } else if (state === "no-connection") {
+      const a = document.createElement("div");
+      a.className = "timer";
+      a.style.fontSize = "28px";
+      a.style.color = "var(--bad)";
+      a.textContent = "Aucune";
+      const b = document.createElement("div");
+      b.className = "timer";
+      b.style.fontSize = "28px";
+      b.style.color = "var(--bad)";
+      b.textContent = "sortie";
+      coreEl.appendChild(a);
+      coreEl.appendChild(b);
+      headlineEl.textContent = "Aucune sortie";
+      diagEl.textContent = "Toutes les configurations ont expiré. Importez un nouveau bundle.";
+    } else {
+      const p = document.createElement("div");
+      p.className = "powericon";
+      p.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3.4v7.2"/><path d="M6.4 6.6a8 8 0 1 0 11.2 0"/></svg>';
+      const label = document.createElement("div");
+      label.className = "corelabel";
+      label.style.color = "var(--ink-soft)";
+      label.textContent = "Appuyer";
+      coreEl.appendChild(p);
+      coreEl.appendChild(label);
+      headlineEl.textContent = "Hors ligne";
+      diagEl.textContent = "Le tunnel est arrêté. Rien ne sort par lui.";
+    }
+  }
+
+  function stopTicker() {
+    if (ticker) { clearInterval(ticker); ticker = null; }
+    if (connectingTimer) { clearTimeout(connectingTimer); connectingTimer = null; }
+  }
+
+  function setState(next) {
+    stopTicker();
+    state = next;
+
+    if (next === "connected") {
+      connectedAt = Date.now();
+      ticker = setInterval(function () {
+        const el = document.getElementById("timer");
+        if (!el) return;
+        const total = Math.floor((Date.now() - connectedAt) / 1000);
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        el.textContent = h > 0
+          ? h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0")
+          : String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+      }, 250);
+    }
+
+    stateBtn.textContent = "État : " + ({
+      stopped: "arrêté", connecting: "connexion", connected: "connecté",
+      reconnecting: "reconnexion", "no-connection": "aucune sortie"
+    }[next] || next);
+
+    render();
+  }
+
+  // Cycle réel : arrêté → connexion (1,4 s) → connecté → aucune sortie → arrêté
+  document.getElementById("control").addEventListener("click", function () {
+    if (state === "stopped") {
+      setState("connecting");
+      connectingTimer = setTimeout(function () { setState("connected"); }, 1400);
+    } else if (state === "connecting" || state === "reconnecting") {
+      setState("stopped");
+    } else if (state === "connected") {
+      setState("stopped");
+    } else {
+      setState("stopped");
+    }
+  });
+
+  document.getElementById("identitySeg").addEventListener("click", function (event) {
+    const btn = event.target.closest("button[data-identity]");
+    if (!btn) return;
+    identity = btn.dataset.identity;
+    Array.prototype.forEach.call(this.querySelectorAll("button"), function (b) {
+      b.setAttribute("aria-pressed", String(b === btn));
+    });
+    apply();
+  });
+
+  function toggleMode() {
+    mode = mode === "dark" ? "light" : "dark";
+    apply();
+  }
+  modeBtn.addEventListener("click", toggleMode);
+  document.getElementById("modeIcon").addEventListener("click", toggleMode);
+
+  stateBtn.addEventListener("click", function () {
+    const order = ["stopped", "connecting", "connected", "no-connection"];
+    const next = order[(order.indexOf(state) + 1) % order.length];
+    stopTicker();
+    if (next === "connecting") {
+      setState("connecting");
+      connectingTimer = setTimeout(function () { setState("connected"); }, 1400);
+    } else {
+      setState(next);
+    }
+  });
+
+  // Graduations du pourtour.
+  (function ticks() {
+    const g = document.getElementById("ticks");
+    const cx = 134, cy = 134;
+    for (let i = 0; i < 12; i++) {
+      const a = (i * 30) * Math.PI / 180;
+      const inner = i % 3 === 0 ? 80 : 85;
+      const outer = 88;
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", cx + inner * Math.cos(a));
+      line.setAttribute("y1", cy + inner * Math.sin(a));
+      line.setAttribute("x2", cx + outer * Math.cos(a));
+      line.setAttribute("y2", cy + outer * Math.sin(a));
+      line.setAttribute("class", "tick");
+      g.appendChild(line);
+    }
+  })();
+
+  apply();
+</script>
+</body>
+</html>

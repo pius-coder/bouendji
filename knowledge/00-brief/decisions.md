@@ -170,3 +170,131 @@ ici, pas laissée en double.
   plateforme sert du HTTP serverless, elle n'ouvre aucun port brut. Il reste sur
   un VPS ou dans un conteneur, et c'est toujours lui qui s'enregistre auprès de
   l'API.
+
+## Prix et partage (2026-10-21)
+
+- **D35** — **Prix fixé par la communauté ; enveloppe de 30 % répartie à la
+  performance.** Le client paie le prix de sa communauté sur le lien Fapshi de
+  la plateforme, qui encaisse **100 %**. Sur le chiffre d'affaires encaissé,
+  **30 % constituent l'enveloppe des commissions** ; **70 % restent le revenu
+  plateforme** (`owner`). L'enveloppe est répartie entre les communautés **au
+  prorata de ce qu'elles ont généré** : une communauté qui n'a rien vendu
+  touche **0**.
+  - Exemple : 1 000 000 XAF générés par 5 communautés (500k / 300k / 150k /
+    50k / 0) → enveloppe 300 000, répartie 150k / 90k / 45k / 15k / 0.
+  - Quand **tout** le CA est généré par les communautés et que la répartition
+    est strictement proportionnelle, le résultat est **identique à 30 % par
+    commande**. L'enveloppe n'est donc pas un second calcul : c'est la même
+    arithmetic vue au mois.
+  - Le revendeur ne reverse jamais d'argent : la plateforme encaisse et doit.
+  - Le taux de référence et le plafond sont **30 %**
+    (`commission_bps <= 3000`) ; l'`owner` peut accorder moins, jamais plus.
+  - Conséquence assumée : deux communautés peuvent vendre le même forfait à des
+    prix différents.
+  - `plans` est déjà indexé par `app_id`, et `apps.community_id` rattache
+    chaque marque à une communauté : **le prix est donc déjà propre à une
+    marque**. Il manque les routes admin de gestion des forfaits et un endpoint
+    public par app, pas une nouvelle table.
+  - **Remplace** la lecture « prix global, commission par communauté » de
+    `40-money/roles-and-commissions`.
+  - **Périmètre confirmé (2026-10-21)** : l'enveloppe porte sur le **seul CA
+    généré par les communautés**. Une vente directe reste à 100 % à la
+    plateforme et ne finance aucune commission.
+  - **Performance confirmée** : le CA généré, pas le nombre de ventes ni la
+    marge.
+  - **Répartition confirmée** : strictement proportionnelle au CA généré. Donc
+    `commission_i = 30 % × CA_i`, ce qui rend l'accrual par commande équivalent
+    à la clôture mensuelle. L'enveloppe est un affichage comptable, pas un
+    second calcul.
+  - **Calcul confirmé (2026-10-21)** : assiette **brute** (la plateforme absorbe
+    les frais Fapshi sur ses 70 %), arrondi **`floor`** (jamais plus de 30 %),
+    **aucun plafond de prix** (le white label fait porter le risque tarifaire à
+    la marque de l'administrateur, pas à la plateforme).
+  - Implémenté : `MAX_COMMISSION_BPS = 3000`, contrainte SQL 0..3000, routes
+    admin de gestion des forfaits et catalogue public par app. Vérifié par
+    `tsc --noEmit` et 100 tests.
+
+- **D36** — **Aucun remboursement, y compris si le service ne fonctionne pas.**
+  Le produit vend un accès à durée déterminée ; l'échec côté client (appareil
+  incompatible, réseau, configuration) n'ouvre pas droit à un remboursement.
+  - L'API n'expose **aucune** route de remboursement. `refundOrder()` reste un
+    service interne, appelé par aucun `app.*` : il sert à une correction
+    exceptionnelle (double débit avéré), pas à une politique commerciale.
+  - Les conditions d'utilisation doivent l'écrire noir sur blanc avant l'achat.
+  - Limite hors de notre contrôle : un client peut ouvrir un litige auprès de
+    son opérateur ou de Fapshi. Le remboursement subi n'est pas une décision
+    produit ; il doit être saisi comme une annulation exceptionnelle.
+
+- **D37** — **Un appareil par compte est la norme ; la version desktop passera
+  par le partage de connexion du téléphone.** Le forfait standard ouvre **un**
+  appareil (`plans.device_limit = 1` par défaut). Une version desktop est
+  prévue plus tard, mais elle **ne consomme pas un second slot** : elle se
+  connecte à travers le partage de connexion du téléphone, comme un client
+  desktop derrière le proxy du mobile.
+  - Une offre multi-appareils reste possible techniquement
+    (`device_limit > 1`), mais n'est pas la norme commerciale.
+
+- **D38** — **Versement des commissions : demande par `finance`, validation par
+  `owner`, décaissement asynchrone.** `finance` prépare la demande
+  (`POST /communities/:id/payouts`) ; le montant est la **somme des commissions
+  `available` non rattachées**, jamais un montant fourni par le client.
+  `owner` approuve (`POST /payouts/:id/approve`) ; `finance` ne peut pas
+  s'auto-approuver. Le décaissement réel est une opération **asynchrone** vers
+  Fapshi : `approved` n'est pas `paid`.
+  - États : `pending` → `approved` → `paid` / `failed`.
+  - **Bug corrigé le 2026-10-21** : l'activation insère les commissions en
+    `available`, mais la demande de versement filtrait `pending` — aucune
+    demande n'était donc créable sur une vraie vente. La requête filtre
+    désormais `available` ; le test d'administration utilise ce même état.
+  - **Reste non câblé** : `fapshi.payout()` n'a aucun appelant ; `approved` ne
+    déclenche encore aucun décaissement, et les commissions rattachées ne
+    passent pas à `paid`.
+
+- **D39** — **UUID partagé au lancement ; UUID par appareil plus tard ; pas de
+  `cloudflared`.** Le premier déploiement garde **un seul UUID par endpoint**
+  (`email: "shared"`), partagé par tous les clients du nœud. Aucun client par
+  utilisateur n'est créé, donc :
+  - **pas de consommation par utilisateur** (seuls des totaux par nœud sont
+    possibles) ;
+  - **pas de révocation individuelle au niveau du nœud** : la coupure reste
+    l'expiration du bundle et la session courte ;
+  - **pas de liste de clients à synchroniser** : le heartbeat reste un simple
+    battement, sans `clients_revision`.
+  - **`cloudflared` est écarté** : le nœud reste strictement sortant, l'API ne
+    l'appelle jamais. Conséquence : sur un VPS, le panneau 3x-ui n'est pas
+    piloté à distance par l'API.
+  - Le passage à l'UUID par appareil (stats + révocation) est **reporté**. Il
+    faudra alors l'état désiré décrit dans `10-infrastructure/node-control` et
+    accepter un court `pending` à l'activation.
+
+
+- **D40** — **Le revendeur n'encaisse pas : modèle A (2026-10-21).** Décision de
+  l'utilisateur, après exposé des trois modèles possibles.
+  - Le client paie **toujours** par un lien de paiement Fapshi rattaché à une
+    commande créée par l'API. L'argent ne transite **jamais** par le revendeur.
+  - Le revendeur est rémunéré par la **commission déjà attachée à la commande**
+    (D15). Donc : aucun reversement, aucune caisse à rapprocher, aucun solde à
+    suivre manuellement.
+  - **Conséquence interface** : l'écran « code d'accès » (`nji`) du prototype
+    partenaire est **supprimé**. Aucun système de génération ni de consommation
+    de codes n'est construit côté serveur. L'activation passe uniquement par un
+    paiement confirmé, dont le statut est revérifié auprès de Fapshi (D14) :
+    payer crédite automatiquement, l'utilisateur ne saisit rien.
+  - **Écarté maintenant, pas pour toujours** : le modèle « crédits prépayés +
+    codes » (modèle C, usage telecom). Il exigerait un portefeuille revendeur,
+    un ledger, des codes à usage unique et une protection anti-rejeu. À rouvrir
+    seulement si des revendeurs à volume réel sont signés.
+  - **Écarté définitivement** : le revendeur qui encaisse en espèces puis
+    reverse (modèle B) — dépendance à sa bonne volonté, commissions
+    invérifiables, surface de fraude. S'il encaisse malgré tout, il paie un lien
+    pour la commande ; il ne « rend pas plus tard ».
+
+- **D41** — **Le build Bouendji doit reprendre l'identité Halo v2 sur tout le
+  parcours mobile (2026-10-21).** La référence visuelle est
+  `../Atelier-identites-VPN-v2.html`, direction Halo. Elle ne sert pas de
+  contrat métier : les textes, données et transitions restent ceux des routes
+  et décisions du dépôt. Le parcours livré comprend connexion/inscription,
+  accueil VPN, forfaits/paiement, compte/appareils, réglages et aide, ainsi que
+  les états bloquants. Les écrans `nji` et invitation restent exclus (D40).
+  L'identité reste injectée au build (D2/D30), jamais choisie au lancement.
+

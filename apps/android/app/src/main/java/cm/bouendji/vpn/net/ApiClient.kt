@@ -27,13 +27,14 @@ import java.util.concurrent.TimeUnit
 /**
  * Client HTTP signé.
  *
- * Ce fichier est le miroir de `apps/api/src/lib/auth.ts` et `routes/*.ts`. Il
+ * Ce fichier est le miroir de `apps/api/src/lib/auth.ts` et des fichiers de
+ * `apps/api/src/routes`. Il
  * n'invente aucun en-tête, aucune route, aucun code d'erreur :
  *
  *   en-têtes  `X-Device-Token`, `X-Device-Timestamp`, `X-Device-Nonce`,
  *             `X-Device-Signature` (`verifyDeviceProof`, lignes 123-156)
  *   erreurs   enveloppe `{ error: { code, message, details?, retryAfter? } }`
- *   routes    `/v1/devices/challenges`, `/v1/devices/enroll`, `/v1/auth/*`,
+ *   routes    `/v1/devices/challenges`, `/v1/devices/enroll`, `/v1/auth/login`,
  *             `/v1/me`, `/v1/me/subscription`, `/v1/me/devices`,
  *             `/v1/configuration-bundles/current`
  *
@@ -257,6 +258,29 @@ class ApiClient(
 
     suspend fun devices(): DevicesResponse =
         decode(authed("GET", ApiPaths.ME_DEVICES, null), "appareils", DevicesResponse.serializer())
+
+    /** Catalogue public de la marque embarquee dans l'APK. */
+    suspend fun plans(appId: String): PlansResponse {
+        val path = ApiPaths.APPS + "/" + appId + "/plans"
+        return decode(
+            send("GET", path, null, null, emptyMap(), requireDeviceToken = false),
+            "forfaits",
+            PlansResponse.serializer(),
+        )
+    }
+
+    suspend fun createOrder(planId: String, planRevision: Int): OrderDto {
+        val body = json.encodeToString(
+            CreateOrderRequest.serializer(),
+            CreateOrderRequest(planId = planId, planRevision = planRevision),
+        )
+        return decode(authed("POST", ApiPaths.ORDERS, body), "commande", OrderDto.serializer())
+    }
+
+    suspend fun order(orderId: String, refresh: Boolean = false): OrderDto {
+        val path = ApiPaths.ORDERS + "/" + orderId + if (refresh) "?refresh=1" else ""
+        return decode(authed("GET", path, null), "commande", OrderDto.serializer())
+    }
 
     /** Promotion de l'appareil courant quand une place s'est libérée. */
     suspend fun activateCurrentDevice(): DeviceDto =
@@ -576,6 +600,52 @@ class ApiClient(
     data class DevicesResponse(val items: List<DeviceDto> = emptyList())
 
     @Serializable
+    data class CatalogAppDto(val id: String, val name: String)
+
+    @Serializable
+    data class PlanDto(
+        val id: String,
+        val code: String,
+        val name: String,
+        val description: String,
+        val priceXaf: Int,
+        val durationDays: Int,
+        val deviceLimit: Int,
+        val badge: String? = null,
+        val featured: Boolean = false,
+        val sortOrder: Int = 0,
+        val revision: Int,
+    )
+
+    @Serializable
+    data class PlansResponse(val app: CatalogAppDto, val items: List<PlanDto> = emptyList())
+
+    @Serializable
+    private data class CreateOrderRequest(val planId: String, val planRevision: Int)
+
+    @Serializable
+    data class MoneyDto(val amount: Int, val currency: String = "XAF")
+
+    @Serializable
+    data class CheckoutDto(val url: String, val expiresAt: String? = null)
+
+    @Serializable
+    data class OrderDto(
+        val orderId: String,
+        val planId: String,
+        val planRevision: Int,
+        val price: MoneyDto,
+        val status: String,
+        val activationStatus: String,
+        val createdAt: String,
+        val expiresAt: String? = null,
+        val paidAt: String? = null,
+        val checkout: CheckoutDto? = null,
+        val failureCode: String? = null,
+        val pollAfterSeconds: Int = 15,
+    )
+
+    @Serializable
     data class SealedEnvelopeDto(
         val version: Int,
         val ephemeralKey: String,
@@ -698,6 +768,8 @@ private class RawResponse(
  * Toute modification côté serveur se répercute ici, et nulle part ailleurs.
  */
 object ApiPaths {
+    const val APPS = "/v1/apps"
+    const val ORDERS = "/v1/orders"
     const val CHALLENGES = "/v1/devices/challenges"
     const val ENROLL = "/v1/devices/enroll"
     const val REGISTER = "/v1/auth/register"
