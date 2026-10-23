@@ -101,6 +101,10 @@ export const env = {
   admin: {
     accessKey: process.env.DASHBOARD_ACCESS_KEY ?? "",
   },
+  /** Secret dédié aux sondes d'exploitation ; distinct des secrets métier. */
+  health: {
+    checkKey: process.env.HEALTHCHECK_KEY ?? (isTest ? "test-health-check-key" : ""),
+  },
   /**
    * Per-route throttling. The global ceiling in app.ts is a blunt instrument
    * (300/min); these are the limits that actually matter.
@@ -198,6 +202,8 @@ if (process.env.NODE_ENV === "production") {
     ["ENDPOINT_INGEST_SECRET", process.env.ENDPOINT_INGEST_SECRET],
     ["DASHBOARD_ACCESS_KEY", process.env.DASHBOARD_ACCESS_KEY],
     ["BUILD_CALLBACK_SECRET", process.env.BUILD_CALLBACK_SECRET],
+    ["HEALTHCHECK_KEY", process.env.HEALTHCHECK_KEY],
+    ["FAPSHI_WEBHOOK_SECRET", process.env.FAPSHI_WEBHOOK_SECRET],
     ["PAYMENT_PROVIDER=fapshi", process.env.PAYMENT_PROVIDER === "fapshi" ? "ok" : ""],
   ]
     .filter(([, value]) => !value)

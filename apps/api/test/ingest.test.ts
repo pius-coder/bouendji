@@ -283,11 +283,12 @@ test("validation : public_host obligatoire, ws_path jamais accepté", async () =
 });
 
 test("/healthz ne touche pas la base, /readyz la vérifie", async () => {
-  const live = await app.inject({ method: "GET", url: "/healthz" });
+  const probeHeaders = { "x-health-check-key": "test-health-check-key" };
+  const live = await app.inject({ method: "GET", url: "/healthz", headers: probeHeaders });
   assert.equal(live.statusCode, 200);
   assert.equal((live.json() as { status: string }).status, "ok");
 
-  const readyRes = await app.inject({ method: "GET", url: "/readyz" });
+  const readyRes = await app.inject({ method: "GET", url: "/readyz", headers: probeHeaders });
   assert.equal(readyRes.statusCode, 200);
   assert.equal((readyRes.json() as { status: string }).status, "ready");
 
@@ -296,9 +297,9 @@ test("/healthz ne touche pas la base, /readyz la vérifie", async () => {
   const deadApp = await buildApp({ db: deadDb });
   await deadDb.close();
   try {
-    const down = await deadApp.inject({ method: "GET", url: "/readyz" });
+    const down = await deadApp.inject({ method: "GET", url: "/readyz", headers: probeHeaders });
     assert.equal(down.statusCode, 503);
-    const stillLive = await deadApp.inject({ method: "GET", url: "/healthz" });
+    const stillLive = await deadApp.inject({ method: "GET", url: "/healthz", headers: probeHeaders });
     assert.equal(stillLive.statusCode, 200);
   } finally {
     await deadApp.close();

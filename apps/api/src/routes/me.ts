@@ -21,9 +21,10 @@
  * ne possède pas la clé. Une fois la preuve valide, un appareil d'un autre
  * compte renvoie **403** et jamais 404 (brief api-bundle).
  */
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifySchema, FastifySchemaCompiler } from "fastify";
 import { z } from "zod";
 import type { Database, Queryable, Row } from "../db.js";
+import { COMMON_ERRORS, DEVICE_SECURITY, errorResponse, jsonResponse } from "../http/schemas.js";
 import { requireDeviceByToken, requireUser, verifyDeviceProof, type AuthContext } from "../lib/auth.js";
 import { fail } from "../lib/errors.js";
 import type { EndpointTier } from "../services/endpoints.js";

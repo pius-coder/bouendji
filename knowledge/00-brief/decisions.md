@@ -3,7 +3,7 @@ id: decisions
 title: Décisions tranchées
 tags: [brief, decisions, journal]
 status: decided
-updated: 2026-10-20
+updated: 2026-10-23
 related: [open-questions, roles-and-commissions]
 ---
 
@@ -415,4 +415,38 @@ ferme une question ouverte ou un défaut vérifié dans le code.
 - **D73** — **`dev` est la seule porte d'entrée de `master`.** Aucun commit
   direct sur `master`, aucune PR qui la vise : branche → PR vers `dev` → CI →
   review → squash, puis PR `dev` → `master`.
+- **D74** (2026-10-23) — **Journal piloté par l'environnement, pas par un
+  drapeau.** `production` garde le JSON brut de Pino (Cloud Run et les
+  collecteurs lisent des champs) ; partout ailleurs, `server.ts` passe un
+  `transport` vers `pino-pretty`. `buildApp` accepte donc
+  `FastifyServerOptions["logger"]` au lieu d'un booléen ; tests et fonction
+  Vercel continuent de passer `false`. `pino-pretty` est une **devDependency**
+  et n'est jamais importé en production.
+
+- **D75** (2026-10-23) — **La référence OpenAPI doit être enrichie à partir des
+  routes réelles et Scalar doit charger cette même spécification** : source
+  centralisée dans `apps/api/src/http/contracts.ts`, appliquée via le
+  `transform` documentaire de Swagger et jamais comme validateur Fastify.
+  Chaque opération publiée doit avoir résumé, description et réponses ; les
+  statuts et médias HTML sont explicités. Voir D76 pour les premiers compteurs
+  vérifiés.
+- **D76** (2026-10-23) — **Contrat OpenAPI enrichi et vérifié statiquement** :
+  64 opérations avec résumés, descriptions et réponses ; 27 corps JSON ;
+  53 exigences de sécurité ; HTML explicite pour les trois routes navigateur.
+  `typecheck` et génération `openapi` réussissent. Le Playground est utilisable
+  pour construire des appels, mais les flux réels nécessitent serveur, base et
+  secrets ; la génération seule ne prouve pas leur exécution.
+- **D77** (2026-10-23) — **Toutes les routes déclarent leur frontière d'accès,
+  y compris les sondes.** `/healthz` et `/readyz` utilisent la clé dédiée
+  `HEALTHCHECK_KEY` dans `X-Health-Check-Key`, obligatoire en production. Le
+  contrat OpenAPI la propose au Playground. Les routes mobiles pré-session
+  gardent leurs preuves dédiées ; le webhook exige `FAPSHI_WEBHOOK_SECRET` en
+  production et revérifie le statut fournisseur ; le paiement mock reste hors
+  production. Inventaire et diagrammes :
+  `20-backend/admin-access-flows`.
+- **D78** (2026-10-23) — **Dashboard en deux niveaux d'authentification.** Le
+  navigateur s'authentifie auprès du serveur Next.js ; Next.js s'authentifie
+  auprès de l'API. Les clés API et secrets restent côté serveur Next.js/API et
+  ne sont jamais envoyés au navigateur. Fastify reste l'autorité des jetons,
+  rôles et périmètres. Détails du BFF dans `20-backend/admin-access-flows`.
 

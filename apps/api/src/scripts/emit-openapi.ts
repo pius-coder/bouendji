@@ -8,6 +8,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { buildApp } from "../app.js";
+import { finalizeOpenApi } from "../openapi.js";
 import type { Database, Queryable, Row } from "../db.js";
 
 const empty: Queryable = {
@@ -37,7 +38,7 @@ await app.ready();
 
 const out = resolve(process.cwd(), "openapi.json");
 mkdirSync(dirname(out), { recursive: true });
-writeFileSync(out, `${JSON.stringify(app.swagger(), null, 2)}\n`, "utf8");
+writeFileSync(out, `${JSON.stringify(finalizeOpenApi(app.swagger()), null, 2)}\n`, "utf8");
 await app.close();
 
 console.log(`openapi.json écrit : ${out}`);

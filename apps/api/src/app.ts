@@ -1,13 +1,13 @@
 ﻿import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { timingSafeEqual } from "node:crypto";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { env } from "./config.js";
 import type { Database } from "./db.js";
 import { rateLimitError } from "./lib/attempts.js";
 import { registerDecoyGuard } from "./lib/decoy.js";
 import { ApiFailure } from "./lib/errors.js";
-import { registerOpenApi } from "./openapi.js";
+import { registerOpenApi, registerOpenApiReference } from "./openapi.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminAuthRoutes } from "./routes/adminAuth.js";
 import { registerAuthRoutes } from "./routes/auth.js";
@@ -36,7 +36,7 @@ declare module "fastify" {
 export interface AppOptions {
   db: Database;
   /** `true`/`false`, or a pino options object. Off by default so tests stay quiet. */
-  logger?: boolean;
+  logger?: FastifyServerOptions["logger"];
   bodyLimit?: number;
 }
 
@@ -124,6 +124,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       // Console (D54) et ingestion (D56) : sans ces deux en-têtes dans la
       // liste, le navigateur bloque la requête avant que l'API la voie.
       "x-access-key",
+      "x-health-check-key",
       "x-ingest-timestamp",
       "x-device-token",
       "x-device-timestamp",
@@ -173,6 +174,20 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
    */
   const expectedAccessKey = env.admin.accessKey;
   app.addHook("preHandler", async (req) => {
+    const routePath = req.routeOptions.url;
+    if (routePath === "/healthz" || routePath === "/readyz") {
+      const expected = env.health.checkKey;
+      const provided = String(req.headers["x-health-check-key"] ?? "");
+      if (!expected) {
+        throw new ApiFailure(503, "INTERNAL", "Clé de sonde non configurée.");
+      }
+      const a = Buffer.from(provided, "utf8");
+      const b = Buffer.from(expected, "utf8");
+      if (a.length !== b.length || !timingSafeEqual(a, b)) {
+        throw new ApiFailure(401, "UNAUTHENTICATED", "Clé de sonde requise.");
+      }
+    }
+
     if (req.url.startsWith("/v1/admin") && expectedAccessKey.length > 0) {
       const provided = String(req.headers["x-access-key"] ?? "");
       const a = Buffer.from(provided, "utf8");
@@ -276,6 +291,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerAdminAuthRoutes(app, db);
   registerBuildRoutes(app, db);
   registerOfflineRoutes(app, db);
+  await registerOpenApiReference(app);
 
   return app;
 }
