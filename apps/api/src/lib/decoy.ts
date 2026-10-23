@@ -8,14 +8,28 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
  * le comportement soit vérifiable sans déployer.
  *
  * Même contrat, même exceptions :
- *   - BYPASS : /healthz, /readyz, /v1/payments/webhook/* → jamais de redirect.
+ *   - BYPASS : /healthz, /readyz, /v1/payments/webhook/*, et la documentation
+ *     (/reference, /openapi.json) → jamais de redirect.
  *   - navigateur (Accept: text/html) sans X-App-Id → 302 DECOY_URL.
  *   - /v1/* sans X-App-Id ni preuve ni Bearer → 302 DECOY_URL.
  *   - sinon → next (l'API répond JSON, même en erreur).
  *
  * Env : DECOY_URL (défaut https://example-sms.com — placeholder du site SMS).
  */
-const BYPASS_RE = [/^\/healthz$/, /^\/readyz$/, /^\/v1\/payments\/webhook\//];
+const BYPASS_RE = [
+  /^\/healthz$/,
+  /^\/readyz$/,
+  /^\/v1\/payments\/webhook\//,
+  /*
+   * Documentation. Sans ces deux exceptions, ouvrir `/reference/` dans un
+   * navigateur renvoie vers le site leurre : l'interface est inutilisable
+   * exactement là où elle sert. Ce n'est pas une fuite — le document décrit les
+   * routes que `curl` énumère déjà (404/401), et le rideau n'est pas une
+   * sécurité (D43).
+   */
+  /^\/reference(\/.*)?$/,
+  /^\/openapi\.json$/,
+];
 export const DECOY_FALLBACK = "https://example-sms.com";
 
 function isBypass(url: string): boolean {

@@ -99,7 +99,9 @@ aurait dupliqué la validation zod déjà en place.
 - Requête API légitime (`X-App-Id` + `User-Agent: vpn-android`) → JSON normal,
   jamais de redirect.
 - Exceptions qui ne redirigent **jamais** : `/healthz`, `/readyz`,
-  `/v1/payments/webhook/*` (Fapshi doit toujours passer, D14).
+  `/v1/payments/webhook/*` (Fapshi doit toujours passer, D14) et la
+  documentation `/reference` + `/openapi.json` (sinon un navigateur ne peut pas
+  ouvrir l'interface, qui est précisément faite pour lui).
 - Une seule couche : Fastify `apps/api/src/lib/decoy.ts`. Le `middleware.ts`
   Edge a été supprimé le 2026-10-23 : il importait `next/server` alors que
   `next` n'est pas une dépendance, il ne compilait pas, et il doublait le

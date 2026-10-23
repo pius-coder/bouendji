@@ -407,7 +407,11 @@ ferme une question ouverte ou un défaut vérifié dans le code.
   Fastify. Voir D43.
 - **D72** — **Documentation code-first** : `@fastify/swagger` (OpenAPI 3.1.0) lit
   les schémas des routes, Scalar sert `/reference`, `/openapi.json` est versionné
-  et régénéré par `pnpm --filter @vpn/api openapi`.
+  et régénéré par `pnpm --filter @vpn/api openapi`. **`/reference` et
+  `/openapi.json` sont exemptés du rideau** : un navigateur envoyant
+  `Accept: text/html` était redirigé vers le site leurre, rendant l'interface
+  inutilisable là où elle sert. Le document ne décrit que des routes que `curl`
+  énumère déjà ; le rideau n'est pas une sécurité (D43).
 - **D73** — **`dev` est la seule porte d'entrée de `master`.** Aucun commit
   direct sur `master`, aucune PR qui la vise : branche → PR vers `dev` → CI →
   review → squash, puis PR `dev` → `master`.
