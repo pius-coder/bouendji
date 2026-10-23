@@ -19,6 +19,12 @@
  * - **aucun claim ne porte le droit d'accès.** Le JWT ne contient que
  *   `sub`/`did`/`cid`/`sid` ; l'abonnement se lit en base (`loadEntitlement`).
  *   L'audience, elle, est un verrou de surface : `vpn-mobile` (D17).
+ * - **le compte est par marque (D53)** : l'unicité porte sur
+ *   `(app_id, lower(email))` et `(app_id, phone)`, et la connexion exige
+ *   `appId`. Le même email sur deux marques donne deux comptes distincts ; une
+ *   connexion ne peut pas atterrir sur une autre marque que celle demandée. Le
+ *   téléphone est **obligatoire** à l'inscription et normalisé (espaces, points
+ *   et tirets retirés) avant d'être stocké.
  *
  * La vérification d'email n'est pas câblée dans ce lot : `email_verified_at`
  * est laissé nul, et la connexion ne le réclame pas (aucune route
@@ -49,13 +55,42 @@ const emailSchema = z.string().trim().toLowerCase().email("Adresse email invalid
 /** Huit caractères est un plancher de validation, pas une promesse de robustesse. */
 const passwordSchema = z.string().min(8, "Huit caractères minimum.").max(200);
 
+/**
+ * Téléphone (D53) : obligatoire, normalisé puis validé.
+ *
+ * La normalisation (espaces, points, tirets et parenthèses retirés) précède le
+ * format : un utilisateur qui saisit « +237 6 12 34 56 78 » et un qui saisit
+ * « +237612345678 » désignent le même numéro, donc la contrainte d'unicité
+ * `(app_id, phone)` doit voir la même chaîne. Le format reste permissif sur
+ * l'indicatif (`+` optionnel) parce que le produit sert plusieurs pays ; il
+ * borne seulement la longueur utile (E.164 : 8 à 15 chiffres).
+ */
+const phoneSchema = z
+  .string({
+    required_error: "Numéro de téléphone requis.",
+    invalid_type_error: "Numéro de téléphone requis.",
+  })
+  .trim()
+  .min(1, "Numéro de téléphone requis.")
+  .max(40, "Numéro de téléphone trop long.")
+  .transform((value) => value.replace(/[\s.\-()]/g, ""))
+  .pipe(
+    z
+      .string()
+      .regex(/^\+?[0-9]{8,15}$/, "Numéro invalide : 8 à 15 chiffres, indicatif + optionnel."),
+  );
+
+/** Identifiant de marque : il fixe la communauté, donc il est exigé partout. */
+const appIdSchema = z.string().trim().min(1, "Application requise.").max(190);
+
 const registerSchema = z
   .object({
     /** L'app le connaît (il est injecté au build) et il fixe la communauté. */
-    appId: z.string().trim().min(1).max(190),
+    appId: appIdSchema,
     email: emailSchema,
     password: passwordSchema,
     name: z.string().trim().min(2).max(60),
+    phone: phoneSchema,
     locale: z
       .string()
       .trim()
@@ -66,10 +101,17 @@ const registerSchema = z
 
 const loginSchema = z
   .object({
+    /**
+     * D53 : sans `appId`, une même adresse email existant sur deux marques
+     * rendrait la connexion ambiguë — et atterrirait silencieusement sur la
+     * mauvaise communauté.
+     */
+    appId: appIdSchema,
     email: emailSchema,
     password: z.string().min(1).max(200),
   })
   .strict();
+
 
 const refreshSchema = z
   .object({
@@ -346,12 +388,17 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
     ? new AttemptCounter(env.rateLimit.auth.max, env.rateLimit.auth.windowMs)
     : null;
 
-  /** Clé de comptage : l'email normalisé, haché pour ne pas traîner en clair. */
-  const emailKey = (email: string): string => hashToken(`auth-attempts:${email}`);
+  /**
+   * Clé de comptage : `appId` + email normalisé. La marque est dans la clé
+   * parce que l'identité d'un compte l'est aussi (D53) : marteler le compte
+   * d'une marque ne doit pas consommer le budget de l'autre marque portant la
+   * même adresse. La clé est hachée pour ne pas traîner d'email en clair.
+   */
+  const emailKey = (appId: string, email: string): string => hashToken(`auth-attempts:${appId}:${email}`);
 
-  function guardEmail(email: string): string | null {
+  function guardEmail(appId: string, email: string): string | null {
     if (!emailAttempts) return null;
-    const key = emailKey(email);
+    const key = emailKey(appId, email);
     const attempt = emailAttempts.hit(key);
     if (!attempt.allowed) throw fail.rateLimited(attempt.retryAfterSeconds);
     return key;
@@ -363,31 +410,55 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
    * L'appareil doit déjà être enrôlé (deux clés), et ne doit pas appartenir à
    * un autre compte : une installation ne glisse pas silencieusement d'un
    * compte à un autre.
+   *
+   * Le compte est créé **dans la marque** (`users.app_id` = `apps.id`) et le
+   * téléphone y est obligatoire (D53) : c'est ce couple qui identifie un
+   * client, et une adresse email peut exister sur plusieurs marques sans que
+   * les comptes se mélangent.
    */
   app.post("/v1/auth/register", authLimit, async (req: FastifyRequest, reply) => {
     const device = await requireBoundDevice(db, req);
     const input = parseBody(registerSchema, req.body);
-    const attemptKey = guardEmail(input.email);
+    const attemptKey = guardEmail(input.appId, input.email);
 
     if (device.user_id) throw fail.conflict("Cet appareil est déjà rattaché à un compte.");
 
     const appRow = await db.one<Row>("SELECT id, community_id FROM apps WHERE id = $1", [input.appId]);
     if (!appRow) throw fail.validation({ appId: "Application inconnue." });
 
-    const taken = await db.one<Row>("SELECT id FROM users WHERE email = $1", [input.email]);
-    if (taken) throw fail.conflict("Un compte existe déjà pour cette adresse email.");
+    /*
+     * L'unicité est **par marque** (D53) : `(app_id, lower(email))`. Le même
+     * email sur deux marques est deux comptes voulus, pas un doublon. On
+     * interroge en `lower(email)` : l'index est fonctionnel, une comparaison
+     * sensible à la casse ne l'utiliserait pas et laisserait passer un
+     * « A@x.test » après un « a@x.test ».
+     */
+    const taken = await db.one<Row>("SELECT id FROM users WHERE app_id = $1 AND lower(email) = lower($2)", [
+      input.appId,
+      input.email,
+    ]);
+    if (taken) throw fail.conflict("Un compte existe déjà pour cette adresse email sur cette application.");
+
+    // Même raisonnement pour le téléphone, dans la marque : c'est la clé de
+    // rattachement de la consommation (§3.4), deux comptes ne la partagent pas.
+    const phoneTaken = await db.one<Row>("SELECT id FROM users WHERE app_id = $1 AND phone = $2", [
+      input.appId,
+      input.phone,
+    ]);
+    if (phoneTaken) throw fail.conflict("Un compte existe déjà pour ce numéro de téléphone sur cette application.");
 
     const userId = newId();
     try {
       await db.tx(async (q) => {
         await q.query(
-          `INSERT INTO users (id, app_id, community_id, email, password_hash, name, locale)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          `INSERT INTO users (id, app_id, community_id, email, phone, password_hash, name, locale)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [
             userId,
             input.appId,
             appRow.community_id,
-            input.email,
+            input.email.toLowerCase(),
+            input.phone,
             hashPassword(input.password),
             input.name,
             input.locale ?? "fr",
@@ -397,9 +468,13 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
         await q.query("UPDATE devices SET user_id = $2, status = 'active' WHERE id = $1", [device.id, userId]);
       });
     } catch (error) {
-      // Course entre deux inscriptions sur le même email : l'index UNIQUE tranche.
+      // Course entre deux inscriptions : les index UNIQUE de la marque tranchent.
       if (typeof error === "object" && error !== null && (error as { code?: string }).code === "23505") {
-        throw fail.conflict("Un compte existe déjà pour cette adresse email.");
+        const constraint = String((error as { constraint?: string }).constraint ?? "");
+        if (constraint === "users_app_phone_idx") {
+          throw fail.conflict("Un compte existe déjà pour ce numéro de téléphone sur cette application.");
+        }
+        throw fail.conflict("Un compte existe déjà pour cette adresse email sur cette application.");
       }
       throw error;
     }
@@ -413,13 +488,29 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
     return reply.code(201).send(session);
   });
 
-  /** Connexion. Message identique pour un email inconnu et un mot de passe faux. */
+  /**
+   * Connexion.
+   *
+   * `appId` est obligatoire (D53) et la recherche filtre **les deux** :
+   * `app_id = $1 AND lower(email) = lower($2)`. Sans le filtre de marque, le
+   * même email existant sur deux marques ferait atterrir la session sur la
+   * mauvaise communauté ; sans `lower()`, une casse différente à l'inscription
+   * (« Jean@… ») et à la connexion (« jean@… ») rendrait le compte
+   * inaccessible.
+   *
+   * Message **identique** pour un email inconnu, une marque sans ce compte et
+   * un mot de passe faux : la route ne dit jamais si un compte existe, ni sur
+   * quelle marque.
+   */
   app.post("/v1/auth/login", authLimit, async (req: FastifyRequest) => {
     const device = await requireBoundDevice(db, req);
     const input = parseBody(loginSchema, req.body);
-    const attemptKey = guardEmail(input.email);
+    const attemptKey = guardEmail(input.appId, input.email);
 
-    const user = await db.one<Row>("SELECT * FROM users WHERE email = $1", [input.email]);
+    const user = await db.one<Row>("SELECT * FROM users WHERE app_id = $1 AND lower(email) = lower($2)", [
+      input.appId,
+      input.email,
+    ]);
     if (!user || user.deleted_at) throw fail.invalidCredentials();
     if (!verifyPassword(input.password, String(user.password_hash))) throw fail.invalidCredentials();
 

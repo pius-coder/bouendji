@@ -3,6 +3,15 @@ import { buildApp } from "../src/app.js";
 import { createDb, type Database } from "../src/db.js";
 
 /**
+ * Vercel parse le corps JSON avant d'appeler le handler. Or la preuve d'appareil
+ * signe les octets **bruts** (`METHOD\nPATH\nsha256(body)\n...`) : un corps
+ * re-sérialisé par la plateforme ne se recalcule plus, et toutes les routes
+ * signées répondraient 401. Désactiver ce parseur est la condition de
+ * fonctionnement de l'authentification mobile sur Vercel.
+ */
+export const config = { api: { bodyParser: false } };
+
+/**
  * Adaptateur Fastify → Vercel (O16, premier pas vérifiable).
  *
  * Vercel appelle une fonction par requête ; Fastify veut un serveur qui écoute.

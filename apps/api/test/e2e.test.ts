@@ -147,7 +147,7 @@ test("parcours complet : inscription, paiement simulé, abonnement, bundle chiff
   const password = "MotDePasse-E2E-2026";
 
   const register = await deviceCall("POST", "/v1/auth/register", {
-    payload: { appId: seed.appId, email, password, name: "Client E2E" },
+    payload: { appId: seed.appId, email, password, name: "Client E2E", phone: `+2376${String(Date.now()).slice(-8)}` },
     deviceToken,
     keys,
   });

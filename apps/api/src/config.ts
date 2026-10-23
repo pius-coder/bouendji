@@ -90,6 +90,16 @@ export const env = {
     workflow: process.env.GITHUB_WORKFLOW ?? "android-brand.yml",
     ref: process.env.GITHUB_REF ?? "main",
     publicBaseUrl: process.env.BUILDS_BASE_URL ?? "",
+    /** Secret du callback CI (distinct du secret d'ingestion, D66). */
+    callbackSecret: process.env.BUILD_CALLBACK_SECRET ?? "",
+  },
+  /**
+   * Clé d'accès de la console (D54). Elle protège les données et l'inscription,
+   * pas les octets d'un export statique. Vide = dev uniquement : le garde-fou
+   * de production ci-dessous refuse de démarrer sans elle.
+   */
+  admin: {
+    accessKey: process.env.DASHBOARD_ACCESS_KEY ?? "",
   },
   /**
    * Per-route throttling. The global ceiling in app.ts is a blunt instrument
@@ -167,5 +177,33 @@ export const env = {
     reconnectAfterSeconds: int(process.env.ENDPOINT_RECONNECT_AFTER, 3_300),
     /** Node reconciliation cadence: revocations and new devices land within this window. */
     heartbeatSeconds: int(process.env.ENDPOINT_HEARTBEAT, 30),
+    /** Tolerance on `X-Ingest-Timestamp`, in seconds (D56). */
+    maxSkewSeconds: int(process.env.INGEST_MAX_SKEW_SECONDS, 120),
   },
 };
+
+/*
+ * Garde-fou de production (D55). Il est évalué au chargement du module : une
+ * fonction Vercel qui démarre sans ces valeurs doit échouer bruyamment, pas
+ * servir un paiement simulé ou une ingestion ouverte.
+ *
+ * Le cas qui compte est `PAYMENT_PROVIDER` : sa valeur par défaut est `mock`,
+ * et les routes `/pay/mock/:ref/confirm` confirment un paiement sans argent.
+ */
+if (process.env.NODE_ENV === "production") {
+  const missing = [
+    ["MASTER_KEY", process.env.MASTER_KEY],
+    ["JWT_SECRET", process.env.JWT_SECRET],
+    ["DATABASE_URL (postgres)", process.env.DATABASE_URL?.startsWith("postgres") ? "ok" : ""],
+    ["ENDPOINT_INGEST_SECRET", process.env.ENDPOINT_INGEST_SECRET],
+    ["DASHBOARD_ACCESS_KEY", process.env.DASHBOARD_ACCESS_KEY],
+    ["BUILD_CALLBACK_SECRET", process.env.BUILD_CALLBACK_SECRET],
+    ["PAYMENT_PROVIDER=fapshi", process.env.PAYMENT_PROVIDER === "fapshi" ? "ok" : ""],
+  ]
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+
+  if (missing.length > 0) {
+    throw new Error(`Configuration de production incomplète : ${missing.join(", ")}`);
+  }
+}

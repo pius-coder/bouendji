@@ -461,4 +461,78 @@ CREATE OR REPLACE RULE audit_log_no_update AS
   ON UPDATE TO audit_log DO INSTEAD NOTHING;
 CREATE OR REPLACE RULE audit_log_no_delete AS
   ON DELETE TO audit_log DO INSTEAD NOTHING;
+
+/* =====================================================================
+ * D45-D70 (2026-10-23) — liste vivante, tiers, télémétrie, retraits, builds.
+ * Additif uniquement : la même règle que le bloc précédent.
+ * ===================================================================== */
+
+-- D45/D68 : deux natures de nœuds, jamais mélangées.
+ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS tier text NOT NULL DEFAULT 'free-labs';
+ALTER TABLE endpoints DROP CONSTRAINT IF EXISTS endpoints_tier_check;
+ALTER TABLE endpoints ADD CONSTRAINT endpoints_tier_check CHECK (tier IN ('free-labs','paid-gcp'));
+ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS down_since   timestamptz;
+ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS down_reason  text;
+ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS client_pool  jsonb;
+ALTER TABLE plans   ADD COLUMN IF NOT EXISTS endpoint_tier text NOT NULL DEFAULT 'free-labs';
+ALTER TABLE plans   DROP CONSTRAINT IF EXISTS plans_endpoint_tier_check;
+ALTER TABLE plans   ADD CONSTRAINT plans_endpoint_tier_check CHECK (endpoint_tier IN ('free-labs','paid-gcp'));
+
+-- D66 : manifeste de marque validé à la création.
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS brand jsonb;
+
+-- D53 : compte par marque + téléphone obligatoire.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key;
+CREATE UNIQUE INDEX IF NOT EXISTS users_app_email_idx ON users(app_id, lower(email));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone text;
+CREATE UNIQUE INDEX IF NOT EXISTS users_app_phone_idx ON users(app_id, phone) WHERE phone IS NOT NULL;
+
+-- D50/D63 : rapports clients (l'heure serveur fait foi).
+CREATE TABLE IF NOT EXISTS config_reports (
+  id          text PRIMARY KEY,
+  device_id   text NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  config_id   text NOT NULL,
+  ok          boolean NOT NULL,
+  latency_ms  integer,
+  reported_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS config_reports_lookup_idx ON config_reports(config_id, reported_at DESC);
+CREATE INDEX IF NOT EXISTS config_reports_device_idx ON config_reports(device_id, reported_at DESC);
+
+-- D52/D69 : consommation, deux sources nommées.
+CREATE TABLE IF NOT EXISTS usage_daily (
+  device_id  text NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  day        date NOT NULL,
+  source     text NOT NULL CHECK (source IN ('device','node')),
+  bytes_up   bigint NOT NULL DEFAULT 0,
+  bytes_down bigint NOT NULL DEFAULT 0,
+  seconds    integer NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (device_id, day, source)
+);
+
+-- Anti-spam des alertes, en base : survit au redémarrage d'instance.
+CREATE TABLE IF NOT EXISTS alert_state (
+  key          text PRIMARY KEY,
+  last_sent_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- D57/D65 : machine à états des retraits.
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS approved_by  text;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS approved_at  timestamptz;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS claimed_at   timestamptz;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS attempts     integer NOT NULL DEFAULT 0;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS failed_reason text;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS confirmed_at timestamptz;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS resolved_by  text;
+
+-- D69 : une identité par (appareil, nœud).
+CREATE UNIQUE INDEX IF NOT EXISTS config_grants_device_endpoint_idx ON config_grants(device_id, endpoint_id);
+
+-- D66 : file de builds pilotée par l'API.
+ALTER TABLE builds ADD COLUMN IF NOT EXISTS spec         jsonb;
+ALTER TABLE builds ADD COLUMN IF NOT EXISTS sha256       text;
+ALTER TABLE builds ADD COLUMN IF NOT EXISTS apk_url      text;
+ALTER TABLE builds ADD COLUMN IF NOT EXISTS version_code integer;
+ALTER TABLE builds ADD COLUMN IF NOT EXISTS updated_at   timestamptz NOT NULL DEFAULT now();
 `;

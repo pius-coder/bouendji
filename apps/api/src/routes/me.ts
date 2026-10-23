@@ -26,6 +26,7 @@ import { z } from "zod";
 import type { Database, Queryable, Row } from "../db.js";
 import { requireDeviceByToken, requireUser, verifyDeviceProof, type AuthContext } from "../lib/auth.js";
 import { fail } from "../lib/errors.js";
+import type { EndpointTier } from "../services/endpoints.js";
 
 /* -------------------------------------------------------------- validation */
 
@@ -94,6 +95,12 @@ export interface EntitlementDto {
   active: boolean;
   planCode: string | null;
   planName: string | null;
+  /**
+   * D45 : la nature de nœuds que ce forfait achète. Le bundle ne sert que ce
+   * tier — les deux infrastructures ne se mélangent jamais, sinon toute mesure
+   * de consommation devient incohérente.
+   */
+  endpointTier: EndpointTier;
   startsAt: string | null;
   endsAt: string | null;
   daysRemaining: number;
@@ -160,7 +167,7 @@ export function toDeviceDto(device: Row, currentDeviceId: string | null): Device
 export async function loadEntitlement(db: Queryable, userId: string): Promise<EntitlementSnapshot> {
   const row = await db.one<Row>(
     `SELECT s.id, s.plan_id, s.starts_at, s.ends_at,
-            p.code AS plan_code, p.name AS plan_name, p.device_limit
+            p.code AS plan_code, p.name AS plan_name, p.device_limit, p.endpoint_tier
        FROM subscriptions s
        JOIN plans p ON p.id = s.plan_id
       WHERE s.user_id = $1 AND s.status = 'active' AND s.ends_at > now()
@@ -183,6 +190,7 @@ export async function loadEntitlement(db: Queryable, userId: string): Promise<En
         active: false,
         planCode: null,
         planName: null,
+        endpointTier: "free-labs",
         startsAt: null,
         endsAt: null,
         daysRemaining: 0,
@@ -194,6 +202,9 @@ export async function loadEntitlement(db: Queryable, userId: string): Promise<En
 
   const endsAt = iso(row.ends_at as Date | string);
   const remainingMs = new Date(endsAt).getTime() - Date.now();
+  // Une colonne absente ou une valeur inattendue retombe sur `free-labs` : le
+  // tier le moins cher est le seul défaut sûr (D45).
+  const endpointTier: EndpointTier = row.endpoint_tier === "paid-gcp" ? "paid-gcp" : "free-labs";
   const subscription: SubscriptionDto = {
     id: String(row.id),
     planId: String(row.plan_id),
@@ -210,6 +221,7 @@ export async function loadEntitlement(db: Queryable, userId: string): Promise<En
       active: true,
       planCode: subscription.planCode,
       planName: subscription.planName,
+      endpointTier,
       startsAt: subscription.startsAt,
       endsAt,
       daysRemaining: Math.max(0, Math.ceil(remainingMs / 86_400_000)),
