@@ -59,6 +59,7 @@ class AppContainer(application: Application) {
         BrandTokens.requireValid()
         ApiClient(
             baseUrl = BrandTokens.apiBaseUrl,
+            appId = BrandTokens.appId,
             auth = deviceAuth,
             keys = deviceKeys,
             store = secureStore,

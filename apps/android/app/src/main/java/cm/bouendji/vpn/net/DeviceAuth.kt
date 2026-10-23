@@ -88,6 +88,15 @@ data class ProofHeaders(
 const val HEADER_DEVICE_TOKEN = "X-Device-Token"
 
 /**
+ * En-tête leurre (`x-app-id`, `middleware.ts:40` / `lib/decoy.ts:36`).
+ *
+ * Le serveur exige `X-App-Id` **et** `User-Agent: vpn-android` pour reconnaître
+ * l'application ; sans les deux, un navigateur qui ouvre le domaine est renvoyé
+ * vers le site leurre (D43). Ce n'est pas une sécurité, juste un rideau.
+ */
+const val HEADER_APP_ID = "X-App-Id"
+
+/**
  * État d'identité local : jeton d'appareil, identifiant d'installation, écart
  * d'horloge, et la fabrique de preuves.
  *
