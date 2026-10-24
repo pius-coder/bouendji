@@ -44,3 +44,6 @@ apps/android/app/debug/
 # Travail local des agents (arène de conception, préférences de l'outil)
 .arena/
 .commandcode/
+
+# Turborepo cache
+.turbo/

@@ -4,14 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch --env-file=.env src/server.ts",
     "start": "node dist/server.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:vercel": "tsc -p tsconfig.vercel.json --noEmit",
-    "openapi": "tsx src/scripts/emit-openapi.ts",
+    "openapi": "tsx --env-file-if-exists=.env src/scripts/emit-openapi.ts",
     "test": "node --test --import tsx test/*.test.ts",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx --env-file=.env src/seed.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",
