@@ -1,0 +1,45 @@
+# Image d'endpoint (infra/endpoint) publiée sur GHCR, pour Cloud Run.
+#
+# Cloud Run déploie directement une image **publique** de ghcr.io : c'est elle
+# qui remplace l'image tierce (UUID figé et public). Chaque déploiement tire son
+# propre UUID et son chemin auprès de l'API (D93 pour le fronting).
+#
+# Image : ghcr.io/pius-coder/vpn-endpoint:latest (et :<sha> pour épingler).
+name: endpoint-image
+
+on:
+  push:
+    paths:
+      - "infra/endpoint/**"
+      - ".github/workflows/endpoint-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: docker/setup-buildx-action@v4.4.1
+
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v7.4.0
+        with:
+          context: infra/endpoint
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/pius-coder/vpn-endpoint:latest
+            ghcr.io/pius-coder/vpn-endpoint:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}

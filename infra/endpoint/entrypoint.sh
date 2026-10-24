@@ -60,6 +60,10 @@ ENDPOINT_REGION=${ENDPOINT_REGION:-}
 ENDPOINT_LABEL=${ENDPOINT_LABEL:-}
 ENDPOINT_CAPACITY=${ENDPOINT_CAPACITY:-0}
 ENDPOINT_TTL=${ENDPOINT_TTL:-0}
+# Domain fronting (D93) : adresse du frontal (IP Google) et SNI séparés par des
+# virgules. Chaque SNI devient une sortie de plus, avec Host = PUBLIC_HOST.
+ENDPOINT_FRONT_ADDRESS=${ENDPOINT_FRONT_ADDRESS:-}
+ENDPOINT_FRONT_SNIS=${ENDPOINT_FRONT_SNIS:-}
 AGENT_VERSION=${ENDPOINT_AGENT_VERSION:-$AGENT_VERSION_DEFAULT}
 
 [ -n "$PUBLIC_HOST" ] || die 78 "PUBLIC_HOST manquant : nom d'hôte public du service (ex: node-01-xxxx.us-central1.run.app)."
@@ -144,6 +148,7 @@ post_json() {
     code=$(curl -sS \
         --connect-timeout 5 --max-time 10 \
         -H "Authorization: Bearer $ENDPOINT_INGEST_SECRET" \
+        -H "X-Ingest-Timestamp: $(date +%s)" \
         -H 'Content-Type: application/json' \
         -H 'Accept: application/json' \
         -o "$body_out" -w '%{http_code}' \
@@ -178,6 +183,8 @@ REGISTER_PAYLOAD=$(jq -n \
     --argjson port "$PUBLIC_PORT" \
     --argjson capacity "$CAPACITY_JSON" \
     --argjson ttl_seconds "$TTL_JSON" \
+    --arg front_address "$ENDPOINT_FRONT_ADDRESS" \
+    --arg front_snis "$ENDPOINT_FRONT_SNIS" \
     '{deployment_key: $deployment_key,
       public_host: $public_host,
       port: $port,
@@ -185,7 +192,10 @@ REGISTER_PAYLOAD=$(jq -n \
      + (if $region == "" then {} else {region: $region} end)
      + (if $label == "" then {} else {label: $label} end)
      + (if $capacity == 0 then {} else {capacity: $capacity} end)
-     + (if $ttl_seconds == 0 then {} else {ttl_seconds: $ttl_seconds} end)') \
+     + (if $ttl_seconds == 0 then {} else {ttl_seconds: $ttl_seconds} end)
+     + (if $front_address == "" or $front_snis == "" then {}
+        else {front: {address: $front_address,
+                      snis: ($front_snis | gsub(" "; "") | split(",") | map(select(length > 0)))}} end)') \
     || die 70 "construction du corps d'enregistrement impossible (jq)."
 
 KEY_PAYLOAD=$(jq -n --arg deployment_key "$DEPLOYMENT_KEY" '{deployment_key: $deployment_key}') \
