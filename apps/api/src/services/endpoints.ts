@@ -9,6 +9,17 @@ import { buildVlessUri, randomWsPath } from "../lib/vless.js";
 export type EndpointStatus = "pending" | "active" | "draining" | "expired" | "failed";
 export type EndpointHealth = "unknown" | "healthy" | "degraded" | "down";
 
+/**
+ * Deux natures de nœuds, jamais mélangées (D45) : `free-labs` vit 4 h 30 et
+ * tourne par le nombre, `paid-gcp` ne meurt pas et porte la mesure par appareil
+ * (D69). Un bundle ne contient qu'un seul tier.
+ */
+export type EndpointTier = "free-labs" | "paid-gcp";
+export type EndpointIdentityMode = "shared" | "per_device";
+
+/** Pool fixe d'identités pré-provisionnées d'un nœud `per_device` (D69). */
+export const CLIENT_POOL_SIZE = 200;
+
 export interface EndpointRow {
   id: string;
   deployment_key: string;
@@ -21,12 +32,18 @@ export interface EndpointRow {
   sni: string | null;
   ws_path: string | null;
   credential: string;
-  identity_mode: "shared" | "per_device";
+  tier: EndpointTier;
+  identity_mode: EndpointIdentityMode;
+  /** `jsonb` : tableau d'UUID quand `identity_mode = 'per_device'`. */
+  client_pool: string[] | null;
   region: string;
   capacity: number;
   in_use: number;
   status: EndpointStatus;
   health: EndpointHealth;
+  /** Posé par le verdict client / l'admin, jamais par le nœud (D47). */
+  down_since: Date | string | null;
+  down_reason: string | null;
   latency_ms: number | null;
   health_checked_at: Date | string | null;
   agent_version: string | null;
@@ -48,6 +65,10 @@ export interface RegisterEndpointInput {
   capacity?: number;
   ttlSeconds?: number;
   agentVersion?: string | null;
+  /** D68 : propriété du nœud, choisie par `ENDPOINT_TIER`. Défaut `free-labs`. */
+  tier?: EndpointTier;
+  /** D68 : `per_device` fait générer un pool d'identités à l'enregistrement. */
+  identityMode?: EndpointIdentityMode;
 }
 
 export interface RegisteredEndpoint {
@@ -62,6 +83,10 @@ export interface RegisteredEndpoint {
   /** Plaintext, only ever returned to the deployment that owns the row. */
   credential: string;
   status: EndpointStatus;
+  tier: EndpointTier;
+  identityMode: EndpointIdentityMode;
+  /** Pool fixe (200 UUID) quand `identityMode = 'per_device'`, sinon `null`. */
+  clientPool: string[] | null;
   expiresAt: string;
   poolRevision: number;
   created: boolean;
@@ -99,6 +124,33 @@ function isExpired(row: EndpointRow, now = Date.now()): boolean {
   return row.status === "expired" || new Date(row.expires_at).getTime() <= now;
 }
 
+/**
+ * `client_pool` est du `jsonb` : selon le driver il revient déjà désérialisé
+ * (tableau) ou sous forme de texte JSON. On accepte les deux, et on refuse tout
+ * le reste — un pool illisible est un pool absent, jamais une exception au
+ * milieu d'un bundle.
+ */
+export function readClientPool(value: unknown): string[] | null {
+  if (value == null) return null;
+  if (Array.isArray(value)) {
+    const items = value.filter((item): item is string => typeof item === "string" && item.length > 0);
+    return items.length > 0 ? items : null;
+  }
+  if (typeof value === "string") {
+    try {
+      return readClientPool(JSON.parse(value) as unknown);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Le pool est fixe (D69) : généré une fois, jamais rechargé à l'inscription. */
+function generateClientPool(): string[] {
+  return Array.from({ length: CLIENT_POOL_SIZE }, () => randomUUID());
+}
+
 export async function poolRevision(db: Queryable): Promise<number> {
   const value = await db.scalar<string | number>("SELECT revision FROM pool_state WHERE id = 'pool'");
   return Number(value ?? 1);
@@ -134,10 +186,26 @@ export async function registerEndpoint(db: Queryable, input: RegisterEndpointInp
   const label = input.label.trim().slice(0, 64);
   if (label.length < 2) throw fail.validation({ label: "Libellé trop court." });
   const capacity = clamp(input.capacity ?? 80, 1, 10_000);
+  // D68 : le défaut ne s'applique qu'à l'absence de valeur. Un `tier` transmis
+  // par le conteneur doit être écrit tel quel, sinon le nœud payant devient un
+  // nœud de lab sans que personne ne le voie.
+  const requestedTier: EndpointTier | null = input.tier ?? null;
+  const requestedIdentityMode: EndpointIdentityMode | null = input.identityMode ?? null;
+  const tier: EndpointTier = requestedTier ?? "free-labs";
+  const identityMode: EndpointIdentityMode = requestedIdentityMode ?? "shared";
 
   const existing = await byDeploymentKey(db, deploymentKey);
   if (existing) {
-    return revive(db, existing, { host, port, region, label, capacity, agentVersion: input.agentVersion ?? null });
+    return revive(db, existing, {
+      host,
+      port,
+      region,
+      label,
+      capacity,
+      agentVersion: input.agentVersion ?? null,
+      tier: requestedTier,
+      identityMode: requestedIdentityMode,
+    });
   }
 
   const ttl = clamp(
@@ -149,14 +217,16 @@ export async function registerEndpoint(db: Queryable, input: RegisterEndpointInp
   const id = newId();
   const path = wsPath ?? randomWsPath();
   const expiresAt = new Date(Date.now() + ttl * 1000);
+  const clientPool = identityMode === "per_device" ? generateClientPool() : null;
 
   try {
     await db.query(
       `INSERT INTO endpoints
          (id, deployment_key, label, host, port, protocol, transport, security, sni, ws_path,
           credential, identity_mode, region, capacity, status, health, agent_version,
-          last_seen_at, expires_at)
-       VALUES ($1,$2,$3,$4,$5,'vless','ws',$6,$7,$8,$9,'shared',$10,$11,'pending','unknown',$12,now(),$13)`,
+          last_seen_at, expires_at, tier, client_pool)
+       VALUES ($1,$2,$3,$4,$5,'vless','ws',$6,$7,$8,$9,$10,$11,$12,'pending','unknown',$13,
+               now(),$14,$15,$16::jsonb)`,
       [
         id,
         deploymentKey,
@@ -167,17 +237,31 @@ export async function registerEndpoint(db: Queryable, input: RegisterEndpointInp
         input.sni ?? host,
         path,
         encryptSecret(credential),
+        identityMode,
         region,
         capacity,
         input.agentVersion ?? null,
         expiresAt,
+        tier,
+        clientPool === null ? null : JSON.stringify(clientPool),
       ],
     );
   } catch (err) {
     // Two instances of the same revision booting at once: the loser reads the winner.
     if (isUniqueViolation(err)) {
       const raced = await byDeploymentKey(db, deploymentKey);
-      if (raced) return revive(db, raced, { host, port, region, label, capacity, agentVersion: input.agentVersion ?? null });
+      if (raced) {
+        return revive(db, raced, {
+          host,
+          port,
+          region,
+          label,
+          capacity,
+          agentVersion: input.agentVersion ?? null,
+          tier: requestedTier,
+          identityMode: requestedIdentityMode,
+        });
+      }
     }
     throw err;
   }
@@ -194,6 +278,9 @@ export async function registerEndpoint(db: Queryable, input: RegisterEndpointInp
     wsPath: path,
     credential,
     status: "pending",
+    tier,
+    identityMode,
+    clientPool,
     expiresAt: expiresAt.toISOString(),
     poolRevision: revision,
     created: true,
@@ -203,17 +290,56 @@ export async function registerEndpoint(db: Queryable, input: RegisterEndpointInp
 async function revive(
   db: Queryable,
   row: EndpointRow,
-  patch: { host: string; port: number; region: string; label: string; capacity: number; agentVersion: string | null },
+  patch: {
+    host: string;
+    port: number;
+    region: string;
+    label: string;
+    capacity: number;
+    agentVersion: string | null;
+    tier: EndpointTier | null;
+    identityMode: EndpointIdentityMode | null;
+  },
 ): Promise<RegisteredEndpoint> {
   if (isExpired(row)) {
     throw fail.conflict("Ce déploiement est expiré. Déployez un nouveau serveur avec une nouvelle clé.");
   }
+
+  /*
+   * Redémarrage = même ligne, même expiration, même credential. Le tier et le
+   * mode d'identité suivent la même règle : la ligne fait foi, donc un
+   * conteneur relancé sans `ENDPOINT_TIER` ne peut pas rétrograder un nœud
+   * payant en nœud de lab. Une seule transition est acceptée, celle qui va
+   * dans le sens de la déclaration : `shared` → `per_device` (le pool fixe est
+   * alors généré une fois, et la révision bouge pour que les appareils
+   * récupèrent une identité réelle).
+   */
+  const nextTier: EndpointTier = patch.tier !== null && patch.tier !== row.tier ? patch.tier : row.tier;
+  const upgradingIdentity = patch.identityMode === "per_device" && row.identity_mode !== "per_device";
+  const nextIdentityMode: EndpointIdentityMode = upgradingIdentity ? "per_device" : row.identity_mode;
+  const nextClientPool =
+    nextIdentityMode === "per_device" ? (readClientPool(row.client_pool) ?? generateClientPool()) : null;
+  const poolChanged = nextTier !== row.tier || upgradingIdentity;
+
   await db.query(
     `UPDATE endpoints
         SET host=$2, port=$3, region=$4, label=$5, capacity=$6,
-            agent_version=COALESCE($7, agent_version), last_seen_at=now(), updated_at=now()
+            agent_version=COALESCE($7, agent_version),
+            tier=$8, identity_mode=$9, client_pool=$10::jsonb,
+            last_seen_at=now(), updated_at=now()
       WHERE id=$1`,
-    [row.id, patch.host, patch.port, patch.region, patch.label, patch.capacity, patch.agentVersion],
+    [
+      row.id,
+      patch.host,
+      patch.port,
+      patch.region,
+      patch.label,
+      patch.capacity,
+      patch.agentVersion,
+      nextTier,
+      nextIdentityMode,
+      nextClientPool === null ? null : JSON.stringify(nextClientPool),
+    ],
   );
 
   return {
@@ -227,12 +353,21 @@ async function revive(
     wsPath: row.ws_path ?? "/ws",
     credential: decryptSecret(row.credential),
     status: row.status,
+    tier: nextTier,
+    identityMode: nextIdentityMode,
+    clientPool: nextClientPool,
     expiresAt: iso(row.expires_at),
-    poolRevision: await poolRevision(db),
+    poolRevision: poolChanged ? await bumpPoolRevision(db) : await poolRevision(db),
     created: false,
   };
 }
 
+/**
+ * `ready` ne dit qu'une chose : « ce conteneur est prêt à recevoir du trafic ».
+ * Il ne touche plus à `health` (D47) : un redémarrage ne peut donc pas lever un
+ * verdict `down` posé par les clients. Seul `setHealth` (services/health.ts)
+ * écrit la santé, et c'est une transition qui bumpe la révision (D48).
+ */
 export async function markReady(
   db: Queryable,
   deploymentKey: string,
@@ -246,10 +381,10 @@ export async function markReady(
   const changed = row.status !== nextStatus;
   await db.query(
     `UPDATE endpoints
-        SET status=$2, health=$3, agent_version=COALESCE($4, agent_version),
+        SET status=$2, agent_version=COALESCE($3, agent_version),
             last_seen_at=now(), updated_at=now()
       WHERE id=$1`,
-    [row.id, nextStatus, nextStatus === "active" ? "unknown" : row.health, input.agentVersion ?? null],
+    [row.id, nextStatus, input.agentVersion ?? null],
   );
   const revision = changed ? await bumpPoolRevision(db) : await poolRevision(db);
   return { status: nextStatus, poolRevision: revision };
@@ -258,35 +393,63 @@ export async function markReady(
 /**
  * Liveness signal only. It never extends expires_at and never bumps the pool
  * revision: a heartbeat must not force every device to re-download a bundle.
+ *
+ * D47 : la parole du nœud ne lève **jamais** un `down`. Un conteneur vivant dont
+ * le tunnel est mort est exactement le cas que le verdict client doit voir, et
+ * le heartbeat ne voit pas le chemin client. Elle peut en revanche poser
+ * `healthy` ou `degraded` tant qu'aucun verdict `down` n'existe.
  */
 export async function heartbeat(
   db: Queryable,
   deploymentKey: string,
   input: { latencyMs?: number | null; health?: EndpointHealth | null; agentVersion?: string | null } = {},
-): Promise<{ status: EndpointStatus; expiresAt: string }> {
+): Promise<{ status: EndpointStatus; expiresAt: string; tier: EndpointTier }> {
   const row = await byDeploymentKey(db, deploymentKey);
   if (!row) throw fail.notFound("Déploiement inconnu.");
   await db.query(
     `UPDATE endpoints
         SET last_seen_at=now(), updated_at=now(),
             latency_ms=COALESCE($2, latency_ms),
-            health=COALESCE($3, health),
+            health=CASE WHEN endpoints.health = 'down' THEN 'down' ELSE COALESCE($3, health) END,
             health_checked_at=CASE WHEN $3 IS NULL THEN health_checked_at ELSE now() END,
             agent_version=COALESCE($4, agent_version)
       WHERE id=$1`,
     [row.id, input.latencyMs ?? null, input.health ?? null, input.agentVersion ?? null],
   );
-  return { status: row.status, expiresAt: iso(row.expires_at) };
+  return { status: row.status, expiresAt: iso(row.expires_at), tier: row.tier };
 }
 
-/** Ordered best-first: the app connects to the first entry and probes the rest. */
-export async function servedEndpoints(db: Queryable, limit = 12): Promise<EndpointRow[]> {
+/**
+ * La liste vivante (D45/D47) : le tier demandé, jamais un nœud `down`, jamais un
+ * nœud qui meurt dans la fenêtre de drain. `expires_at` ne décide plus de la
+ * présence — il ne sert qu'au drain et aux alertes.
+ *
+ * `drain` remplace `sweepEndpoints()` pour la **lecture** : plus besoin d'un
+ * tick serveur pour retirer un nœud qui va mourir (D51).
+ *
+ * La seconde signature (`servedEndpoints(db, limit)`) est l'appel historique des
+ * bundles hors ligne : elle reste valable et sert le tier gratuit.
+ */
+export function servedEndpoints(db: Queryable, tier: EndpointTier, limit?: number): Promise<EndpointRow[]>;
+export function servedEndpoints(db: Queryable, limit?: number): Promise<EndpointRow[]>;
+export async function servedEndpoints(
+  db: Queryable,
+  tierOrLimit: EndpointTier | number = "free-labs",
+  limit = 12,
+): Promise<EndpointRow[]> {
+  const tier: EndpointTier = typeof tierOrLimit === "number" ? "free-labs" : tierOrLimit;
+  const max = typeof tierOrLimit === "number" ? tierOrLimit : limit;
   return db.query<EndpointRow>(
     `SELECT * FROM endpoints
-      WHERE status = 'active' AND expires_at > now()
-      ORDER BY (health = 'healthy') DESC NULLS LAST, latency_ms ASC NULLS LAST, created_at ASC
+      WHERE status = 'active'
+        AND tier = $2
+        AND health <> 'down'
+        AND expires_at > now() + ($3::int * interval '1 second')
+      ORDER BY CASE health WHEN 'healthy' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END,
+               latency_ms ASC NULLS LAST,
+               created_at ASC
       LIMIT $1`,
-    [limit],
+    [max, tier, env.ingest.drainLeadSeconds],
   );
 }
 

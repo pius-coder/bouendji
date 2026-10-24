@@ -40,3 +40,10 @@ apps/android/app/debug/
 .DS_Store
 .idea/
 .vscode/
+
+# Travail local des agents (arène de conception, préférences de l'outil)
+.arena/
+.commandcode/
+
+# Turborepo cache
+.turbo/

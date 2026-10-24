@@ -31,7 +31,8 @@ import java.util.concurrent.TimeUnit
  * `apps/api/src/routes`. Il
  * n'invente aucun en-tête, aucune route, aucun code d'erreur :
  *
- *   en-têtes  `X-Device-Token`, `X-Device-Timestamp`, `X-Device-Nonce`,
+ *   en-têtes  `X-App-Id`, `User-Agent: vpn-android` (contrat leurre, D43),
+ *             `X-Device-Token`, `X-Device-Timestamp`, `X-Device-Nonce`,
  *             `X-Device-Signature` (`verifyDeviceProof`, lignes 123-156)
  *   erreurs   enveloppe `{ error: { code, message, details?, retryAfter? } }`
  *   routes    `/v1/devices/challenges`, `/v1/devices/enroll`, `/v1/auth/login`,
@@ -52,6 +53,7 @@ import java.util.concurrent.TimeUnit
  */
 class ApiClient(
     baseUrl: String,
+    private val appId: String,
     private val auth: DeviceAuth,
     private val keys: DeviceKeys,
     private val store: SecureStore,
@@ -420,6 +422,7 @@ class ApiClient(
             if (body != null) builder.header("Content-Type", "application/json; charset=utf-8")
             builder.header("Accept", "application/json")
             builder.header("User-Agent", "vpn-android")
+            builder.header(HEADER_APP_ID, appId)
             if (bearer != null) builder.header("Authorization", "Bearer $bearer")
             for ((name, value) in extraHeaders) builder.header(name, value)
 

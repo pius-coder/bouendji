@@ -68,9 +68,10 @@ Un rapport de sous-agent doit contenir :
   heartbeat).
 - `apps/admin/` : **supprimé** (D33). Le dashboard est à réécrire et vivra sur
   Vercel (D32).
-- `apps/android` : socle Gradle + VpnService + Keystore + client signé. La
-  couche `ui/` a été **supprimée** (D33) ; `MainActivity.kt` n'est qu'un point
-  d'entrée vide.
+- `apps/android` : socle Gradle + VpnService + Keystore + client signé, UI
+  Compose v2 (`ui/`) et moteur `libbox` (sing-box). `assembleDebug` **réussit**
+  depuis le 2026-10-21 (voir `30-clients/android-toolchain`) ; pas de wrapper
+  Gradle versionné, le build passe par `tools/build-apk.ps1`.
 
 ## Ce que « vérifié » veut dire ici
 
@@ -100,5 +101,7 @@ Central. Tout est fait **sous Windows**, WSL n'est plus utilisé.
 - Hébergement : Vercel (D32), pas Cloud Run. Aucun `gcloud` n'est nécessaire.
 - Appareil de test : Pixel 8 en USB, API 37, autorisé (`adb devices` → `device`).
 
-Tant qu'aucun `gradlew assembleDebug` n'a réussi, tout code Android écrit doit
-être relu et sa vérification réelle reste à faire.
+**Vérifié** veut dire : compilation réellement lancée (`assembleDebug` + APK
+présent, ou `tsc --noEmit` sans sortie), ou test exécuté dont la sortie est
+citée. Un écran qui s'ouvre ne prouve pas le tunnel : `libbox.aar` est
+arm64-v8a seulement, donc l'émulateur x86_64 ne peut pas le charger.

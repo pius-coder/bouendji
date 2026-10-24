@@ -26,8 +26,22 @@ after(closeAll);
 
 /* ------------------------------------------------------------------ outils */
 
-function registrable(device: { deviceToken: string; keys: { signing: { spki: string; pem: string } } }, email: string) {
-  const body = { appId: seed.appId, email, password: PASSWORD, name: "Testeur Test", locale: "fr" };
+/**
+ * D53 : le téléphone est obligatoire et unique par marque. Un compteur suffit :
+ * ces numéros ne sont jamais joignables, ils ne servent qu'à la contrainte.
+ */
+let phoneSeq = 0;
+function nextPhone(): string {
+  phoneSeq += 1;
+  return `+2376${String(phoneSeq).padStart(8, "0")}`;
+}
+
+function registrable(
+  device: { deviceToken: string; keys: { signing: { spki: string; pem: string } } },
+  email: string,
+  phone = nextPhone(),
+) {
+  const body = { appId: seed.appId, email, password: PASSWORD, name: "Testeur Test", phone, locale: "fr" };
   const raw = JSON.stringify(body);
   return call("POST", "/v1/auth/register", {
     payload: body,
@@ -41,7 +55,7 @@ function registrable(device: { deviceToken: string; keys: { signing: { spki: str
 }
 
 async function loginWith(device: { deviceToken: string; keys: { signing: { spki: string; pem: string } } }, email: string, password = PASSWORD) {
-  const body = { email, password };
+  const body = { appId: seed.appId, email, password };
   return call("POST", "/v1/auth/login", {
     payload: body,
     headers: {

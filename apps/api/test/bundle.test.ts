@@ -53,10 +53,23 @@ interface Account {
   client: ReturnType<typeof deviceClient>;
 }
 
+let phoneSeq = 0;
+function nextPhone(): string {
+  phoneSeq += 1;
+  return `+2376${String(phoneSeq).padStart(8, "0")}`;
+}
+
 async function createAccount(label: string): Promise<Account> {
   const device = await enrollDevice({ deviceName: `Pixel ${label}` });
   const email = `${label}-${randomUUID().slice(0, 8)}@example.test`;
-  const body = { appId: seed.appId, email, password: PASSWORD, name: "Testeur Bundle", locale: "fr" };
+  const body = {
+    appId: seed.appId,
+    email,
+    password: PASSWORD,
+    name: "Testeur Bundle",
+    phone: nextPhone(),
+    locale: "fr",
+  };
   const registered = await call("POST", "/v1/auth/register", {
     payload: body,
     headers: {
@@ -139,12 +152,13 @@ test("le bundle est une enveloppe scellée qui se déchiffre avec la clé AGREE"
     ["af", "eu"],
   );
 
-  // Le bundle n'expire jamais après les droits ni après la première config.
+  // D49 : le bundle n'expire jamais après les droits, mais il vit tant que la
+  // **dernière** configuration servie vit — un nœud qui meurt ne doit pas périr
+  // le bundle des autres. Chaque configuration porte sa propre échéance.
   const expiresAt = new Date(plaintext.expiresAt).getTime();
+  const latestConfig = Math.max(...plaintext.configs.map((config: { expiresAt: string }) => new Date(config.expiresAt).getTime()));
   assert.ok(expiresAt <= new Date(subscriptionEndsAt).getTime(), "pas au-delà des droits");
-  for (const config of plaintext.configs) {
-    assert.ok(expiresAt <= new Date(config.expiresAt).getTime(), "pas au-delà d'une configuration");
-  }
+  assert.equal(expiresAt, Math.min(latestConfig, new Date(subscriptionEndsAt).getTime()), "égale au maximum des configurations, borné par les droits");
 
   // Une autre clé privée ne déchiffre pas : le contexte d'ECDH est lié à l'appareil.
   const other = newKeyPair();
@@ -254,10 +268,10 @@ test("appareil révoqué → 403 DEVICE_REVOKED", async () => {
   // Nouvelle tentative de connexion avec le jeton de l'appareil révoqué : là,
   // c'est bien l'état de l'appareil qui répond.
   const relogin = await call("POST", "/v1/auth/login", {
-    payload: { email: revoked.email, password: PASSWORD },
+    payload: { appId: seed.appId, email: revoked.email, password: PASSWORD },
     headers: {
       "x-device-token": revoked.device.deviceToken,
-      ...signProof(revoked.device.keys.signing, "POST", "/v1/auth/login", JSON.stringify({ email: revoked.email, password: PASSWORD })),
+      ...signProof(revoked.device.keys.signing, "POST", "/v1/auth/login", JSON.stringify({ appId: seed.appId, email: revoked.email, password: PASSWORD })),
     },
   });
   assert.equal(relogin.status, 403);
@@ -297,7 +311,7 @@ test("quota : le 2e appareil reste enrolled, puis la place libérée est reprise
 
   // Deuxième appareil du même compte : plan à une place, la première est prise.
   const second = await enrollDevice({ deviceName: "Pixel bis" });
-  const loginBody = { email: owner.email, password: PASSWORD };
+  const loginBody = { appId: seed.appId, email: owner.email, password: PASSWORD };
   const logged = await call("POST", "/v1/auth/login", {
     payload: loginBody,
     headers: {

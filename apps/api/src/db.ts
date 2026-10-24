@@ -63,7 +63,22 @@ export async function createDb(url = env.databaseUrl): Promise<Database> {
         await pool.end();
       },
     };
-    await pool.query(SCHEMA_SQL);
+    /*
+     * Le schéma est rejoué à chaque démarrage à froid. Deux instances qui
+     * démarrent ensemble se disputeraient le catalogue (ALTER, DROP CONSTRAINT).
+     * Le verrou consultatif est pris **sur la même connexion** : la variante
+     * `pg_advisory_xact_lock` ne conviendrait pas, et le pooler en mode
+     * transaction ne conserve pas les verrous de session — d'où l'URL directe.
+     */
+    const client = await pool.connect();
+    try {
+      await client.query("SET lock_timeout = '10s'");
+      await client.query("SELECT pg_advisory_lock($1)", [727_001]);
+      await client.query(SCHEMA_SQL);
+    } finally {
+      await client.query("SELECT pg_advisory_unlock($1)", [727_001]).catch(() => undefined);
+      client.release();
+    }
     return db;
   }
 

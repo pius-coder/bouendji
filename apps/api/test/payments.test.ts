@@ -21,6 +21,7 @@ process.env.PUBLIC_BASE_URL = "http://localhost:8080";
 const { createDb } = await import("../src/db.js");
 const { buildApp } = await import("../src/app.js");
 const { issueAccessToken } = await import("../src/lib/auth.js");
+const { env } = await import("../src/config.js");
 const { setMockPaymentStatus, getMockPaymentStatus } = await import("../src/services/mockPayments.js");
 const { planRevision, refundOrder, commissionFor, toOrderDto } = await import("../src/services/payments.js");
 
@@ -112,7 +113,7 @@ async function api(method: string, url: string, payload?: unknown): Promise<Repl
   return { status: res.statusCode, body, text: res.body };
 }
 
-/** Le webhook est anonyme : il ne porte aucun jeton utilisateur. */
+/** Le webhook utilise son secret fournisseur, distinct des sessions utilisateur. */
 async function webhook(payload: Record<string, unknown>): Promise<Reply> {
   const res = await app.inject({ method: "POST", url: "/v1/payments/webhook/mock", payload });
   let body: Record<string, unknown> = {};
@@ -123,6 +124,37 @@ async function webhook(payload: Record<string, unknown>): Promise<Reply> {
   }
   return { status: res.statusCode, body, text: res.body };
 }
+
+test("webhook : secret fournisseur exigé dès qu'il est configuré", async () => {
+  const previous = env.fapshi.webhookSecret;
+  env.fapshi.webhookSecret = "mock-webhook-secret";
+  try {
+    const denied = await app.inject({
+      method: "POST",
+      url: "/v1/payments/webhook/mock",
+      payload: { transId: "mock_unknown" },
+    });
+    assert.equal(denied.statusCode, 401);
+
+    const wrong = await app.inject({
+      method: "POST",
+      url: "/v1/payments/webhook/mock",
+      headers: { "x-webhook-secret": "wrong-secret" },
+      payload: { transId: "mock_unknown" },
+    });
+    assert.equal(wrong.statusCode, 401);
+
+    const authorized = await app.inject({
+      method: "POST",
+      url: "/v1/payments/webhook/mock",
+      headers: { "x-webhook-secret": "mock-webhook-secret" },
+      payload: { transId: "mock_unknown" },
+    });
+    assert.equal(authorized.statusCode, 404, authorized.body);
+  } finally {
+    env.fapshi.webhookSecret = previous;
+  }
+});
 
 async function newOrder(): Promise<{ orderId: string; providerRef: string; checkoutUrl: string; amount: number }> {
   const res = await api("POST", "/v1/orders", { planId: PLAN, planRevision: REVISION });

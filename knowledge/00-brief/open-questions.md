@@ -3,7 +3,7 @@ id: open-questions
 title: Questions non tranchées
 tags: [brief, questions, blocage]
 status: open
-updated: 2026-10-20
+updated: 2026-10-22
 related: [decisions, 3x-ui, revocation, ingest-auth, cloud-run-url]
 ---
 
@@ -235,6 +235,41 @@ Le nœud peut recevoir une identité de deux façons :
 
 **Déclencheur de réévaluation** : une offre au Go, un fair-use, ou une exigence
 de révocation immédiate. Sans l'un des trois, l'UUID partagé reste le bon choix.
+
+## O21 — `X-App-Id` doit-il correspondre au `:appId` de la route ?
+
+Relevé le 2026-10-22 en ajoutant l'en-tête côté Android.
+
+**Fait vérifié** : `CONTRIBUTING.md` §3 dit que
+`GET /v1/apps/:appId/plans` exige `X-App-Id` **égal à** `:appId`, sinon 302.
+Le code ne le fait pas :
+
+- `routes/catalog.ts` ignore complètement les en-têtes et filtre par
+  `req.params.appId` ;
+- `lib/decoy.ts` et `middleware.ts` ne testent que la **présence** de
+  `x-app-id` (≥ 2 caractères) et `vpn-android` dans l'`User-Agent` ;
+- le 302 ne se déclenche que sur `Accept: text/html` — un client JSON sans
+  métadonnées reçoit un JSON normal, ce qui est voulu (tests, dashboard).
+
+**Conséquence** : n'importe quel `X-App-Id` non vide désarme le leurre ; la
+valeur n'est jamais confrontée au chemin. Ce n'est pas une faille de sécurité
+(le leurre n'en est pas une, D43), mais le contrat écrit et le code divergent.
+
+**Besoin** : soit vérifier l'égalité (et alors le leurre couvre aussi le
+catalogue — utile pour qu'un curieux ne puisse pas lister les prix d'une
+marque), soit corriger CONTRIBUTING pour dire « présence suffisante ».
+
+## Fermées le 2026-10-23
+
+| # | Fermée par | Ce qui a été tranché |
+|---|---|---|
+| **O4** | **D56** | Bearer `ENDPOINT_INGEST_SECRET` + `X-Ingest-Timestamp` (±120 s). Pas de HMAC : TLS couvre le rejeu réseau, le jeton reste la frontière. |
+| **O5** | **§4.5 du plan** | `PUBLIC_HOST` est une variable explicite, lue depuis l'URL réelle rendue par `gcloud run deploy`. Aucun nom d'hôte deviné. |
+| **O12** | **D59** | Aucun forfait au seed. Chaque admin pose ses prix et ses durées en jours. |
+| **O15** | **D51** | Entretien paresseux (hook 60 s/instance). Ni cron Pro, ni déclencheur externe. |
+| **O19 / O20** | **D52 / D69** | UUID partagé sur les labs ; `per_device` sur le nœud `paid-gcp` seul, avec deux sources de consommation nommées. |
+| **O21** | **D71 / CONTRIBUTING §3** | Le leurre ne teste que la **présence** de `X-App-Id` et ne redirige que sur `Accept: text/html`. La phrase « même valeur que `:appId` » était fausse : corrigée. L'`appId` est public par construction. |
+
 
 
 

@@ -1,3 +1,4 @@
+import type { FastifyServerOptions } from "fastify";
 import { buildApp } from "./app.js";
 import { env } from "./config.js";
 import { createDb } from "./db.js";
@@ -18,8 +19,22 @@ import { checkPoolExpiry, newPoolWatchState } from "./services/poolWatch.js";
 const SWEEP_INTERVAL_MS = 60_000;
 const SHUTDOWN_GRACE_MS = 15_000;
 
+/**
+ * Production keeps raw JSON: Cloud Run and log shippers read fields, not a
+ * formatted line. Development gets readable output through a pino transport,
+ * so pino-pretty (a devDependency) is never loaded in production.
+ */
+const logger: FastifyServerOptions["logger"] = env.isProduction
+  ? true
+  : {
+      transport: {
+        target: "pino-pretty",
+        options: { translateTime: "HH:MM:ss Z", ignore: "pid,hostname" },
+      },
+    };
+
 const db = await createDb();
-const app = await buildApp({ db, logger: true });
+const app = await buildApp({ db, logger });
 const poolWatch = newPoolWatchState();
 
 if (env.ingest.secret.length === 0) {

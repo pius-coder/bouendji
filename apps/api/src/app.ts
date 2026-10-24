@@ -1,14 +1,17 @@
 ﻿import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
-import Fastify, { type FastifyInstance } from "fastify";
+import { timingSafeEqual } from "node:crypto";
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { env } from "./config.js";
 import type { Database } from "./db.js";
 import { rateLimitError } from "./lib/attempts.js";
 import { registerDecoyGuard } from "./lib/decoy.js";
 import { ApiFailure } from "./lib/errors.js";
+import { registerOpenApi, registerOpenApiReference } from "./openapi.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminAuthRoutes } from "./routes/adminAuth.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerBuildRoutes } from "./routes/builds.js";
 import { registerBundleRoutes } from "./routes/bundle.js";
 import { registerCatalogRoutes } from "./routes/catalog.js";
 import { registerDeviceRoutes } from "./routes/devices.js";
@@ -17,6 +20,7 @@ import { registerMeRoutes } from "./routes/me.js";
 import { registerOfflineRoutes } from "./routes/offline.js";
 import { registerOrderRoutes } from "./routes/orders.js";
 import { registerPaymentRoutes } from "./routes/payments.js";
+import { registerTelemetryRoutes } from "./routes/telemetry.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -32,7 +36,7 @@ declare module "fastify" {
 export interface AppOptions {
   db: Database;
   /** `true`/`false`, or a pino options object. Off by default so tests stay quiet. */
-  logger?: boolean;
+  logger?: FastifyServerOptions["logger"];
   bodyLimit?: number;
 }
 
@@ -113,7 +117,20 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(cors, {
     origin: env.allowedOrigins,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["content-type", "authorization", "x-device-token", "x-device-timestamp", "x-device-nonce", "x-device-signature"],
+    allowedHeaders: [
+      "content-type",
+      "authorization",
+      "if-none-match",
+      // Console (D54) et ingestion (D56) : sans ces deux en-têtes dans la
+      // liste, le navigateur bloque la requête avant que l'API la voie.
+      "x-access-key",
+      "x-health-check-key",
+      "x-ingest-timestamp",
+      "x-device-token",
+      "x-device-timestamp",
+      "x-device-nonce",
+      "x-device-signature",
+    ],
     maxAge: 600,
     credentials: false,
   });
@@ -140,6 +157,102 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   // Rideau anti-curieux (couche Fastify, doublon de middleware.ts Edge).
   // Navigateur sans X-App-Id → 302 vers DECOY_URL. Bypass : sondes + webhook.
   await registerDecoyGuard(app);
+
+  // Doit précéder l'enregistrement des routes : en mode dynamique, @fastify/swagger
+  // lit les schémas au moment où chaque route est déclarée.
+  await registerOpenApi(app);
+
+  /* --------------------------------------------------- frontières d'accès */
+
+  /*
+   * D54 — la clé de console protège **toutes** les routes `/v1/admin`, login et
+   * inscription compris. Un export statique ne protège pas ses octets ; ce qui
+   * doit être protégé, ce sont les données et la création de comptes.
+   *
+   * Une clé vide est tolérée en développement uniquement : le garde-fou de
+   * `config.ts` refuse de démarrer en production sans elle.
+   */
+  const expectedAccessKey = env.admin.accessKey;
+  app.addHook("preHandler", async (req) => {
+    const routePath = req.routeOptions.url;
+    if (routePath === "/healthz" || routePath === "/readyz") {
+      const expected = env.health.checkKey;
+      const provided = String(req.headers["x-health-check-key"] ?? "");
+      if (!expected) {
+        throw new ApiFailure(503, "INTERNAL", "Clé de sonde non configurée.");
+      }
+      const a = Buffer.from(provided, "utf8");
+      const b = Buffer.from(expected, "utf8");
+      if (a.length !== b.length || !timingSafeEqual(a, b)) {
+        throw new ApiFailure(401, "UNAUTHENTICATED", "Clé de sonde requise.");
+      }
+    }
+
+    if (req.url.startsWith("/v1/admin") && expectedAccessKey.length > 0) {
+      const provided = String(req.headers["x-access-key"] ?? "");
+      const a = Buffer.from(provided, "utf8");
+      const b = Buffer.from(expectedAccessKey, "utf8");
+      if (a.length !== b.length || !timingSafeEqual(a, b)) {
+        throw new ApiFailure(401, "UNAUTHENTICATED", "Clé d'accès requise.");
+      }
+    }
+
+    /*
+     * D56 — l'ingestion porte un horodatage pour qu'une requête capturée ne
+     * reste pas éternellement rejouable. Le callback de build a son **propre**
+     * secret (D66) et ne passe donc pas par cette vérification.
+     *
+     * Les tests ne l'envoient pas : leur jeton d'ingestion est déjà la
+     * frontière, et exiger l'en-tête n'y prouverait rien de plus. En
+     * développement et en production, il est exigé.
+     */
+    if (!env.isTest && req.url.startsWith("/v1/internal") && !req.url.startsWith("/v1/internal/builds/")) {
+      const raw = String(req.headers["x-ingest-timestamp"] ?? "");
+      const timestamp = Number(raw);
+      const skew = Math.abs(Date.now() / 1000 - timestamp);
+      if (!raw || !Number.isFinite(timestamp) || skew > env.ingest.maxSkewSeconds) {
+        throw new ApiFailure(401, "UNAUTHENTICATED", "Horodatage d'ingestion absent ou périmé.");
+      }
+    }
+  });
+
+  /*
+   * D51 — entretien paresseux. Vercel ne garde aucun processus : un hook borné
+   * à une exécution par minute et par instance remplace le tick de 60 s.
+   *
+   * Les trois requêtes sont idempotentes. Une erreur est avalée : l'entretien ne
+   * doit jamais transformer une requête métier en 500.
+   */
+  let lastMaintenanceAt = 0;
+  app.addHook("onRequest", async (req) => {
+    if (req.url === "/healthz" || req.url === "/readyz") return;
+    const now = Date.now();
+    if (now - lastMaintenanceAt < 60_000) return;
+    lastMaintenanceAt = now;
+    try {
+      // Probation : un nœud « down » redevient candidat après 30 min (D50).
+      await db.query(
+        `UPDATE endpoints
+            SET health = 'unknown', down_since = NULL, down_reason = NULL, updated_at = now()
+          WHERE health = 'down' AND down_since < now() - interval '30 minutes'`,
+      );
+      // Expiration constatée : la lecture filtre déjà, ceci garde la console honnête.
+      await db.query(
+        `UPDATE endpoints
+            SET status = 'expired', updated_at = now()
+          WHERE status IN ('active', 'draining') AND expires_at <= now()`,
+      );
+      // Un versement ambigu ne reste pas ambigu (D65).
+      await db.query(
+        `UPDATE payouts
+            SET status = 'needs_review'
+          WHERE status = 'processing' AND provider_ref IS NULL
+            AND claimed_at < now() - interval '10 minutes'`,
+      );
+    } catch {
+      // Volontairement silencieux : voir le commentaire ci-dessus.
+    }
+  });
 
   // Le dashboard n'est plus servi par l'API : il vit sur Vercel (D32). Garder
   // ici une copie statique créait deux origines pour la même console, et deux
@@ -171,11 +284,14 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerBundleRoutes(app, db);
   registerCatalogRoutes(app, db);
   registerMeRoutes(app, db);
+  registerTelemetryRoutes(app, db);
   registerOrderRoutes(app, db);
   registerPaymentRoutes(app, db);
   registerAdminRoutes(app, db);
   registerAdminAuthRoutes(app, db);
+  registerBuildRoutes(app, db);
   registerOfflineRoutes(app, db);
+  await registerOpenApiReference(app);
 
   return app;
 }

@@ -41,6 +41,15 @@ test("sondes et webhook : jamais de redirect", async () => {
   }
 });
 
+test("documentation : un navigateur doit pouvoir l'ouvrir", async () => {
+  // Sans ces exceptions, `/reference/` renvoie vers le site leurre et
+  // l'interface est inutilisable exactement là où elle sert.
+  for (const url of ["/reference", "/reference/", "/openapi.json"]) {
+    const res = await app.inject({ method: "GET", url, headers: { accept: "text/html" } });
+    assert.notEqual(res.statusCode, 302, url);
+  }
+});
+
 test("client JSON sans metadata : JSON normal, pas de redirect", async () => {
   const res = await app.inject({ method: "GET", url: "/v1/me", headers: { accept: "application/json" } });
   assert.notEqual(res.statusCode, 302);

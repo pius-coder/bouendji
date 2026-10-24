@@ -2,13 +2,23 @@
   "name": "vpn-platform",
   "private": true,
   "version": "1.0.0",
-  "packageManager": "pnpm@12.8.1",
-  "engines": { "node": ">=22" },
+  "packageManager": "bun@1.3.14",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "pnpm --filter @vpn/api dev",
-    "build": "pnpm --filter @vpn/contract build && pnpm --filter @vpn/api build",
-    "test": "pnpm --filter @vpn/api test",
-    "typecheck": "pnpm -r typecheck",
-    "db:seed": "pnpm --filter @vpn/api seed"
+    "dev": "turbo run dev --filter=@vpn/api",
+    "dev:dashboard": "turbo run dev --filter=@vpn/dashboard",
+    "build": "turbo run build",
+    "test": "turbo run test --filter=@vpn/api",
+    "typecheck": "turbo run typecheck",
+    "db:seed": "turbo run seed --filter=@vpn/api"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.10"
   }
 }

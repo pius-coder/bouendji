@@ -40,10 +40,23 @@ function nextIp(): string {
 
 type Device = Awaited<ReturnType<typeof enrollDevice>>;
 
+let phoneSeq = 0;
+function nextPhone(): string {
+  phoneSeq += 1;
+  return `+2376${String(phoneSeq).padStart(8, "0")}`;
+}
+
 async function registerUser(label: string, ip = nextIp()) {
   const device = await enrollDevice({ deviceName: `Pixel ${label}` });
   const email = `${label}-${randomUUID().slice(0, 8)}@example.test`;
-  const body = { appId: seed.appId, email, password: PASSWORD, name: "Testeur Test", locale: "fr" };
+  const body = {
+    appId: seed.appId,
+    email,
+    password: PASSWORD,
+    name: "Testeur Test",
+    phone: nextPhone(),
+    locale: "fr",
+  };
   const res = await call("POST", "/v1/auth/register", {
     payload: body,
     headers: {
@@ -57,7 +70,7 @@ async function registerUser(label: string, ip = nextIp()) {
 }
 
 async function loginAt(device: Device, email: string, password: string, ip: string) {
-  const body = { email, password };
+  const body = { appId: seed.appId, email, password };
   return call("POST", "/v1/auth/login", {
     payload: body,
     headers: {

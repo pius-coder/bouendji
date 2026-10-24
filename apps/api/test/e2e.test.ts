@@ -21,9 +21,14 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
-import { app, closeAll, newKeyPair, seedApp, signProof, type DeviceKeys } from "./support.js";
+process.env.DASHBOARD_ACCESS_KEY = "e2e-dashboard-access-key";
+process.env.HEALTHCHECK_KEY = "e2e-health-check-key";
+
+import type { DeviceKeys } from "./support.js";
+const { app, closeAll, db, newKeyPair, seedApp, signProof } = await import("./support.js");
 
 const { openEnvelope } = await import("../src/lib/crypto.js");
+const { hashPassword } = await import("../src/lib/crypto.js");
 
 /* ------------------------------------------------------------------ serveur */
 
@@ -147,7 +152,7 @@ test("parcours complet : inscription, paiement simulé, abonnement, bundle chiff
   const password = "MotDePasse-E2E-2026";
 
   const register = await deviceCall("POST", "/v1/auth/register", {
-    payload: { appId: seed.appId, email, password, name: "Client E2E" },
+    payload: { appId: seed.appId, email, password, name: "Client E2E", phone: `+2376${String(Date.now()).slice(-8)}` },
     deviceToken,
     keys,
   });
@@ -320,13 +325,60 @@ test("parcours complet : inscription, paiement simulé, abonnement, bundle chiff
 /* ------------------------------------------------------------------- test 2 */
 
 test("santé : /healthz répond sans toucher la base", async () => {
-  const reply = await http("GET", "/healthz");
+  const denied = await http("GET", "/healthz");
+  assert.equal(denied.status, 401, denied.text);
+  const queryDenied = await http("GET", "/healthz?detail=1");
+  assert.equal(queryDenied.status, 401, queryDenied.text);
+  const reply = await http("GET", "/healthz", { headers: { "x-health-check-key": "e2e-health-check-key" } });
   assert.equal(reply.status, 200, reply.text);
   assert.equal(reply.body.status, "ok");
+  const readyDenied = await http("GET", "/readyz");
+  assert.equal(readyDenied.status, 401, readyDenied.text);
+  const ready = await http("GET", "/readyz", { headers: { "x-health-check-key": "e2e-health-check-key" } });
+  assert.equal(ready.status, 200, ready.text);
+  assert.equal(ready.body.status, "ready");
 });
 
 test("un chemin inconnu répond 404 en JSON, pas en HTML", async () => {
   const reply = await http("GET", "/v1/inexistant");
   assert.equal(reply.status, 404, reply.text);
   assert.equal(errorCode(reply), "NOT_FOUND");
+});
+
+test("admin HTTP : clé d'accès puis mot de passe puis JWT admin", async () => {
+  const adminId = `adm_e2e_${randomUUID().slice(0, 8)}`;
+  const email = `${adminId}@example.test`;
+  const password = "MotDePasse-Admin-E2E-2026";
+  await db.query(
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
+     VALUES ($1, $2, $3, 'Owner E2E', 'platform', 'owner', true)`,
+    [adminId, email, hashPassword(password)],
+  );
+
+  const noSharedKey = await http("POST", "/v1/admin/auth/login", { payload: { email, password } });
+  assert.equal(noSharedKey.status, 401, noSharedKey.text);
+  assert.equal(noSharedKey.body.error.code, "UNAUTHENTICATED");
+
+  const login = await http("POST", "/v1/admin/auth/login", {
+    payload: { email, password },
+    headers: { "x-access-key": "e2e-dashboard-access-key" },
+  });
+  assert.equal(login.status, 200, login.text);
+  const token = String(login.body.accessToken);
+  assert.ok(token.length > 20);
+
+  const noAdminToken = await http("GET", "/v1/admin/me", {
+    headers: { "x-access-key": "e2e-dashboard-access-key" },
+  });
+  assert.equal(noAdminToken.status, 401, noAdminToken.text);
+
+  const missingSharedKey = await http("GET", "/v1/admin/me", { token });
+  assert.equal(missingSharedKey.status, 401, missingSharedKey.text);
+
+  const me = await http("GET", "/v1/admin/me", {
+    token,
+    headers: { "x-access-key": "e2e-dashboard-access-key" },
+  });
+  assert.equal(me.status, 200, me.text);
+  assert.equal(me.body.platformRole, "owner");
 });

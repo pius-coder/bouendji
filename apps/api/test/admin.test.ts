@@ -488,16 +488,16 @@ test("versement : finance prépare, owner approuve, personne d'autre", async () 
   const attached = await db.query("SELECT id FROM commissions WHERE payout_id = $1", [payout.id]);
   assert.equal(attached.length, 2);
 
+  // D57 : celui qui prépare ne peut pas approuver sa propre demande.
   const selfApprove = await call("POST", `/payouts/${payout.id}/approve`, FINANCE_A, {});
-  assert.equal(selfApprove.status, 403, "finance prépare, elle n'approuve pas");
+  assert.equal(selfApprove.status, 409, "finance ne peut pas approuver sa propre demande");
 
+  // Un autre administrateur de la communauté approuve.
   const communityApprove = await call("POST", `/payouts/${payout.id}/approve`, ADMIN_A, {});
-  assert.equal(communityApprove.status, 403);
+  assert.equal(communityApprove.status, 200, communityApprove.text);
+  assert.equal((communityApprove.body as { status: string }).status, "approved");
 
-  const approved = await call("POST", `/payouts/${payout.id}/approve`, OWNER, {});
-  assert.equal(approved.status, 200);
-  assert.equal((approved.body as { status: string }).status, "approved");
-
+  // Une deuxième approbation ne passe pas, même par l'owner.
   const twice = await call("POST", `/payouts/${payout.id}/approve`, OWNER, {});
   assert.equal(twice.status, 409);
 

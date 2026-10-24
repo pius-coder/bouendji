@@ -3,7 +3,7 @@ id: decisions
 title: Décisions tranchées
 tags: [brief, decisions, journal]
 status: decided
-updated: 2026-10-20
+updated: 2026-10-23
 related: [open-questions, roles-and-commissions]
 ---
 
@@ -313,8 +313,142 @@ ici, pas laissée en double.
   `https://example-sms.com` en attendant le vrai site SMS). Client JSON sans
   métadonnées → JSON d'erreur normal, jamais 302 (sinon tests/dashboard
   cassés). Bypass : `/healthz`, `/readyz`, `/v1/payments/webhook/*` (D14).
-  Deux couches : `apps/api/middleware.ts` (Edge) + `apps/api/src/lib/decoy.ts`
-  (Fastify, vérifié par 5 tests). La sécurité réelle reste D4/D5.
+  Une seule couche : `apps/api/src/lib/decoy.ts` (Fastify, vérifié par 5 tests).
+  Le `middleware.ts` Edge a été supprimé le 2026-10-23 (D71) : il importait
+  `next/server`, qui n'est pas une dépendance, et ne compilait donc pas. La
+  sécurité réelle reste D4/D5.
+
+## Production — liste vivante, argent et marques (2026-10-23)
+
+Issues de l'audit des six couches et de l'arène de conception. Chaque décision
+ferme une question ouverte ou un défaut vérifié dans le code.
+
+- **D45** — **Deux natures de nœuds, jamais mélangées.** `endpoints.tier ∈
+  {free-labs, paid-gcp}`, `plans.endpoint_tier`, `servedEndpoints(tier)` filtre.
+  Un forfait d'un tier n'est créable que si ≥ 1 nœud de ce tier est actif et non
+  `down` (422 sinon). Les labs gratuits assurent la continuité par le nombre ;
+  le nœud GCP facturé est persistant et seul à pouvoir mesurer la consommation
+  par appareil. Ferme : le nœud de lab qui sert un forfait payant, et le forfait
+  vendu sans nœud.
+- **D46** — **`ENDPOINT_AUTO_APPROVE=true` en production.** En production, un
+  `ready` laissait le nœud `pending` et `servedEndpoints` filtre `active` : le
+  pool était vide par construction. Le secret d'ingestion reste la frontière ;
+  un nœud forgé se coupe depuis la console (`POST /v1/admin/endpoints/:id/health`).
+- **D47** — **La santé décide de la présence, pas l'horloge.** Le heartbeat et
+  `ready` ne peuvent **pas** lever un `down`
+  (`health = CASE WHEN health='down' THEN 'down' ELSE COALESCE($3, health) END`).
+  Un nœud vivant dont le tunnel est mort est exactement le cas à voir.
+- **D48** — **Une transition de santé bumpe `pool_state.revision`**, un
+  heartbeat non. L'ETag du bundle dépend des configs servies, donc une liste qui
+  change produit un nouvel ETag.
+- **D49** — **`expiresAt` de l'enveloppe = `min(fin des droits, max(expirations
+  des configs))`.** Le `min` faisait mourir le bundle avec le nœud le plus
+  faible. Le 304 est refusé si l'enveloppe calculée est expirée.
+- **D50** — **Verdict `down` à deux chemins** : 3 appareils distincts en échec
+  sur 10 min, **ou** 1 témoin différentiel (2 échecs consécutifs sur ce nœud +
+  ≥ 1 succès sur un autre dans la fenêtre). Retour : 3 succès, ou 30 min de
+  probation. Ferme le nœud mort indétectable quand un seul appareil existe.
+- **D51** — **Pas de cron, pas de vérificateur serveur 24/7.** Entretien
+  paresseux : hook `onRequest`, au plus une exécution par 60 s et par instance.
+  Ferme O15 sans plan Pro ni déclencheur externe.
+- **D52** — **Consommation à deux sources nommées** : `device` (compteurs du
+  moteur) et `node` (mesure du nœud payant). `usage_daily.source` est affiché.
+  Un chiffre qu'on n'a pas lu n'est pas écrit.
+- **D53** — **Compte par marque** : `UNIQUE (app_id, lower(email))`, `phone`
+  obligatoire, `appId` obligatoire au login. Un même email peut exister sur deux
+  marques ; les erreurs de connexion restent indiscernables.
+- **D54** — **`DASHBOARD_ACCESS_KEY` exigée (`X-Access-Key`) sur tous les
+  `/v1/admin/*`**, login et inscription compris. Pas de table d'invitations.
+- **D55** — **Refus de démarrer en production** si `PAYMENT_PROVIDER ≠ fapshi`,
+  ou si `MASTER_KEY` / `JWT_SECRET` / `DATABASE_URL` Postgres /
+  `ENDPOINT_INGEST_SECRET` / `DASHBOARD_ACCESS_KEY` / `BUILD_CALLBACK_SECRET`
+  manquent. Ferme l'abonnement gratuit par `/pay/mock/:ref/confirm`.
+- **D56** — **Ingestion : bearer + `X-Ingest-Timestamp` (±120 s). Pas de HMAC.**
+  Le jeton est déjà la frontière ; HMAC ne protège que d'une requête capturée,
+  ce que TLS empêche. Ferme O4.
+- **D57** — **Retraits : `finance`, `owner` et `community_admin` approuvent,
+  jamais leur propre demande**, transition conditionnelle. La rémunération de
+  `finance` se prend sur les 70 % du propriétaire, hors système. **Amende D38.**
+- **D58** — **Un `202` Fapshi n'est pas un versement.** `approved` = autorisé,
+  `processing` = envoyé, `paid` = confirmé, `needs_review` après 10 min sans
+  référence, `/resolve` clôt.
+- **D59** — **Forfaits libres** : prix + durée en jours, autant que l'admin veut.
+  **Aucun forfait au seed.** Ferme O12.
+- **D60** — **La bascule reste celle de sing-box** (`selector` + `urltest`) ;
+  on ajoute la mesure à travers le tunnel, le rapport, le re-fetch et le bandeau.
+- **D61** — **`NO_CONNECTION` = bandeau, jamais un écran plein.** Un bundle vide
+  n'écrase pas la liste locale.
+- **D62** — **APK : Vercel Blob + lien dans la console** ; la CI télécharge
+  `libbox.aar` depuis une Release GitHub. Remplace D44 pour le premier jour.
+- **D63** — **Témoin différentiel** (voir D50) : la bascule du client fournit la
+  preuve gratuitement.
+- **D64** — **Télémétrie en lots de 20**, réinjection plafonnée à 200, 4xx
+  (≠408/429) = lot abandonné, réseau/5xx = reprise avec backoff.
+- **D65** — **Machine à états des retraits** : `pending → approved →
+  processing → paid|failed`, `needs_review` + `/resolve`, `attempts ≤ 3`,
+  réclamation atomique **avant** l'appel réseau.
+- **D66** — **Le manifeste de marque est un contrat d'API**, validé à la
+  création (422, mêmes règles qu'`inject-brand.mjs`), stocké dans `apps.brand`
+  et `builds.spec`, déclenché par `workflow_dispatch`, clos par
+  `POST /v1/internal/builds/:id/callback`.
+- **D67** — **Deux échéances côté appareil** : `rightsExpiresAtMs` seule
+  provoque « expiré » ; `nextConfigExpiryMs` déclenche un rafraîchissement sans
+  vider le coffre.
+- **D68** — **`tier` et `identity_mode` traversent les schémas zod** d'ingestion.
+  Sans ça, `z.object` jette les clés et le nœud retombe sur `shared`/`free-labs`.
+- **D69** — **Nœud `paid-gcp` : `per_device`, pool de 200 UUID**, `config_grants`
+  écrit au bundle, statistiques par UUID lues dans le heartbeat. Lot séparé avec
+  porte ; repli déclaré (`source='device'`).
+- **D70** — **Le rapport a un producteur** : boucle de 60 s qui lit la sortie
+  active et mesure chaque sortie via l'API Clash (vrai handshake + requête HTTP),
+  puis force `selectOutbound` après 2 échecs consécutifs. Backoff 30 s → 2 min
+  → 10 min.
+- **D71** — **`middleware.ts` supprimé.** Une seule couche de leurre, côté
+  Fastify. Voir D43.
+- **D72** — **Documentation code-first** : `@fastify/swagger` (OpenAPI 3.1.0) lit
+  les schémas des routes, Scalar sert `/reference`, `/openapi.json` est versionné
+  et régénéré par `pnpm --filter @vpn/api openapi`. **`/reference` et
+  `/openapi.json` sont exemptés du rideau** : un navigateur envoyant
+  `Accept: text/html` était redirigé vers le site leurre, rendant l'interface
+  inutilisable là où elle sert. Le document ne décrit que des routes que `curl`
+  énumère déjà ; le rideau n'est pas une sécurité (D43).
+- **D73** — **`dev` est la seule porte d'entrée de `master`.** Aucun commit
+  direct sur `master`, aucune PR qui la vise : branche → PR vers `dev` → CI →
+  review → squash, puis PR `dev` → `master`.
+- **D74** (2026-10-23) — **Journal piloté par l'environnement, pas par un
+  drapeau.** `production` garde le JSON brut de Pino (Cloud Run et les
+  collecteurs lisent des champs) ; partout ailleurs, `server.ts` passe un
+  `transport` vers `pino-pretty`. `buildApp` accepte donc
+  `FastifyServerOptions["logger"]` au lieu d'un booléen ; tests et fonction
+  Vercel continuent de passer `false`. `pino-pretty` est une **devDependency**
+  et n'est jamais importé en production.
+
+- **D75** (2026-10-23) — **La référence OpenAPI doit être enrichie à partir des
+  routes réelles et Scalar doit charger cette même spécification** : source
+  centralisée dans `apps/api/src/http/contracts.ts`, appliquée via le
+  `transform` documentaire de Swagger et jamais comme validateur Fastify.
+  Chaque opération publiée doit avoir résumé, description et réponses ; les
+  statuts et médias HTML sont explicités. Voir D76 pour les premiers compteurs
+  vérifiés.
+- **D76** (2026-10-23) — **Contrat OpenAPI enrichi et vérifié statiquement** :
+  64 opérations avec résumés, descriptions et réponses ; 27 corps JSON ;
+  53 exigences de sécurité ; HTML explicite pour les trois routes navigateur.
+  `typecheck` et génération `openapi` réussissent. Le Playground est utilisable
+  pour construire des appels, mais les flux réels nécessitent serveur, base et
+  secrets ; la génération seule ne prouve pas leur exécution.
+- **D77** (2026-10-23) — **Toutes les routes déclarent leur frontière d'accès,
+  y compris les sondes.** `/healthz` et `/readyz` utilisent la clé dédiée
+  `HEALTHCHECK_KEY` dans `X-Health-Check-Key`, obligatoire en production. Le
+  contrat OpenAPI la propose au Playground. Les routes mobiles pré-session
+  gardent leurs preuves dédiées ; le webhook exige `FAPSHI_WEBHOOK_SECRET` en
+  production et revérifie le statut fournisseur ; le paiement mock reste hors
+  production. Inventaire et diagrammes :
+  `20-backend/admin-access-flows`.
+- **D78** (2026-10-23) — **Dashboard en deux niveaux d'authentification.** Le
+  navigateur s'authentifie auprès du serveur Next.js ; Next.js s'authentifie
+  auprès de l'API. Les clés API et secrets restent côté serveur Next.js/API et
+  ne sont jamais envoyés au navigateur. Fastify reste l'autorité des jetons,
+  rôles et périmètres. Détails du BFF dans `20-backend/admin-access-flows`.
 
 - **D44** (2026-10-22) — **Les APK de marque sont stockés dans Cloudflare R2.**
   Le workflow de build téléverse chaque APK vers un bucket privé, conserve les
