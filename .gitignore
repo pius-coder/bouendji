@@ -47,3 +47,6 @@ apps/android/app/debug/
 
 # Turborepo cache
 .turbo/
+
+# Variables Cloud Run (contiennent le secret d ingestion) : jamais committées.
+infra/endpoint/*.env

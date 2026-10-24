@@ -66,6 +66,21 @@ ENDPOINT_FRONT_ADDRESS=${ENDPOINT_FRONT_ADDRESS:-}
 ENDPOINT_FRONT_SNIS=${ENDPOINT_FRONT_SNIS:-}
 AGENT_VERSION=${ENDPOINT_AGENT_VERSION:-$AGENT_VERSION_DEFAULT}
 
+# Sans PUBLIC_HOST, sur Cloud Run : l'URL déterministe du service est
+# <service>-<numéro de projet>.<région>.run.app. Le serveur de métadonnées donne
+# le numéro et la région ; K_SERVICE est injecté par Cloud Run (cloud-run-url, 3).
+# Un domaine personnalisé exige toujours PUBLIC_HOST explicite.
+if [ -z "$PUBLIC_HOST" ] && [ -n "${K_SERVICE:-}" ]; then
+    META=http://metadata.google.internal/computeMetadata/v1
+    PROJECT_NUMBER=$(curl -fsS -m 3 -H 'Metadata-Flavor: Google' "$META/project/numeric-project-id" 2>/dev/null || true)
+    REGION_PATH=$(curl -fsS -m 3 -H 'Metadata-Flavor: Google' "$META/instance/region" 2>/dev/null || true)
+    REGION_NAME=${REGION_PATH##*/}
+    case "$PROJECT_NUMBER" in
+        ''|*[!0-9]*) ;;
+        *) [ -n "$REGION_NAME" ] && PUBLIC_HOST="$K_SERVICE-$PROJECT_NUMBER.$REGION_NAME.run.app" ;;
+    esac
+    [ -n "$PUBLIC_HOST" ] && log "PUBLIC_HOST déduit des métadonnées Cloud Run : $PUBLIC_HOST"
+fi
 [ -n "$PUBLIC_HOST" ] || die 78 "PUBLIC_HOST manquant : nom d'hôte public du service (ex: node-01-xxxx.us-central1.run.app)."
 [ -n "$API_URL" ] || die 78 "API_URL manquant : URL de base de l'API (ex: https://api.example.com)."
 [ -n "$ENDPOINT_INGEST_SECRET" ] || die 78 "ENDPOINT_INGEST_SECRET manquant : jeton d'ingestion partagé avec l'API."
