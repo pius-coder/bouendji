@@ -1,0 +1,5 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "if [ -f turbo.json ]; then bun install --frozen-lockfile; else cd ../.. && bun install --frozen-lockfile; fi",
+  "buildCommand": "if [ -f turbo.json ]; then bun run build --filter=@vpn/dashboard; else cd ../.. && bun run build --filter=@vpn/dashboard; fi"
+}
