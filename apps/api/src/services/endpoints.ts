@@ -31,6 +31,7 @@ export interface EndpointRow {
   security: "tls" | "none";
   sni: string | null;
   ws_path: string | null;
+  ws_host?: string | null;
   credential: string;
   tier: EndpointTier;
   identity_mode: EndpointIdentityMode;
@@ -202,6 +203,7 @@ export async function registerEndpoint(db: Queryable, input: RegisterEndpointInp
       region,
       label,
       capacity,
+      sni: input.sni ?? host,
       agentVersion: input.agentVersion ?? null,
       tier: requestedTier,
       identityMode: requestedIdentityMode,
@@ -257,6 +259,7 @@ export async function registerEndpoint(db: Queryable, input: RegisterEndpointInp
           region,
           label,
           capacity,
+          sni: input.sni ?? host,
           agentVersion: input.agentVersion ?? null,
           tier: requestedTier,
           identityMode: requestedIdentityMode,
@@ -287,6 +290,62 @@ export async function registerEndpoint(db: Queryable, input: RegisterEndpointInp
   };
 }
 
+/**
+ * Domain fronting (D93) : un nœud Cloud Run joignable aussi par un frontal
+ * (IP Google + SNI d'un domaine Google, Host = le service). Chaque SNI devient
+ * une sortie sœur, clé `<clé>#front-<n>`, qui partage l'identité, le chemin,
+ * l'échéance et le statut du nœud principal. `front = null` retire les sœurs.
+ */
+export async function syncFrontSiblings(
+  db: Queryable,
+  deploymentKey: string,
+  front: { address: string; snis: string[] } | null,
+): Promise<number> {
+  const main = await byDeploymentKey(db, deploymentKey);
+  if (!main) throw fail.notFound("Déploiement inconnu.");
+  const prefix = `${deploymentKey}#front-`;
+  const keys = (front?.snis ?? []).map((_, index) => `${prefix}${index + 1}`);
+
+  for (const [index, sni] of (front?.snis ?? []).entries()) {
+    await db.query(
+      `INSERT INTO endpoints
+         (id, deployment_key, label, host, port, protocol, transport, security, sni, ws_path, ws_host,
+          credential, identity_mode, region, capacity, status, health, agent_version, last_seen_at,
+          expires_at, tier, client_pool)
+       VALUES ($1,$2,$3,$4,443,'vless','ws','tls',$5,$6,$7,$8,$9,$10,$11,$12,'unknown',$13,now(),$14,$15,$16::jsonb)
+       ON CONFLICT (deployment_key) DO UPDATE
+          SET label = EXCLUDED.label, host = EXCLUDED.host, sni = EXCLUDED.sni, ws_path = EXCLUDED.ws_path,
+              ws_host = EXCLUDED.ws_host, credential = EXCLUDED.credential, identity_mode = EXCLUDED.identity_mode,
+              region = EXCLUDED.region, status = EXCLUDED.status, expires_at = EXCLUDED.expires_at,
+              tier = EXCLUDED.tier, client_pool = EXCLUDED.client_pool, updated_at = now()`,
+      [
+        newId(),
+        keys[index],
+        `${main.label} ${index + 1}`,
+        front!.address,
+        sni,
+        main.ws_path,
+        main.host,
+        main.credential,
+        main.identity_mode,
+        main.region,
+        main.capacity,
+        main.status,
+        main.agent_version,
+        main.expires_at,
+        main.tier,
+        main.client_pool === null ? null : JSON.stringify(main.client_pool),
+      ],
+    );
+  }
+  await db.query(
+    `UPDATE endpoints SET status = 'expired', expires_at = LEAST(expires_at, now()), updated_at = now()
+      WHERE left(deployment_key, length($1)) = $1 AND NOT (deployment_key = ANY($2::text[])) AND status <> 'expired'`,
+    [prefix, keys],
+  );
+  return keys.length;
+}
+
 async function revive(
   db: Queryable,
   row: EndpointRow,
@@ -296,6 +355,8 @@ async function revive(
     region: string;
     label: string;
     capacity: number;
+    /** Un nœud qui change de nom (nouveau domaine) change aussi de SNI. */
+    sni: string;
     agentVersion: string | null;
     tier: EndpointTier | null;
     identityMode: EndpointIdentityMode | null;
@@ -319,13 +380,15 @@ async function revive(
   const nextIdentityMode: EndpointIdentityMode = upgradingIdentity ? "per_device" : row.identity_mode;
   const nextClientPool =
     nextIdentityMode === "per_device" ? (readClientPool(row.client_pool) ?? generateClientPool()) : null;
-  const poolChanged = nextTier !== row.tier || upgradingIdentity;
+  // Un changement d'adresse doit aussi faire bouger la révision : sinon les
+  // appareils gardent en cache (ETag) l'ancien hôte ou l'ancien SNI.
+  const poolChanged = nextTier !== row.tier || upgradingIdentity || patch.host !== row.host || patch.sni !== row.sni;
 
   await db.query(
     `UPDATE endpoints
         SET host=$2, port=$3, region=$4, label=$5, capacity=$6,
             agent_version=COALESCE($7, agent_version),
-            tier=$8, identity_mode=$9, client_pool=$10::jsonb,
+            tier=$8, identity_mode=$9, client_pool=$10::jsonb, sni=$11,
             last_seen_at=now(), updated_at=now()
       WHERE id=$1`,
     [
@@ -339,6 +402,7 @@ async function revive(
       nextTier,
       nextIdentityMode,
       nextClientPool === null ? null : JSON.stringify(nextClientPool),
+      patch.sni,
     ],
   );
 
@@ -383,8 +447,8 @@ export async function markReady(
     `UPDATE endpoints
         SET status=$2, agent_version=COALESCE($3, agent_version),
             last_seen_at=now(), updated_at=now()
-      WHERE id=$1`,
-    [row.id, nextStatus, input.agentVersion ?? null],
+      WHERE id=$1 OR (left(deployment_key, length($4)) = $4 AND status <> 'expired')`,
+    [row.id, nextStatus, input.agentVersion ?? null, `${deploymentKey}#front-`],
   );
   const revision = changed ? await bumpPoolRevision(db) : await poolRevision(db);
   return { status: nextStatus, poolRevision: revision };
@@ -503,6 +567,7 @@ export function endpointToConfig(row: EndpointRow, identity?: string | null): Vl
       security: row.security,
       sni: row.sni,
       wsPath: row.ws_path,
+      hostHeader: row.ws_host ?? null,
       label: row.label,
     }),
     expiresAt: iso(row.expires_at),

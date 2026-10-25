@@ -17,6 +17,7 @@ import { registerCatalogRoutes } from "./routes/catalog.js";
 import { registerDeviceRoutes } from "./routes/devices.js";
 import { registerInternalRoutes } from "./routes/internal.js";
 import { registerMeRoutes } from "./routes/me.js";
+import { registerAccountRoutes } from "./routes/account.js";
 import { registerOfflineRoutes } from "./routes/offline.js";
 import { registerOrderRoutes } from "./routes/orders.js";
 import { registerPaymentRoutes } from "./routes/payments.js";
@@ -284,6 +285,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerBundleRoutes(app, db);
   registerCatalogRoutes(app, db);
   registerMeRoutes(app, db);
+  registerAccountRoutes(app, db);
   registerTelemetryRoutes(app, db);
   registerOrderRoutes(app, db);
   registerPaymentRoutes(app, db);

@@ -3,7 +3,7 @@ id: cloud-run-deploy-form
 title: Formulaire Cloud Run — valeurs exactes à saisir
 tags: [gcp, cloud-run, deploiement, formulaire, timeout]
 status: verified
-updated: 2026-10-20
+updated: 2026-10-24
 related: [cloud-run, cloud-run-url, gcp-v2ray-repo]
 ---
 
@@ -14,7 +14,7 @@ Constats tirés des captures du formulaire « Create service » (2026-10-20).
 | Champ | Valeur | Pourquoi |
 |---|---|---|
 | Deploy one revision from an existing container image | oui | image poussée avant |
-| Container image URL | image de l'endpoint | — |
+| Container image URL | **`ghcr.io/pius-coder/vpn-endpoint:latest`** | notre image (D96), publique ; Cloud Run tire les images publiques ghcr.io directement |
 | Service name | `node-01`, `node-02`… | entre dans l'URL, **immuable** |
 | Region | `us-central1` (seule proposée) | latence vers l'Afrique de l'Ouest ≈ 150-200 ms |
 | Authentication | **Allow public access** | sinon aucun client VPN ne passe |
@@ -33,8 +33,21 @@ Constats tirés des captures du formulaire « Create service » (2026-10-20).
 | Health check | startup probe TCP sur `$PORT` | ne pas exiger d'auth |
 | Ephemeral disk / GPU / Cloud SQL | non | inutiles |
 
-Variables d'environnement minimales : `PUBLIC_HOST`, `API_URL`,
-`ENDPOINT_INGEST_SECRET`, `ENDPOINT_TTL`.
+Variables d'environnement (mise à jour 2026-10-24) :
+
+| Variable | Valeur | Note |
+|---|---|---|
+| `API_URL` | `https://api.numzer0.store` | **https** : le http répond 301 et le script ne suit pas |
+| `ENDPOINT_INGEST_SECRET` | secret de `vpn-api` | l'utilisateur le lit lui-même : `ssh aura-vps "dokku config:get vpn-api ENDPOINT_INGEST_SECRET"` ; jamais recopié dans le chat ni dans `knowledge/` |
+| `PUBLIC_HOST` | `<service>-<numéro de projet>.<région>.run.app` | l'URL Cloud Run est déterministe (ex. `vpn-node-513999018169.us-west1.run.app`) |
+| `ENDPOINT_FRONT_ADDRESS` | `192.179.18.100` | frontal Google (D93) |
+| `ENDPOINT_FRONT_SNIS` | `crashlyticsreports-pa.googleapis.com,play-fe.googleapis.com,android.googleapis.com,youtubei.googleapis.com,lens-pa.googleapis.com,t2.gstatic.com,beacons.gcp.gvt2.com,play.google.com` | une sortie par SNI |
+| `ENDPOINT_LABEL` / `ENDPOINT_REGION` | ex. `Oregon` / `us` | nom et pays affichés dans l'app |
+| `ENDPOINT_TTL` | durée de vie du projet de lab en secondes | ex. `16200` (4 h 30, D21) |
+
+Vérifié le 2026-10-24 : workflow `endpoint-image` (GitHub Actions) → `success` ;
+manifeste `latest` lisible **sans authentification** (HTTP 200) ; l'image tirée de
+GHCR démarre sur `vpn-node2` → `enregistré` puis `ready : status=active`.
 
 ## Piège 1 — le timeout par défaut est 300 s
 

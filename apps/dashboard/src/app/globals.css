@@ -1,0 +1,411 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Jetons du dashboard (D103, analyse 30-clients/chariow-ui-analysis).
+ * Neutres et géométrie : Chariow connecté (relevés DevTools 2026-10-25).
+ * Accent : thème choisi par l'admin (`data-accent` sur <html> : rose, vert, rouge),
+ * contrastes mesurés le 2026-10-25 (texte blanc sur l'accent >= 4,6:1).
+ * Noms shadcn conservés : components/ui/* les lisent tels quels.
+ */
+:root {
+  --radius: 0.75rem;
+
+  /* Charpente : fond gris, contenu sur une surface blanche ombrée. */
+  --frame: #f5f6f6;
+  --surface: #ffffff;
+  --group: #f5f6f6;                   /* groupe gris contenant des cartes blanches */
+  --group-strong: #e5e7e8;
+
+  --background: #ffffff;
+  --foreground: #242528;
+  --card: #ffffff;
+  --card-foreground: #242528;
+  --popover: #ffffff;
+  --popover-foreground: #242528;
+  --secondary: #f5f6f6;
+  --secondary-foreground: #242528;
+  --muted: #f5f6f6;
+  --muted-foreground: #656c75;        /* gray-500 Chariow : 5,31:1 sur blanc, 4,90:1 sur le gris */
+  --destructive: #d70022;             /* rouge Chariow #e30026 assombri : 5,2:1 */
+  --destructive-solid: #e30026;
+  --border: #e5e7e8;
+  --input: #cad0d7;
+  --control-border: #cdd0d4;          /* bouton secondaire Chariow */
+  --fill: #f0f1f2;
+  --separator: #e5e7e8;
+  --placeholder: #6b727b;
+  --tertiary: #808790;
+  --cell-elevated: #ffffff;
+  --success: #23ce6b;
+  --success-text: #0f7a3e;            /* 5,42:1 */
+  --success-soft: #dcfce9;
+  --warning: #ffcc00;
+  --warning-text: #8a5600;            /* 6,16:1 */
+  --warning-soft: #fffec1;
+  --danger-soft: #ffe4e8;
+  --info-soft: #ede9fe;
+  --info-text: #5b21b6;
+  --neutral-state: #808790;
+
+  /* Accent par défaut (rose). Surchargé par [data-accent]. */
+  --accent-from: #db2777;
+  --accent-to: #be185d;
+  --accent-text: #be185d;             /* 5,58:1 sur le gris */
+  --accent-soft: #fdf2f8;
+  --accent-ring: #db2777;
+
+  /* D108 : CTA noir (Chariow) ; la couleur du thème reste <= 10 % de l'écran. */
+  --primary: #242528;
+  --primary-foreground: #ffffff;
+  --primary-hover: #000000;
+  --accent: #f5f6f6;                  /* survol shadcn : neutre, pas teinté */
+  --accent-foreground: #242528;
+  --ring: var(--accent-ring);
+
+  --chart-1: var(--accent-from);
+  --chart-2: #808790;
+  --chart-3: #0f7a3e;
+  --chart-4: #cdd0d4;
+  --chart-fill: var(--accent-from);
+
+  --glass: rgba(245, 246, 246, 0.8);
+  --sidebar: var(--frame);
+  --sidebar-foreground: #4a4e54;
+  --sidebar-primary: #242528;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e5e7e8;
+  --sidebar-accent-foreground: #242528;
+  --sidebar-border: transparent;
+  --sidebar-ring: var(--accent-ring);
+
+  /* Ombres relevées sur Chariow. */
+  --shadow-surface: 0 0 6px rgba(0, 0, 0, 0.06);
+  --shadow-card: 0 0 0 1px var(--border);   /* cartes : bordure, pas d'ombre (D108) */
+  --shadow-sheet: 0 1px 3px rgba(0, 0, 0, 0.05), 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-menu: 0 0 0 1px rgba(0, 0, 0, 0.04), 0 12px 16px -4px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-float: var(--shadow-menu);
+  --shadow-button: none;
+
+  --bottombar-h: 4rem;
+  --topbar-h: 3.5rem;
+}
+
+:root[data-accent="vert"] {
+  --accent-from: #15803d;
+  --accent-to: #166534;
+  --accent-text: #15803d;             /* 4,63:1 sur le gris */
+  --accent-soft: #f0fdf4;
+  --accent-ring: #15803d;
+}
+
+:root[data-accent="rouge"] {
+  --accent-from: #dc2626;
+  --accent-to: #b91c1c;
+  --accent-text: #b91c1c;             /* 5,98:1 sur le gris */
+  --accent-soft: #fef2f2;
+  --accent-ring: #dc2626;
+}
+
+.dark {
+  --frame: #0e0f10;
+  --surface: #18191b;
+  --group: #222326;
+  --group-strong: #2d2f33;
+
+  --background: #18191b;
+  --foreground: #f5f6f6;
+  --card: #222326;
+  --card-foreground: #f5f6f6;
+  --popover: #222326;
+  --popover-foreground: #f5f6f6;
+  --secondary: #2d2f33;
+  --secondary-foreground: #f5f6f6;
+  --muted: #2d2f33;
+  --muted-foreground: #abb0b5;        /* 7,01:1 */
+  --destructive: #ff6b7d;
+  --destructive-solid: #e30026;
+  --border: #2d2f33;
+  --input: #4a4e54;
+  --fill: #2d2f33;
+  --separator: #2d2f33;
+  --placeholder: #959ba3;
+  --tertiary: #959ba3;
+  --cell-elevated: #2d2f33;
+  --primary: #f5f6f6;
+  --primary-foreground: #18191b;
+  --primary-hover: #ffffff;
+  --accent: #222326;
+  --accent-foreground: #f5f6f6;
+  --control-border: #4a4e54;
+  --sidebar-primary: #f5f6f6;
+  --sidebar-primary-foreground: #18191b;
+  --success-text: #3ddc84;
+  --success-soft: rgba(35, 206, 107, 0.16);
+  --warning-text: #ffcc00;
+  --warning-soft: rgba(255, 204, 0, 0.14);
+  --danger-soft: rgba(255, 107, 125, 0.16);
+  --info-soft: rgba(167, 139, 250, 0.16);
+  --info-text: #c4b5fd;
+  --neutral-state: #959ba3;
+
+  --accent-text: #f472b6;             /* 6,64:1 */
+  --accent-soft: rgba(244, 114, 182, 0.14);
+  --accent-ring: #f472b6;
+
+  --chart-2: #959ba3;
+  --chart-3: #3ddc84;
+  --chart-4: #4a4e54;
+
+  --glass: rgba(14, 15, 16, 0.8);
+  --sidebar-foreground: #abb0b5;
+  --sidebar-accent: #222326;
+  --sidebar-accent-foreground: #f5f6f6;
+
+  --shadow-surface: 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-card: 0 0 0 1px var(--border);
+  --shadow-sheet: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 24px 48px -12px rgba(0, 0, 0, 0.7);
+  --shadow-menu: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 16px 32px -8px rgba(0, 0, 0, 0.6);
+  --shadow-button: none;
+}
+
+.dark:root[data-accent="vert"],
+:root[data-accent="vert"] .dark {
+  --accent-text: #4ade80;
+  --accent-soft: rgba(74, 222, 128, 0.14);
+  --accent-ring: #4ade80;
+}
+.dark:root[data-accent="rouge"],
+:root[data-accent="rouge"] .dark {
+  --accent-text: #f87171;
+  --accent-soft: rgba(248, 113, 113, 0.14);
+  --accent-ring: #f87171;
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --separator: #abb0b5;
+    --border: #abb0b5;
+    --input: #808790;
+    --muted-foreground: #4a4e54;
+  }
+  .dark {
+    --separator: #656c75;
+    --border: #656c75;
+    --muted-foreground: #cdd0d4;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass: var(--frame);
+  }
+}
+
+@theme inline {
+  --color-frame: var(--frame);
+  --color-surface: var(--surface);
+  --color-group: var(--group);
+  --color-group-strong: var(--group-strong);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-destructive: var(--destructive);
+  --color-destructive-solid: var(--destructive-solid);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-control-border: var(--control-border);
+  --color-ring: var(--ring);
+  --color-fill: var(--fill);
+  --color-separator: var(--separator);
+  --color-placeholder: var(--placeholder);
+  --color-tertiary: var(--tertiary);
+  --color-cell-elevated: var(--cell-elevated);
+  --color-success: var(--success);
+  --color-success-text: var(--success-text);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger-soft: var(--danger-soft);
+  --color-info-soft: var(--info-soft);
+  --color-info-text: var(--info-text);
+  --color-neutral-state: var(--neutral-state);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-primary-hover: var(--primary-hover);
+  --color-glass: var(--glass);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Rayons relevés sur Chariow (D108) : 8 boutons/items, 12 champs/CTA, 16 surface/cartes, 24 groupes. */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
+  --radius-field: 12px;
+  --radius-section: 16px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-display: "New York", ui-serif, "Iowan Old Style", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Échelle iOS « Large (default) ». */
+  --text-large-title: 2.125rem;
+  --text-large-title--line-height: 2.5625rem;
+  --text-title-1: 1.75rem;
+  --text-title-1--line-height: 2.125rem;
+  --text-title-2: 1.375rem;
+  --text-title-2--line-height: 1.75rem;
+  --text-title-3: 1.25rem;
+  --text-title-3--line-height: 1.5625rem;
+  --text-headline: 1.0625rem;
+  --text-headline--line-height: 1.375rem;
+  --text-body: 1.0625rem;
+  --text-body--line-height: 1.375rem;
+  --text-callout: 1rem;
+  --text-callout--line-height: 1.3125rem;
+  --text-subhead: 0.9375rem;
+  --text-subhead--line-height: 1.25rem;
+  --text-footnote: 0.8125rem;
+  --text-footnote--line-height: 1.125rem;
+  --text-caption-1: 0.75rem;
+  --text-caption-1--line-height: 1rem;
+  --text-caption-2: 0.6875rem;
+  --text-caption-2--line-height: 0.8125rem;
+}
+
+@utility shadow-hairline {
+  box-shadow: 0 0 0 1px var(--separator);
+}
+@utility shadow-surface {
+  box-shadow: var(--shadow-surface);
+}
+@utility shadow-card {
+  box-shadow: var(--shadow-card);
+}
+@utility shadow-sheet {
+  box-shadow: var(--shadow-sheet);
+}
+@utility shadow-menu {
+  box-shadow: var(--shadow-menu);
+}
+@utility shadow-float {
+  box-shadow: var(--shadow-menu);
+}
+@utility shadow-button {
+  box-shadow: var(--shadow-button);
+}
+
+/* Dégradés (D103) : seulement là où ils hiérarchisent. */
+@utility bg-accent-gradient {
+  background-image: linear-gradient(180deg, var(--accent-from), var(--accent-to));
+}
+@utility bg-accent-wash {
+  background-image: linear-gradient(180deg, var(--group), var(--surface));
+}
+/* « Scroll edge effect » (kit Apple) : fondu sous une zone collante. */
+@utility scroll-edge {
+  background-image: linear-gradient(180deg, var(--surface) 60%, color-mix(in srgb, var(--surface) 0%, transparent));
+}
+@utility bg-surface-sheen {
+  background-image: linear-gradient(180deg, var(--surface), var(--group));
+}
+@utility text-gradient-accent {
+  background-image: linear-gradient(90deg, var(--accent-from), var(--accent-to));
+  background-clip: text;
+  color: transparent;
+}
+
+@supports (corner-shape: squircle) {
+  .rounded-section,
+  .rounded-field,
+  .rounded-xl,
+  .rounded-2xl {
+    corner-shape: squircle;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* D108 : le document ne défile jamais ; seule la surface de contenu défile. */
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    @apply bg-frame text-foreground font-sans;
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+  input,
+  textarea,
+  select {
+    font-size: 17px;
+  }
+  @media (min-width: 768px) {
+    input,
+    textarea,
+    select {
+      font-size: 15px;
+    }
+  }
+  ::placeholder {
+    color: var(--placeholder);
+    opacity: 1;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -74,7 +74,7 @@ class LibboxTunnelEngine(private val context: Context) : TunnelEngine {
             // moteurs sur le même TUN.
             stopInternal()
 
-            val platform = TunnelPlatform(request.protect, request.tun.fd)
+            val platform = TunnelPlatform(context, request.protect, request.tun.fd)
             val created = Libbox.newCommandServer(handler(request), platform)
             created.start()
             created.startOrReloadService(request.configJson, OverrideOptions())
@@ -114,6 +114,23 @@ class LibboxTunnelEngine(private val context: Context) : TunnelEngine {
             val delay = JSONObject(body).optInt("delay", -1)
             require(delay >= 0) { "Mesure illisible : $body" }
             delay
+        }
+    }
+
+    override suspend fun currentOutbound(group: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(clashPort != 0) { "API de contrôle indisponible." }
+            val now = JSONObject(clash("GET", "/proxies/$group")).optString("now")
+            require(now.isNotEmpty()) { "Groupe sans sortie active." }
+            now
+        }
+    }
+
+    override suspend fun trafficTotals(): Result<TrafficTotals> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(clashPort != 0) { "API de contrôle indisponible." }
+            val body = JSONObject(clash("GET", "/connections"))
+            TrafficTotals(body.optLong("uploadTotal"), body.optLong("downloadTotal"))
         }
     }
 

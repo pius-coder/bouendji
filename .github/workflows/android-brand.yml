@@ -2,7 +2,13 @@ name: android-brand
 
 # Un APK par marque, jamais un APK qui se thématise au lancement (D2).
 # Le manifeste de marque est fourni en entrée ; le build réécrit BrandTokens.kt
-# et brand.properties, puis compile. Rien n'est tiré au hasard.
+# et brand.properties, compile, signe, puis dépose l'APK dans Cloudflare R2
+# (D100) : https://apps.numzer0.store/brands/<package>/… — c'est ce lien que
+# l'admin remet à ses utilisateurs.
+#
+# Déclencheurs :
+#   - workflow_dispatch : le dashboard (ou un humain) fournit le manifeste ;
+#   - push d'un manifeste sous tools/brands/*.json : build de cette marque.
 
 on:
   workflow_dispatch:
@@ -11,32 +17,67 @@ on:
         description: "Manifeste JSON de la marque (voir tools/brands/_example.json)"
         required: true
         type: string
-      release_tag:
-        description: "Étiquette de release à créer (facultatif)"
-        required: false
-        type: string
       build_callback_url:
-        description: "URL appelée en fin de build (facultatif — n'existe que si la route est déployée)"
+        description: "URL appelée en fin de build (facultatif)"
         required: false
         type: string
+  push:
+    paths:
+      - "tools/brands/*.json"
+      - ".github/workflows/android-brand.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: android-brand-${{ github.ref }}
+  group: android-brand-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 
+env:
+  LIBBOX_TAG: libbox-1.14.3
+  LIBBOX_SHA256: 749de4e7bb5f21c9f5fc734c58a3ea93c9352183461af40ab8c1d565cb9f450c
+  R2_PUBLIC_BASE: https://apps.numzer0.store
+
 jobs:
+  specs:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Manifestes à construire
+        id: list
+        env:
+          EVENT: ${{ github.event_name }}
+          SPEC: ${{ inputs.spec }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo 'list=["__input__"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Push : les manifestes modifiés par ce commit (hors exemple).
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'tools/brands/*.json' | grep -v '_example.json' || true)
+          if [ -z "$CHANGED" ]; then CHANGED="tools/brands/bouendji.json"; fi
+          LIST=$(printf '%s\n' $CHANGED | node -e 'const l=require("fs").readFileSync(0,"utf8").trim().split("\n").filter(Boolean);console.log(JSON.stringify(l))')
+          echo "list=$LIST" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: specs
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        spec: ${{ fromJSON(needs.specs.outputs.list) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - uses: actions/setup-java@v4
         with:
@@ -50,19 +91,24 @@ jobs:
       - name: Lire le manifeste
         id: spec
         env:
-          SPEC: ${{ inputs.spec }}
+          SPEC_INPUT: ${{ inputs.spec }}
+          SPEC_FILE: ${{ matrix.spec }}
         run: |
           set -euo pipefail
-          printf '%s' "$SPEC" > "$RUNNER_TEMP/brand.json"
-          node -e '
-            const s = require(process.env.RUNNER_TEMP + "/brand.json");
-            console.log("pkg=" + s.packageName);
-            console.log("name=" + s.appName);
-          '
-          # Le nom du fichier publié ne doit contenir que des caractères sûrs.
+          if [ "$SPEC_FILE" = "__input__" ]; then
+            printf '%s' "$SPEC_INPUT" > "$RUNNER_TEMP/brand.json"
+            echo "assets=" >> "$GITHUB_OUTPUT"
+          else
+            cp "$SPEC_FILE" "$RUNNER_TEMP/brand.json"
+            # Icône et mascotte de la marque : tools/brands/<nom>/ s'il existe.
+            DIR="${SPEC_FILE%.json}"
+            if [ -f "$DIR/icon.png" ]; then echo "assets=$DIR" >> "$GITHUB_OUTPUT"; else echo "assets=" >> "$GITHUB_OUTPUT"; fi
+          fi
           PKG=$(node -p 'require(process.env.RUNNER_TEMP + "/brand.json").packageName')
           VN=$(node -p 'require(process.env.RUNNER_TEMP + "/brand.json").versionName')
           VC=$(node -p 'require(process.env.RUNNER_TEMP + "/brand.json").versionCode')
+          # Le nom du fichier publié ne doit contenir que des caractères sûrs.
+          echo "$PKG$VN$VC" | grep -Eq '^[A-Za-z0-9._+-]+$' || { echo "package ou version non sûrs"; exit 1; }
           echo "pkg=$PKG" >> "$GITHUB_OUTPUT"
           echo "artifact=${PKG}-${VN}-${VC}.apk" >> "$GITHUB_OUTPUT"
 
@@ -70,6 +116,32 @@ jobs:
         env:
           SPEC_PATH: ${{ runner.temp }}/brand.json
         run: node tools/inject-brand.mjs --spec "$SPEC_PATH" --root apps/android
+
+      - name: Icônes de la marque
+        if: ${{ steps.spec.outputs.assets != '' }}
+        env:
+          ASSETS: ${{ steps.spec.outputs.assets }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pillow
+          ARGS="--src $ASSETS/icon.png --res apps/android/app/src/main/res"
+          if [ -f "$ASSETS/mascot.png" ]; then ARGS="$ARGS --mascot $ASSETS/mascot.png"; fi
+          python3 tools/make-icons.py $ARGS
+
+      - name: Moteur libbox (Release GitHub, D102)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p apps/android/app/libs
+          for i in 1 2 3; do
+            gh release download "$LIBBOX_TAG" --repo "$GITHUB_REPOSITORY" --pattern libbox.aar --dir apps/android/app/libs --clobber && break
+            [ "$i" = 3 ] && { echo "::error::libbox.aar introuvable dans la Release $LIBBOX_TAG"; exit 1; }
+            sleep 5
+          done
+          echo "$LIBBOX_SHA256  apps/android/app/libs/libbox.aar" | sha256sum -c -
+          unzip -l apps/android/app/libs/libbox.aar | grep -q 'jni/arm64-v8a/libbox.so'
+          ls -la apps/android/app/libs/libbox.aar
 
       - name: Générer le wrapper Gradle
         working-directory: apps/android
@@ -90,28 +162,22 @@ jobs:
           ARTIFACT: ${{ steps.spec.outputs.artifact }}
         run: |
           set -euo pipefail
-          # `secrets` n'est pas disponible dans un `if` : on teste ici, et un
-          # build sans keystore est signalé, pas silencieusement publié.
-          if [ -z "${KEYSTORE_B64:-}" ]; then
-            echo "::warning::ANDROID_KEYSTORE_B64 absent — APK produit mais NON signé."
-            exit 0
-          fi
+          # Un APK non signé ne s'installe pas : sans keystore, le build échoue.
+          [ -n "${KEYSTORE_B64:-}" ] || { echo "::error::ANDROID_KEYSTORE_B64 absent"; exit 1; }
           umask 077
           printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
-          APK=$(find apps/android/app/build/outputs/apk/release -name '*.apk' ! -name '*unsigned*' | head -n 1)
-          if [ -z "$APK" ]; then
-            APK=$(find apps/android/app/build/outputs/apk/release -name '*.apk' | head -n 1)
-          fi
+          APK=$(find apps/android/app/build/outputs/apk/release -name '*.apk' | head -n 1)
           [ -n "$APK" ] || { echo "aucun APK produit"; exit 1; }
-          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
-          "$APKSIGNER" sign \
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          "$BT/zipalign" -f -p 4 "$APK" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign \
             --ks "$RUNNER_TEMP/release.jks" \
             --ks-key-alias "$KEY_ALIAS" \
-            --ks-pass "pass:$STORE_PASSWORD" \
-            --key-pass "pass:$KEY_PASSWORD" \
-            --out "$RUNNER_TEMP/$ARTIFACT" "$APK"
-          "$APKSIGNER" verify --print-certs "$RUNNER_TEMP/$ARTIFACT" > "$RUNNER_TEMP/certs.txt"
-          rm -f "$RUNNER_TEMP/release.jks"
+            --ks-pass env:STORE_PASSWORD \
+            --key-pass env:KEY_PASSWORD \
+            --out "$RUNNER_TEMP/$ARTIFACT" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --print-certs "$RUNNER_TEMP/$ARTIFACT" | grep -E "SHA-256|Signer" | head -3
+          rm -f "$RUNNER_TEMP/release.jks" "$RUNNER_TEMP/aligned.apk"
 
       - name: Empreinte
         id: hash
@@ -119,32 +185,38 @@ jobs:
           ARTIFACT: ${{ steps.spec.outputs.artifact }}
         run: |
           set -euo pipefail
-          APK="$RUNNER_TEMP/$ARTIFACT"
-          if [ ! -f "$APK" ]; then APK=$(find apps/android/app/build/outputs/apk/release -name '*.apk' | head -n 1); fi
-          [ -f "$APK" ] || { echo "aucun APK à empreindre"; exit 1; }
-          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          SHA=$(sha256sum "$RUNNER_TEMP/$ARTIFACT" | cut -d' ' -f1)
           echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
-          echo "apk=$APK" >> "$GITHUB_OUTPUT"
           echo "sha256=$SHA"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.spec.outputs.artifact }}
-          path: ${{ steps.hash.outputs.apk }}
-          retention-days: 30
-
-      - name: Publier la release
-        if: ${{ inputs.release_tag != '' }}
+      - name: Déposer dans R2
+        id: r2
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.release_tag }}
-          APK: ${{ steps.hash.outputs.apk }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          PKG: ${{ steps.spec.outputs.pkg }}
+          ARTIFACT: ${{ steps.spec.outputs.artifact }}
           SHA: ${{ steps.hash.outputs.sha256 }}
         run: |
           set -euo pipefail
-          gh release create "$TAG" "$APK" \
-            --title "$TAG" \
-            --notes "APK ${{ steps.spec.outputs.artifact }} — sha256 $SHA"
+          [ -n "${AWS_ACCESS_KEY_ID:-}" ] || { echo "::error::secrets R2 absents (R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY)"; exit 1; }
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          META="sha256=$SHA"
+          # Version figée (jamais écrasée) + « latest » pour le lien à donner.
+          aws s3 cp "$RUNNER_TEMP/$ARTIFACT" "s3://$R2_BUCKET/brands/$PKG/$ARTIFACT" \
+            --endpoint-url "$ENDPOINT" --content-type application/vnd.android.package-archive --metadata "$META"
+          aws s3 cp "$RUNNER_TEMP/$ARTIFACT" "s3://$R2_BUCKET/brands/$PKG/latest.apk" \
+            --endpoint-url "$ENDPOINT" --content-type application/vnd.android.package-archive --metadata "$META" \
+            --cache-control "no-cache"
+          echo "url=$R2_PUBLIC_BASE/brands/$PKG/$ARTIFACT" >> "$GITHUB_OUTPUT"
+          echo "latest=$R2_PUBLIC_BASE/brands/$PKG/latest.apk" >> "$GITHUB_OUTPUT"
+          echo "### APK publié" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Version : $R2_PUBLIC_BASE/brands/$PKG/$ARTIFACT" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Dernière : $R2_PUBLIC_BASE/brands/$PKG/latest.apk" >> "$GITHUB_STEP_SUMMARY"
+          echo "- sha256 : \`$SHA\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Signaler au backend
         if: ${{ inputs.build_callback_url != '' }}
@@ -153,10 +225,9 @@ jobs:
           URL: ${{ inputs.build_callback_url }}
           TOKEN: ${{ secrets.BUILD_CALLBACK_TOKEN }}
           SHA: ${{ steps.hash.outputs.sha256 }}
+          APK_URL: ${{ steps.r2.outputs.url }}
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error \
-            -X POST "$URL" \
-            -H "authorization: Bearer $TOKEN" \
-            -H "content-type: application/json" \
-            --data "{\"status\":\"succeeded\",\"sha256\":\"$SHA\",\"runId\":\"${{ github.run_id }}\"}"
+          BODY=$(node -e 'console.log(JSON.stringify({status:"succeeded",sha256:process.env.SHA,apkUrl:process.env.APK_URL,runId:process.env.GITHUB_RUN_ID}))')
+          curl --fail --silent --show-error -X POST "$URL" \
+            -H "authorization: Bearer $TOKEN" -H "content-type: application/json" --data "$BODY"

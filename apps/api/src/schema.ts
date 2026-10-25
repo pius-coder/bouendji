@@ -474,6 +474,9 @@ ALTER TABLE endpoints ADD CONSTRAINT endpoints_tier_check CHECK (tier IN ('free-
 ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS down_since   timestamptz;
 ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS down_reason  text;
 ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS client_pool  jsonb;
+-- En-tête Host du WebSocket quand il diffère du SNI (domain fronting : SNI
+-- d'un domaine Google, Host = service Cloud Run). NULL = Host = SNI.
+ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS ws_host      text;
 ALTER TABLE plans   ADD COLUMN IF NOT EXISTS endpoint_tier text NOT NULL DEFAULT 'free-labs';
 ALTER TABLE plans   DROP CONSTRAINT IF EXISTS plans_endpoint_tier_check;
 ALTER TABLE plans   ADD CONSTRAINT plans_endpoint_tier_check CHECK (endpoint_tier IN ('free-labs','paid-gcp'));
@@ -535,4 +538,17 @@ ALTER TABLE builds ADD COLUMN IF NOT EXISTS sha256       text;
 ALTER TABLE builds ADD COLUMN IF NOT EXISTS apk_url      text;
 ALTER TABLE builds ADD COLUMN IF NOT EXISTS version_code integer;
 ALTER TABLE builds ADD COLUMN IF NOT EXISTS updated_at   timestamptz NOT NULL DEFAULT now();
+
+-- Parrainage (écran « Inviter ») : le code est tiré à la première lecture, la
+-- relation est posée à l'inscription. Aucune récompense n'est attribuée ici :
+-- la règle de bonus n'est pas décidée (open-questions).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code text;
+CREATE UNIQUE INDEX IF NOT EXISTS users_referral_code ON users (app_id, referral_code) WHERE referral_code IS NOT NULL;
+CREATE TABLE IF NOT EXISTS referrals (
+  referred_user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  referrer_user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  app_id           text NOT NULL REFERENCES apps(id),
+  created_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS referrals_referrer ON referrals (referrer_user_id);
 `;

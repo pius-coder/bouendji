@@ -87,7 +87,7 @@ ne fournit pas les deux variables. Conséquences :
 
 | Variable | Obligatoire | Défaut | Contrôle |
 |---|---|---|---|
-| `PUBLIC_HOST` | **oui** | — | nom d'hôte seul, sans `://` ni `/`, ≤ 253 car., mis en minuscules |
+| `PUBLIC_HOST` | **non sur Cloud Run** (déduit) ; **oui** hors Cloud Run | sur Cloud Run : `<K_SERVICE>-<numéro de projet>.<région>.run.app` | nom d'hôte seul, sans `://` ni `/`, ≤ 253 car., mis en minuscules. Ne le poser que pour un domaine personnalisé ou hors Cloud Run |
 | `API_URL` | **oui** | — | doit commencer par `http://` ou `https://`, slash final toléré |
 | `ENDPOINT_INGEST_SECRET` | **oui** | — | non vide, sinon `78` |
 | `PORT` | non | `8080` | injecté par Cloud Run : port d'écoute **local** |
@@ -95,7 +95,7 @@ ne fournit pas les deux variables. Conséquences :
 | `ENDPOINT_REGION` | non | omis | ≤ 24 car. |
 | `ENDPOINT_LABEL` | non | omis (l'API prend `public_host`) | 2 à 64 car. |
 | `ENDPOINT_CAPACITY` | non | omis (l'API prend `80`) | 1 à 10 000 |
-| `ENDPOINT_TTL` | non | omis (l'API prend `ENDPOINT_DEFAULT_TTL` = 16 200 s) | entier de secondes, borné côté API |
+| `ENDPOINT_TTL` | non | omis (l'API prend `ENDPOINT_DEFAULT_TTL` = 16 200 s) | entier de secondes. L'API le ramène dans `[ENDPOINT_MIN_TTL = 3 600 ; ENDPOINT_MAX_TTL = 30 jours]` : une valeur plus courte est relevée à 3 600 s (`apps/api/src/config.ts:170-171`, `services/endpoints.ts:213`) |
 | `ENDPOINT_AGENT_VERSION` | non | `endpoint/1.0` | ≤ 64 car. |
 | `ENDPOINT_HEARTBEAT_SECONDS` | non | `45` | cadence du battement |
 | `ENDPOINT_READY_TIMEOUT` | non | `60` | attente maximale du port avant `70` |
@@ -211,9 +211,11 @@ volume.
    scale-down. Ici, `SIGTERM` ne fait **aucun** appel API.
 5. **Le système de fichiers est éphémère.** Aucun état ne survit : la config est
    régénérée à chaque boot, et l'API doit être joignable au démarrage.
-6. **L'URL publique n'est pas injectée.** Cloud Run ne donne ni le nom du
-   service dans l'URL, ni le domaine personnalisé : d'où `PUBLIC_HOST`
-   obligatoire.
+6. **L'URL publique n'est pas injectée, mais elle se déduit.** Sur Cloud Run,
+   `entrypoint.sh` (lignes 73-83) construit `PUBLIC_HOST` à partir de `K_SERVICE`,
+   du numéro de projet et de la région, lus sur le serveur de métadonnées. Rien
+   à saisir **avant** le premier déploiement. Ne poser `PUBLIC_HOST` que pour un
+   domaine personnalisé, ou hors Cloud Run.
 7. **`Maximum instances` vide = 100.** À borner à 2. Toutes les instances d'une
    révision partagent le même UUID grâce à `deployment_key`.
 8. **Le port de la sonde de démarrage par défaut est TCP.** Elle valide que le
@@ -253,7 +255,8 @@ volume.
 
 | Symptôme | Cause probable |
 |---|---|
-| `PUBLIC_HOST manquant` / `API_URL manquant` / `ENDPOINT_INGEST_SECRET manquant` | variable absente du formulaire Cloud Run |
+| `PUBLIC_HOST manquant` | hors Cloud Run : variable absente. Sur Cloud Run : la déduction a échoué (`K_SERVICE` absent, ou serveur de métadonnées injoignable) ; poser `PUBLIC_HOST` explicitement le temps de diagnostiquer |
+| `API_URL manquant` / `ENDPOINT_INGEST_SECRET manquant` | variable absente du formulaire Cloud Run |
 | `jeton d'ingestion refusé` (`401`/`403`) | `ENDPOINT_INGEST_SECRET` différent de celui de l'API |
 | `déploiement expiré, nouvelle révision requise` (`409`) | cette `deployment_key` existe déjà et a expiré : redéployer une nouvelle révision |
 | `route d'enregistrement absente` (`404`) | `API_URL` pointe sur le mauvais service, ou l'API n'a pas la route `/v1/internal` |
@@ -290,7 +293,11 @@ construite, et aucun déploiement Cloud Run n'a eu lieu.
 - un fichier de config illisible fait bien sortir `xray -test` en `23` ;
 - les champs envoyés à `register` sont tous dans le schéma Zod de
   `apps/api/src/routes/internal.ts` (8 envoyés, 0 hors schéma ; `sni` n'est pas
-  envoyé, l'API le remplace par `public_host`).
+  envoyé, l'API le remplace par `public_host`) ;
+- déduction de `PUBLIC_HOST` (lignes 73-83), bloc extrait tel quel et exécuté avec
+  un `curl` factice qui répond comme le serveur de métadonnées (`numeric-project-id`,
+  `instance/region`) : `vpn-node-513999018169.us-west1.run.app`. Sans `K_SERVICE`
+  ou sans métadonnées, la sortie est `78` (simulé, pas un Cloud Run réel).
 
 **Non vérifié (première exécution réelle) :**
 

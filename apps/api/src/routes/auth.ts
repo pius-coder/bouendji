@@ -91,6 +91,8 @@ const registerSchema = z
     password: passwordSchema,
     name: z.string().trim().min(2).max(60),
     phone: phoneSchema,
+    /** Code parrain facultatif (écran « Inviter ») ; inconnu = erreur, pas un silence. */
+    referralCode: z.string().trim().toUpperCase().min(4).max(16).optional(),
     locale: z
       .string()
       .trim()
@@ -447,6 +449,15 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
     ]);
     if (phoneTaken) throw fail.conflict("Un compte existe déjà pour ce numéro de téléphone sur cette application.");
 
+    // Le parrain est cherché dans la même marque : un code d'une autre marque n'existe pas ici.
+    const referrer = input.referralCode
+      ? await db.one<Row>("SELECT id FROM users WHERE app_id = $1 AND referral_code = $2 AND deleted_at IS NULL", [
+          input.appId,
+          input.referralCode,
+        ])
+      : null;
+    if (input.referralCode && !referrer) throw fail.validation({ referralCode: "Code parrain inconnu." });
+
     const userId = newId();
     try {
       await db.tx(async (q) => {
@@ -466,6 +477,13 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
         );
         // Premier appareil d'un compte neuf : aucune place n'est occupée.
         await q.query("UPDATE devices SET user_id = $2, status = 'active' WHERE id = $1", [device.id, userId]);
+        if (referrer) {
+          await q.query("INSERT INTO referrals (referred_user_id, referrer_user_id, app_id) VALUES ($1, $2, $3)", [
+            userId,
+            referrer.id,
+            input.appId,
+          ]);
+        }
       });
     } catch (error) {
       // Course entre deux inscriptions : les index UNIQUE de la marque tranchent.

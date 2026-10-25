@@ -11,9 +11,10 @@
       préférence exposée ; un récepteur déclaré maintenant écouterait un
       réglage que personne ne peut activer.
     - `QUERY_ALL_PACKAGES`, `READ_PHONE_STATE`, aucun identifiant matériel.
-    - aucun `intent-filter` sur `MainActivity` hors `MAIN`/`LAUNCHER` : aucun
-      schéma d'import, aucun lien profond qui ferait entrer une configuration
-      par une porte que l'interface ne contrôle pas.
+    - une seule entrée hors `MAIN`/`LAUNCHER` : le fichier de secours `.bvpn`
+      (« Ouvrir avec », « Partager vers »). Le contenu n'est jamais cru sur
+      parole : 256 Ko au plus, signature Ed25519 épinglée dans l'APK, scellé pour
+      cet appareil, usage unique (`OfflineBundle.import`). Aucun lien profond.
 
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -55,6 +56,29 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!--
+              Fichier de secours `.bvpn` (offline-bundle). Les gestionnaires de
+              fichiers et WhatsApp le présentent en `application/octet-stream`
+              ou par son extension ; l'application valide le contenu elle-même.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="application/octet-stream" />
+                <data android:scheme="content" android:mimeType="application/vnd.bouendji.bvpn" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.bvpn" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" android:pathPattern=".*\\.bvpn" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/vnd.bouendji.bvpn" />
             </intent-filter>
         </activity>
 

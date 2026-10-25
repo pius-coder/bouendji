@@ -33,12 +33,11 @@
 # noms d'algorithme sont des chaînes : rien à garder côté classes.
 
 # --- libbox (sing-box) -----------------------------------------------------
-# Non intégré dans ce lot (aucune version vérifiée). Quand l'adaptateur sera
-# branché, libbox est appelé depuis JNI : ses classes doivent survivre à R8,
-# sinon l'échec n'apparaît qu'en release. Gabarit à décommenter avec la
-# dépendance réelle :
-# -keep class io.nekohasekai.libbox.** { *; }
-# -keep interface io.nekohasekai.libbox.** { *; }
+# libbox.aar embarque ses règles consommateur (proguard.txt de l'AAR) :
+#   -keep class go.** { *; }
+#   -keep class io.nekohasekai.** { *; }
+# Vérifié dans mapping.txt du 2026-10-25 : aucune classe ni membre renommé.
+# Un AAR reconstruit sans ce fichier casserait le JNI en release seulement.
 
 # --- Modèle de tunnel ------------------------------------------------------
 -keep interface cm.bouendji.vpn.vpn.TunnelEngine { *; }

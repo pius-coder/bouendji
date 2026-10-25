@@ -1,0 +1,17 @@
+{
+  "_comment": "Marque réelle Bouendji VPN (communauté bouendji, owner tuekampius13@gmail.com). Bêta sur l'environnement aura-vps, paiement simulé tant que Fapshi n'est pas branché.",
+  "theme": "billet",
+  "appName": "Bouendji VPN",
+  "packageName": "com.bouendji.vpn",
+  "apiBaseUrl": "https://api.numzer0.store",
+  "appId": "f3d5ee21-55f5-4885-bf6a-ba3af77ec70b",
+  "supportUrl": "mailto:support@henshins.online",
+  "accent": null,
+  "offlineBundleSigningKeyB64": "MCowBQYDK2VwAyEADpJiokJbnFPbgtdSPuweH+T6TpmP9TnY0i2lruG7KtQ=",
+  "memberWord": "NJI",
+  "communityWhatsappUrl": "",
+  "communityTelegramUrl": "",
+  "defaultLocale": "fr",
+  "versionCode": 2,
+  "versionName": "1.0.0-beta.2"
+}

@@ -5,7 +5,7 @@ import { env } from "../config.js";
 import type { Database } from "../db.js";
 import { ApiFailure, fail } from "../lib/errors.js";
 import type { EndpointRow, EndpointTier } from "../services/endpoints.js";
-import { CLIENT_POOL_SIZE, heartbeat, listPool, markReady, poolRevision, registerEndpoint } from "../services/endpoints.js";
+import { bumpPoolRevision, CLIENT_POOL_SIZE, heartbeat, listPool, markReady, poolRevision, registerEndpoint, syncFrontSiblings } from "../services/endpoints.js";
 
 /**
  * Ingestion surface. Only endpoint containers call these routes; they are never
@@ -98,6 +98,23 @@ const registerSchema = z.object({
   tier: tierSchema.optional(),
   /** D68/D69 : `per_device` fait renvoyer un pool de 200 UUID à l'enregistrement. */
   identity_mode: identityModeSchema.optional(),
+  /**
+   * D93 : sorties de domain fronting du même nœud (IP du frontal + SNI). Le
+   * Host reste `public_host`. Absent = aucune sœur (les anciennes sont retirées).
+   */
+  front: z
+    .object({
+      address: z
+        .string()
+        .trim()
+        .max(253)
+        .refine((value) => /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/i.test(value), "Adresse de frontal invalide."),
+      snis: z
+        .array(z.string().trim().refine((value) => /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/i.test(value), "SNI invalide."))
+        .min(1)
+        .max(12),
+    })
+    .optional(),
 });
 
 const keySchema = z.object({
@@ -220,6 +237,8 @@ export function registerInternalRoutes(app: FastifyInstance, db: Database): void
       tier: input.tier,
       identityMode: input.identity_mode,
     });
+    const fronts = await syncFrontSiblings(db, input.deployment_key, input.front ?? null);
+    const revision = fronts > 0 ? await bumpPoolRevision(db) : endpoint.poolRevision;
 
     // 200 on both paths: a restart reuses an existing resource, it is not a new one.
     return {
@@ -233,7 +252,8 @@ export function registerInternalRoutes(app: FastifyInstance, db: Database): void
       // Le pool fixe n'est renvoyé qu'au mode qui l'utilise (D69) : un nœud
       // `shared` n'a aucun client pré-provisionné à écrire dans Xray.
       ...(endpoint.clientPool ? { client_pool: endpoint.clientPool } : {}),
-      pool_revision: endpoint.poolRevision,
+      front_outputs: fronts,
+      pool_revision: revision,
     };
   });
 

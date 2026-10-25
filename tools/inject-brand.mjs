@@ -22,7 +22,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-const THEMES = new Set(["halo", "mono", "vector", "otaku"]);
+const THEMES = new Set(["billet", "halo", "mono", "vector", "otaku"]);
 const JAVA_RESERVED = new Set([
   "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class", "const",
   "continue", "default", "do", "double", "else", "enum", "extends", "final", "finally", "float",
@@ -134,6 +134,28 @@ function validated(spec) {
   }
   out.offlineBundleSigningKeyB64 = key;
 
+  // Mot de la carte de membre (« NJI » chez Bouendji) : court, en capitales.
+  const memberWord = String(spec.memberWord ?? "").trim().toUpperCase();
+  if (memberWord && !/^[\p{L}0-9 ]{2,12}$/u.test(memberWord)) die("memberWord : 2 à 12 lettres ou chiffres");
+  out.memberWord = memberWord;
+
+  // Liens de communauté : facultatifs, https seulement (WhatsApp, Telegram).
+  for (const field of ["communityWhatsappUrl", "communityTelegramUrl"]) {
+    const raw = spec[field];
+    if (raw === undefined || raw === null || raw === "") {
+      out[field] = "";
+      continue;
+    }
+    let link;
+    try {
+      link = new URL(raw);
+    } catch {
+      die(`${field} n'est pas une URL absolue`);
+    }
+    if (link.protocol !== "https:") die(`${field} doit être en https`);
+    out[field] = link.toString();
+  }
+
   const locale = (spec.defaultLocale ?? "fr").toLowerCase();
   if (!/^[a-z]{2}$/.test(locale)) die("defaultLocale doit être deux lettres minuscules");
   out.defaultLocale = locale;
@@ -161,9 +183,10 @@ function kotlin(value) {
 
 function replaceConst(source, name, type, literal) {
   const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`const val ${escape(name)}: ${escape(type)} = [^\\n]+`);
+  // `accent` est nullable : Kotlin interdit `const` sur un type nullable, donc `val` seul.
+  const pattern = new RegExp(`((?:const )?val) ${escape(name)}: ${escape(type)} = [^\\n]+`);
   if (!pattern.test(source)) die(`BrandTokens.kt : constante ${name} introuvable`);
-  return source.replace(pattern, `const val ${name}: ${type} = ${literal}`);
+  return source.replace(pattern, (_, prefix) => `${prefix} ${name}: ${type} = ${literal}`);
 }
 
 function writeBrandTokens(path, brand) {
@@ -180,6 +203,9 @@ function writeBrandTokens(path, brand) {
   source = replaceConst(source, "offlineBundleSigningKeyB64", "String", `"${brand.offlineBundleSigningKeyB64}"`);
   source = replaceConst(source, "defaultLocale", "String", `"${brand.defaultLocale}"`);
   source = replaceConst(source, "appVersion", "String", `"${brand.appVersion}"`);
+  source = replaceConst(source, "memberWord", "String", `"${kotlin(brand.memberWord)}"`);
+  source = replaceConst(source, "communityWhatsappUrl", "String", `"${kotlin(brand.communityWhatsappUrl)}"`);
+  source = replaceConst(source, "communityTelegramUrl", "String", `"${kotlin(brand.communityTelegramUrl)}"`);
 
   writeFileSync(path, source, "utf8");
   return source;

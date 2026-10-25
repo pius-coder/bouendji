@@ -450,3 +450,180 @@ ferme une question ouverte ou un défaut vérifié dans le code.
   ne sont jamais envoyés au navigateur. Fastify reste l'autorité des jetons,
   rôles et périmètres. Détails du BFF dans `20-backend/admin-access-flows`.
 
+
+- **D79** (2026-10-23) — **Session du dashboard : cookie httpOnly + jeton CSRF.**
+  Le navigateur reçoit un cookie de session httpOnly posé par Next.js ; les
+  écritures exigent un jeton CSRF. Le JWT `vpn-admin`, `DASHBOARD_ACCESS_KEY`
+  et les clés API restent côté serveur Next.js.
+- **D80** (2026-10-23) — **Première livraison du dashboard : `owner` et
+  `community_admin`.** Les écrans `finance` (versements) et l'audit complet
+  suivent. Direction visuelle Halo v2, conçue mobile d'abord. Détails dans
+  `30-clients/dashboard-ux`.
+
+- **D82** (2026-10-23) — **Arbitrages validées par l'utilisateur pour le
+  dashboard.** Validées : D79 (session cookie httpOnly + CSRF) et D81 (système
+  UI shadcn new-york-v4 + jetons Halo v2). Clé console (`DASHBOARD_ACCESS_KEY`)
+  ajoutée par le serveur Next.js, jamais saisie à l'écran de connexion (D78).
+  `support` et `finance` hors de la première livraison (D80). **Non tranchés,
+  à ne pas trancher par défaut** : durée de la session Next.js, TTL des fichiers
+  hors-ligne (le schéma accepte `ttlHours` jusqu'à 72 h, `admin.ts` l.151 ; le
+  commentaire du handler et la valeur effective disent 24 h, `admin.ts` l.1188 —
+  à aligner, correction de sens le 2026-10-23), routes de compteurs et de lecture unitaire, visibilité de `host` et
+  `port` dans `GET /pool` pour `community_admin`. Ces points restent dans
+  `00-brief/open-questions.md`.
+
+- **D83** (2026-10-23) — **aura-vps : Xray nu remplacé par 3x-ui 3.10.2 en
+  conteneur.** Demandé par l'utilisateur pour servir de cible au relais
+  `praveenkarunarathne/Google-Cloud-Run-Proxy` (TCP brut vers `:80`). Inbound
+  VLESS+WS `127.0.0.1:10000` `/bouendji-vpn`, nginx :80 accepte `*.run.app`,
+  panneau en loopback (conforme D22). Ancien Xray sauvegardé puis supprimé.
+  Détails : `10-infrastructure/aura-vps-3x-ui`. Le relais vers ce VPS est
+  **écarté pour le plan illimité** (voir D84) ; le VPS et 3x-ui restent en place
+  pour le plan limité.
+
+- **D84** (2026-10-24) — **Relais écarté pour le plan illimité ; 3x-ui VPS
+  conservé pour le plan limité.** Sur le plan illimité, on reste sur D39 +
+  `infra/endpoint`. Après analyse d'une config de référence qui fonctionne
+  (image `teddysun/v2ray` dans Cloud Run, outbound `freedom`, UUID partagé,
+  `ajndjd2/ahmed-vip1`), on confirme que le modèle produit reste **xray/v2ray
+  directement dans Cloud Run qui parle à notre API** (`register`/`ready`/
+  `heartbeat`) — c'est exactement `infra/endpoint`, déjà écrit. Les décisions
+  relais prises le 2026-10-23 sont **annulées pour le plan illimité** : relais
+  TCP muet → VPS, segment Google→VPS en clair, VPS point unique, et D39 reste la
+  règle de ce plan. Pour le **plan limité** (VPS permanents, quota, identité par
+  appareil — `00-brief/objective.md`), 3x-ui reste la bonne base ; `cloudflared`
+  et l'auto-annonce des relais y sont à réévaluer, pas supprimés.
+  **L'API n'a jamais été modifiée** (`git status apps/api` vide) : rien à
+  revenir côté code. `relay-architecture` supprimé. O22 abandonnée ; O5 reste
+  ouverte (résolue côté endpoint par `PUBLIC_HOST`). Ce qui reste à ajouter à
+  `infra/endpoint` quand on voudra la consommation : `stats`/`policy`/
+  `api StatsService` dans la config, une boucle de remontée, une route API et
+  une table `usage` (ce que D39 avait déjà reporté).
+
+- **D86** (2026-10-24) — **Les recommandations des skills better-\* sont
+  autorisées, y compris quand elles contredisent le HIG ou la règle « pas
+  d'ombres ».** Conséquences retenues :
+  - bordures fines réalisées avec une ombre de 1 px (technique better-ui) ;
+    les ombres portées restent interdites ;
+  - bouton de validation toujours actif (better-accessibility), au lieu de
+    l'activation conditionnelle du HIG ;
+  - contraste à respecter : texte de bouton à 4,5:1 minimum, soit
+    `#0066d6` pour le bouton proéminent (5,42:1) au lieu de `#0a7cff` (3,93:1),
+    sauf décision contraire de l'utilisateur sur la couleur de marque.
+  Source : décision de l'utilisateur après le rapport `design-rules-opus`.
+  Les autres points ouverts (gris, sélecteur d'apparence, masquage par rôle)
+  restent à trancher.
+
+- **D87** (2026-10-24) — **Révision de D86 : les ombres sont autorisées, avec
+  les bordures fines.** L'interdiction des ombres portées est levée par
+  l'utilisateur. Les bordures fines restent la base de séparation ; les ombres
+  s'ajoutent là où elles aident la hiérarchie (surfaces flottantes, feuilles,
+  menus). Référence de style : Chariow (`reference`, pages de connexion fournies
+  le 2026-10-24) pour les couleurs, la fluidité et les composants ; shell et
+  diagrammes d'orya-stack ; icônes Solar ; kit Apple Design Resources pour les
+  dimensions iOS.
+- **D88** (2026-10-24) — **Couleur d'accent : pas le bleu.** L'utilisateur
+  refuse le bleu système comme accent. L'accent suit la référence Chariow
+  (jaune) ; le texte posé sur fond jaune est sombre, pas blanc, pour respecter
+  le contraste (D86, 4,5:1 minimum).
+- **D89** (2026-10-24) — **Priorités : infra, puis parcours client, puis tests
+  client, puis fin du dashboard.** Le dashboard est mis en pause. Les
+  sous-agents sont arrêtés (coupures répétées) : l'orchestrateur mène seul
+  jusqu'à une application fonctionnelle.
+- **D90** (2026-10-24) — **Environnement de test sur aura-vps sous Dokku**
+  (`vpn-api`, `vpn-node1`, `vpn-db`), `NODE_ENV=development`, paiement simulé,
+  en attendant les clés Fapshi et Vercel. Détail :
+  `10-infrastructure/aura-vps-dokku-test`. Marque Android de test
+  `cm.bouendji.vpn.test` (`tools/brands/aura-test.json`).
+- **D91** (2026-10-24) — **Design Android : reprendre le prototype
+  `brondon-code/lelexxl2a2` et n'adapter que les thèmes.** Décision de
+  l'utilisateur ; elle remplace le principe « on ne copie pas le prototype »
+  de `30-clients/ui-restructure-plan`. Les règles de contenu restent (jamais
+  d'UUID ni de `vless://` à l'écran, pas de prix inventé).
+- **D92** (2026-10-24) — **Contact de marque de test : `support@henshins.online`**
+  (`mailto:`), donné par l'utilisateur.
+- **D93** (2026-10-24) — **Nœuds manuels et domain fronting.** Un serveur non
+  déployé par l'API s'ajoute par `POST /v1/admin/endpoints/manual` (owner seul) :
+  une ligne par SNI, `ws_host` = Host du WebSocket quand il diffère du SNI, UUID
+  chiffré, jamais renvoyé ni audité. Republier un groupe remplace ses lignes.
+- **D94** (2026-10-24) — **Fichier de secours = extension `.bvpn`** (JSON
+  `offline-bundle`). L'app l'accepte par « Ouvrir avec », « Partager vers » et
+  Paramètres/Aide › Importer ; seule entrée hors lanceur du manifeste.
+- **D95** (2026-10-24) — **Parrainage enregistré, non récompensé.** Code par
+  compte (`GET /v1/me/referral`), lien posé à l'inscription (`referralCode`) ;
+  la règle de récompense reste une question ouverte.
+- **D96** (2026-10-24) — **Image d'endpoint sur GHCR** :
+  `ghcr.io/pius-coder/vpn-endpoint` (publique), construite par le workflow
+  `endpoint-image` à chaque changement de `infra/endpoint`. Elle remplace l'image
+  tierce `docker.io/ajndjd2/ahmed-vip1` (UUID figé et public). Le fronting se
+  déclare par `ENDPOINT_FRONT_ADDRESS` / `ENDPOINT_FRONT_SNIS`.
+- **D97** (2026-10-24) — **Illimité / Limité se choisit à l'achat** (D45
+  inchangée : un bundle = le type du forfait actif). Forfaits : sélecteur
+  « Illimité | Limité » si la marque vend les deux, étiquette sur chaque billet ;
+  Serveurs : étiquette du type actif. `free-labs` = illimité (Cloud Run, Qwiklabs),
+  `paid-gcp` = limité (3x-ui sur VM Google Cloud, quota, UUID par appareil).
+  `endpointTier` exposé par le catalogue et réglable par l'admin.
+- **D98** (2026-10-24) — **Marque réelle « Bouendji VPN » en bêta** :
+  `tools/brands/bouendji.json`, package `com.bouendji.vpn`, thème `billet`, mot
+  `NJI`, owner `tuekampius13@gmail.com` (mot de passe : `/root/bouendji-owner.txt`
+  sur le VPS, 0600). Forfaits illimités repris du prototype : 300 (24 h),
+  1 000 (4 j), 1 500 (1 sem.), 3 200 (2 sem.), 5 500 (1 mois) — prix toujours
+  provisoires (O12). Paiement **simulé** tant que Fapshi n'est pas branché.
+- **D99** (2026-10-24) — **Leurre de l'API → `https://www.numzer0.store`**
+  (`DECOY_URL` sur `vpn-api`). Le domaine est chez Cloudflare ; aucun
+  sous-domaine n'y pointe encore vers l'API (accès Cloudflare requis).
+- **D100** (2026-10-24) — **APK de marque stockés sur Cloudflare R2** (remplace
+  Vercel Blob de D62), lien remis par l'admin à ses utilisateurs. Mise à jour
+  automatique dans l'APK : plus tard. **Non implémenté** au 2026-10-24.
+- **D101** (2026-10-24) — **Domaines sur `numzer0.store`** (Cloudflare, nuage
+  gris / DNS uniquement, A → 198.251.65.186) : `api`, `dl`, `node1`, `node2`.
+  Certificats Let's Encrypt par Dokku. Les noms `sslip.io` restent servis le
+  temps de la transition. L'APK Bouendji VPN vise `https://api.numzer0.store`
+  depuis 1.0.0-beta.2. Correctif : un nœud qui change de nom met aussi à jour son
+  SNI et fait bouger la révision du pool (`revive`).
+- **D102** (2026-10-25) — **Chaîne de build des APK de marque** (applique D100) :
+  workflow `android-brand` (dispatch par le dashboard, ou push d'un manifeste
+  `tools/brands/*.json`) → injection de la marque + icônes → `assembleRelease`
+  → zipalign + apksigner (keystore `bouendji`, RSA 4096, secrets GitHub ;
+  sauvegarde `/root/android-release/` sur le VPS, 0600) → R2 bucket `vpn-apps`,
+  `brands/<package>/<package>-<version>-<code>.apk` + `latest.apk`, servi par
+  `https://apps.numzer0.store` (domaine R2 personnalisé) → rappel backend.
+  Prérequis restants : `libbox.aar` téléchargeable par la CI (Release GitHub,
+  publication publique refusée sans accord explicite) et secrets
+  `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` posés par l'utilisateur.
+- **D103** (2026-10-25) — **Refonte visuelle du dashboard** (décision de
+  l'utilisateur, « actuellement complètement cassé, trop terne ») : style iOS
+  partout, **ombres et dégradés là où ils servent la hiérarchie** (feuilles,
+  tiroirs, menus, cartes de chiffres, bouton principal), couleurs et composants
+  calqués sur l'interface **connectée** de Chariow (analysée dans le Chrome de
+  l'utilisateur ; l'utilisateur s'y connecte lui-même). **Trois thèmes
+  d'accent : rose, vert, rouge** (remplace l'accent jaune unique de D88 ;
+  contraste ≥ 4,5:1 pour le texte maintenu, D86).
+- **D104** (2026-10-25) — **Suspense granulaire, client minimal** : seule la
+  valeur dynamique est enveloppée dans `<Suspense>`, jamais son titre ni son
+  cadre ; chaque valeur dynamique est un composant serveur séparé. Le titre, les
+  libellés et la mise en page restent statiques (prérendus). `"use client"`
+  uniquement pour la moindre goutte d'interactivité, isolée dans son propre
+  composant ; tout le reste est serveur.
+- **D105** (2026-10-25) — **Sous-agents Haiku en effort `high`** pour les tâches
+  externes au dashboard (APK, infra VPS) ; l'orchestrateur garde le dashboard.
+- **D106** (2026-10-25) — **Shell recréé, architecture conservée** : rail de
+  sections, sous-menu (communauté + écrans de la section), bande de section,
+  contenu en feuille arrondie ; mobile : barre du haut, puces de section,
+  barre d'onglets basse. Seul le rendu change, vers Chariow (demande de
+  l'utilisateur). **Accents de Chariow aux mêmes endroits, seule la couleur
+  primaire change** (rose, vert, rouge) ; états sélectionnés teintés de la
+  primaire, pas gris.
+- **D107** (2026-10-25) — **Ajout manuel de nœud par lien `vless://`** : le
+  formulaire accepte un lien collé, analysé dans le navigateur pour
+  pré-remplir adresse, port, UUID, SNI, Host, chemin et libellé ; seuls
+  `type=ws` + `security=tls` sont acceptés (forme servie par
+  `POST /v1/admin/endpoints/manual`). Le lien n'est ni envoyé tel quel, ni
+  journalisé, ni stocké.
+- **D108** (2026-10-25) — **Rendu pixel près de Chariow, primaire ≤ 10 %**
+  (remplace la partie « états sélectionnés teintés de la primaire » de D106) :
+  bouton principal noir, item actif sur fond gris avec icône primaire, primaire
+  réservée au focus, survol, sélection et indicateurs ; bordures `#e5e7e8`
+  visibles, ombres seulement sur surface, tiroirs et menus ; document non
+  défilant, seule la surface défile, barre d'outils et en-tête de tableau
+  collants. Détail et suivi : `30-clients/dashboard-plan`.

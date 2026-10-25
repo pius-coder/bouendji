@@ -29,6 +29,13 @@ const BYPASS_RE = [
    */
   /^\/reference(\/.*)?$/,
   /^\/openapi\.json$/,
+  /*
+   * Pages de paiement ouvertes par l'app dans le navigateur : la page de retour
+   * après Fapshi (`/pay/return/:orderId`) et la page simulée (`/pay/mock/:ref`).
+   * Le navigateur n'envoie ni X-App-Id ni preuve : sans cette exception, le
+   * client atterrit sur le site leurre au moment de payer.
+   */
+  /^\/pay\//,
 ];
 export const DECOY_FALLBACK = "https://example-sms.com";
 

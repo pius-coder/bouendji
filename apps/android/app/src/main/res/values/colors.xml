@@ -7,6 +7,5 @@
   des garde-fous de fenêtre, pas une palette.
 -->
 <resources>
-    <color name="brand_window">#F7FAFF</color>
-    <color name="ic_launcher_background">#0B1322</color>
+    <color name="brand_window">#F6F4EC</color>
 </resources>

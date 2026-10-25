@@ -1,5 +1,11 @@
 package cm.bouendji.vpn.vpn
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import io.nekohasekai.libbox.BridgeOptions
 import io.nekohasekai.libbox.BridgeSession
 import io.nekohasekai.libbox.ConnectionOwner
@@ -167,11 +173,65 @@ internal interface PlatformDefaults : PlatformInterface {
  *    pire qu'un tunnel qui refuse de démarrer.
  */
 internal class TunnelPlatform(
+    private val context: Context,
     private val protect: (Int) -> Boolean,
     private val tunFd: Int,
 ) : PlatformDefaults {
 
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
     override fun openTun(options: TunOptions): Int = tunFd
+
+    /**
+     * Interface physique par défaut (LTE, Wi-Fi), hors VPN.
+     *
+     * Avec `auto_detect_interface`, sing-box sort par l'interface que la
+     * plateforme lui signale ici. Sans ce signal, le tunnel est monté mais
+     * aucune connexion sortante n'aboutit : c'était le cas avec un moniteur vide.
+     * Même principe que `DefaultNetworkMonitor` de sing-box-for-android.
+     */
+    override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
+        if (listener == null) return
+        val manager = context.getSystemService(ConnectivityManager::class.java) ?: return
+
+        fun publish(network: Network?) {
+            val name = network?.let { manager.getLinkProperties(it) }?.interfaceName
+            if (name.isNullOrEmpty()) {
+                listener.updateDefaultInterface("", -1, false, false)
+                return
+            }
+            val index = runCatching { JavaInterface.getByName(name)?.index }.getOrNull() ?: -1
+            val capabilities = manager.getNetworkCapabilities(network)
+            val expensive = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == false
+            listener.updateDefaultInterface(name, index, expensive, false)
+        }
+
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = publish(network)
+            override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) = publish(network)
+            override fun onLost(network: Network) = publish(null)
+        }
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            .build()
+        // Le rappel initial peut arriver après le démarrage : on publie l'état courant
+        // tout de suite. L'appel le plus récent gagne côté sing-box.
+        manager.allNetworks.firstOrNull { network ->
+            manager.getNetworkCapabilities(network)?.let {
+                it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            } == true
+        }?.let(::publish)
+        manager.registerNetworkCallback(request, callback)
+        networkCallback = callback
+    }
+
+    override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
+        val callback = networkCallback ?: return
+        networkCallback = null
+        runCatching { context.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(callback) }
+    }
 
     override fun autoDetectInterfaceControl(fd: Int) {
         if (!protect(fd)) {

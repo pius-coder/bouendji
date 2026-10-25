@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowCompat
 import cm.bouendji.vpn.brand.BrandTokens
+import cm.bouendji.vpn.offline.ImportInbox
 import cm.bouendji.vpn.ui.VpnApp
 import cm.bouendji.vpn.vpn.TunnelState
 import cm.bouendji.vpn.vpn.TunnelStateBus
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (savedInstanceState == null) receiveFile(intent)
 
         setContent {
             val container = (application as VpnApplication).container
@@ -84,6 +86,27 @@ class MainActivity : ComponentActivity() {
                 },
             )
         }
+    }
+
+    /** `singleTop` : un fichier ouvert pendant que l'app tourne arrive ici. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        receiveFile(intent)
+    }
+
+    /** Fichier de secours `.bvpn` reçu par « Ouvrir avec » ou « Partager vers ». */
+    private fun receiveFile(intent: Intent?) {
+        val uri = when (intent?.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> if (Build.VERSION.SDK_INT >= 33) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            }
+            else -> null
+        } ?: return
+        ImportInbox.offer(contentResolver, uri)
     }
 
     private fun openSupport() = openUrl(BrandTokens.supportUrl)

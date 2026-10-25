@@ -311,3 +311,42 @@ test("route inconnue : 404 dans l'enveloppe", async () => {
   assert.equal(res.statusCode, 404);
   assert.equal((res.json() as { error: { code: string } }).error.code, "NOT_FOUND");
 });
+
+/* ------------------------------------------------------- domain fronting (D93) */
+
+test("front : une sortie sœur par SNI, Host = public_host, même identité ; ready les active", async () => {
+  const key = "fronted:rev1";
+  const first = await register(key, {
+    public_host: "svc-1.us-west1.run.app",
+    front: { address: "203.0.113.20", snis: ["a.example.com", "b.example.com"] },
+  });
+  assert.equal(first.status, 200);
+  assert.equal(first.body.front_outputs, 2);
+
+  await ready(key);
+  const rows = await db.query<any>(
+    "SELECT deployment_key, status, host, sni, ws_host, ws_path, credential FROM endpoints WHERE left(deployment_key, $1) = $2 ORDER BY deployment_key",
+    [key.length, key],
+  );
+  const main = rows.find((r) => r.deployment_key === key);
+  const sisters = rows.filter((r) => r.deployment_key !== key);
+  assert.equal(sisters.length, 2);
+  for (const sister of sisters) {
+    assert.equal(sister.status, "active", "ready active aussi les sœurs");
+    assert.equal(sister.host, "203.0.113.20");
+    assert.equal(sister.ws_host, "svc-1.us-west1.run.app");
+    assert.equal(sister.ws_path, main.ws_path);
+    assert.equal(sister.credential, main.credential, "même identité que le nœud");
+  }
+
+  // Redémarrage sans front : les sœurs sortent du pool.
+  const again = await register(key, { public_host: "svc-1.us-west1.run.app" });
+  assert.equal(again.body.front_outputs, 0);
+  const left = await db.query<any>("SELECT status FROM endpoints WHERE left(deployment_key, $1) = $2 AND deployment_key <> $2", [key.length, key]);
+  assert.ok(left.every((r) => r.status === "expired"));
+});
+
+test("front : SNI invalide refusé", async () => {
+  const res = await register("fronted:bad", { front: { address: "203.0.113.20", snis: ["pas un sni"] } });
+  assert.equal(res.status, 400);
+});

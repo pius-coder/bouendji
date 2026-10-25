@@ -96,7 +96,7 @@ data class VlessEndpoint(
  *   outbounds : selector « proxy » -> [auto, n1..nN]
  *               urltest  « auto »  -> [n1..nN]          (si ≥ 2 sorties)
  *               vless « nK »       -> une par configuration
- *               direct / block
+ *               direct
  *   inbounds  : tun « tun-in »
  *   route     : final = proxy
  *
@@ -110,6 +110,8 @@ object SingBoxConfig {
     const val SELECTOR_TAG = "proxy"
     const val AUTO_TAG = "auto"
     const val TUN_TAG = "tun-in"
+    private const val DNS_REMOTE = "dns-remote"
+    private const val DNS_LOCAL = "dns-local"
 
     /** Préfixe des tags de sortie : n1, n2, … (jamais le libellé, qui peut contenir n'importe quoi). */
     private const val NODE_PREFIX = "n"
@@ -124,10 +126,29 @@ object SingBoxConfig {
         val autoRoute: Boolean = false,
     )
 
+    /**
+     * Une sortie du plan, telle que l'interface et le superviseur la voient.
+     * `host`/`port` servent aux sondes TCP hors tunnel ; ils ne sont **jamais**
+     * affichés (pas d'adresse de nœud à l'écran).
+     */
+    data class PlanNode(
+        val tag: String,
+        val configId: String,
+        val label: String,
+        val region: String,
+        val host: String,
+        val port: Int,
+    ) {
+        override fun toString(): String = "PlanNode(tag=$tag, configId=$configId, label=$label, region=$region)"
+    }
+
     data class TunnelPlan(
         /** JSON complet, à garder uniquement en mémoire. */
         val json: String,
         val nodeTags: List<String>,
+        val nodes: List<PlanNode>,
+        /** Sortie choisie au démarrage : préférence de l'utilisateur, sinon `auto`. */
+        val initialTag: String,
         val expiresAtMs: Long,
         /** Reconnexion préventive : `maxSessionSeconds - 60` (D25). */
         val reconnectAfterSeconds: Int,
@@ -146,17 +167,25 @@ object SingBoxConfig {
         nowMs: Long = System.currentTimeMillis(),
         tun: TunOptions = TunOptions(),
         exposeClashApi: Boolean = true,
+        /** Configuration choisie par l'utilisateur (D18 : une préférence, pas un verrou). */
+        preferredConfigId: String? = null,
+        /**
+         * Protection DNS : les requêtes du tunnel partent en DNS-over-HTTPS **à
+         * travers** la sortie VPN, au lieu du résolveur de l'opérateur. Les noms
+         * des nœuds restent résolus localement (sinon le tunnel ne s'établit pas).
+         */
+        dnsProtection: Boolean = true,
     ): TunnelPlan? {
-        val usable = payload.configs.mapNotNull { config ->
-            val expiry = parseInstant(config.expiresAt) ?: return@mapNotNull null
-            if (expiry <= nowMs) return@mapNotNull null
-            val endpoint = parseVless(config.uri) ?: return@mapNotNull null
-            Triple(config, endpoint, expiry)
-        }
+        val usable = usableConfigs(payload, nowMs)
         if (usable.isEmpty()) return null
 
         val dropped = payload.configs.size - usable.size
         val nodeTags = usable.indices.map { "$NODE_PREFIX${it + 1}" }
+        val nodes = usable.mapIndexed { index, (config, endpoint, _) ->
+            PlanNode(nodeTags[index], config.id, config.label, config.region, endpoint.host, endpoint.port)
+        }
+        val automatic = if (nodeTags.size >= 2) AUTO_TAG else nodeTags.first()
+        val initialTag = nodes.firstOrNull { it.configId == preferredConfigId }?.tag ?: automatic
 
         val clashPort = if (exposeClashApi) pickLoopbackPort() else null
         val clashSecret = if (clashPort != null) randomSecret() else null
@@ -165,6 +194,29 @@ object SingBoxConfig {
             putJsonObject("log") {
                 put("level", "warn")
                 put("timestamp", true)
+            }
+
+            putJsonObject("dns") {
+                putJsonArray("servers") {
+                    if (dnsProtection) {
+                        add(
+                            buildJsonObject {
+                                put("type", "https")
+                                put("tag", DNS_REMOTE)
+                                put("server", "1.1.1.1")
+                                put("detour", SELECTOR_TAG)
+                            },
+                        )
+                    }
+                    add(
+                        buildJsonObject {
+                            put("type", "local")
+                            put("tag", DNS_LOCAL)
+                        },
+                    )
+                }
+                put("final", if (dnsProtection) DNS_REMOTE else DNS_LOCAL)
+                put("strategy", "prefer_ipv4")
             }
 
             putJsonArray("inbounds") {
@@ -177,9 +229,6 @@ object SingBoxConfig {
                         put("stack", tun.stack)
                         put("auto_route", tun.autoRoute)
                         put("strict_route", false)
-                        // Sniffing : sans lui, un nom d'hôte dans le tunnel part
-                        // en adresse IP et les règles DNS ne servent à rien.
-                        put("sniff", true)
                     },
                 )
             }
@@ -194,7 +243,7 @@ object SingBoxConfig {
                             if (nodeTags.size >= 2) add(AUTO_TAG)
                             nodeTags.forEach { add(it) }
                         }
-                        put("default", if (nodeTags.size >= 2) AUTO_TAG else nodeTags.first())
+                        put("default", initialTag)
                     },
                 )
 
@@ -217,23 +266,32 @@ object SingBoxConfig {
                     add(vlessOutbound(nodeTags[index], config, endpoint))
                 }
 
-                // 4. Les deux sorties attendues par sing-box.
+                // 4. Sortie directe (la sortie spéciale `block` n'existe plus depuis sing-box 1.13).
                 add(
                     buildJsonObject {
                         put("type", "direct")
                         put("tag", "direct")
                     },
                 )
-                add(
-                    buildJsonObject {
-                        put("type", "block")
-                        put("tag", "block")
-                    },
-                )
             }
 
             putJsonObject("route") {
+                // sing-box 1.13 : le sniffing et le DNS sont des actions de route,
+                // plus des champs d'inbound. Sans sniff, un nom d'hôte part en IP ;
+                // sans hijack-dns, les requêtes DNS du tunnel ne sont pas résolues.
+                putJsonArray("rules") {
+                    add(buildJsonObject { put("action", "sniff") })
+                    add(
+                        buildJsonObject {
+                            put("protocol", "dns")
+                            put("action", "hijack-dns")
+                        },
+                    )
+                }
                 put("final", SELECTOR_TAG)
+                // Les adresses des nœuds se résolvent hors tunnel : sans cela, le
+                // DNS chiffré passerait par un tunnel qui n'existe pas encore.
+                put("default_domain_resolver", DNS_LOCAL)
                 // Sans cela, un changement de réseau peut laisser sing-box
                 // attaché à une interface morte.
                 put("auto_detect_interface", true)
@@ -257,6 +315,8 @@ object SingBoxConfig {
         return TunnelPlan(
             json = json.toString(),
             nodeTags = nodeTags,
+            nodes = nodes,
+            initialTag = initialTag,
             expiresAtMs = expiresAt,
             // D25 : se reconnecter avant la coupure imposée, pas au moment où
             // elle arrive. 60 s de marge, jamais moins de 60 s de session.
@@ -310,8 +370,25 @@ object SingBoxConfig {
 
             // `label` et `id` ne sont pas transmis à sing-box : ils servent à
             // l'UI et au journal, pas au moteur.
-            put("domain_strategy", "prefer_ipv4")
             put("connect_timeout", "10s")
+        }
+
+    /**
+     * Les sorties utilisables du coffre, sans construire de configuration :
+     * c'est ce que l'écran Serveurs liste quand le tunnel est coupé. Même ordre
+     * et mêmes tags que [build], pour qu'un choix fait hors tunnel reste valable.
+     */
+    fun nodesOf(payload: BundlePayload, nowMs: Long = System.currentTimeMillis()): List<PlanNode> =
+        usableConfigs(payload, nowMs).mapIndexed { index, (config, endpoint, _) ->
+            PlanNode("$NODE_PREFIX${index + 1}", config.id, config.label, config.region, endpoint.host, endpoint.port)
+        }
+
+    private fun usableConfigs(payload: BundlePayload, nowMs: Long): List<Triple<BundleConfig, VlessEndpoint, Long>> =
+        payload.configs.mapNotNull { config ->
+            val expiry = parseInstant(config.expiresAt) ?: return@mapNotNull null
+            if (expiry <= nowMs) return@mapNotNull null
+            val endpoint = parseVless(config.uri) ?: return@mapNotNull null
+            Triple(config, endpoint, expiry)
         }
 
     /* ------------------------------------------------------------- analyse URI */

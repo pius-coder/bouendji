@@ -22,7 +22,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: Database): void 
 
     const rows = await db.query<Row>(
       `SELECT id, app_id, code, name, description, price_xaf, duration_days, device_limit,
-              badge, featured, sort_order, active
+              badge, featured, sort_order, active, endpoint_tier
          FROM plans
         WHERE app_id = $1 AND active = true
         ORDER BY sort_order ASC, price_xaf ASC`,
@@ -42,6 +42,8 @@ export function registerCatalogRoutes(app: FastifyInstance, db: Database): void 
         badge: (row.badge as string | null) ?? null,
         featured: row.featured === true,
         sortOrder: Number(row.sort_order),
+        /** D45 : `free-labs` = illimité (Cloud Run), `paid-gcp` = limité (3x-ui, quota). */
+        endpointTier: row.endpoint_tier === "paid-gcp" ? "paid-gcp" : "free-labs",
         revision: planRevision({
           code: row.code as string,
           price_xaf: Number(row.price_xaf),

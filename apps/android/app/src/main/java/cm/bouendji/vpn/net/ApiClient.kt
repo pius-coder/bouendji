@@ -217,19 +217,30 @@ class ApiClient(
         email: String,
         password: String,
         name: String,
+        phone: String,
         locale: String? = null,
+        referralCode: String? = null,
     ): SessionResponse {
         val body = json.encodeToString(
             RegisterRequest.serializer(),
-            RegisterRequest(appId = appId, email = email, password = password, name = name, locale = locale),
+            RegisterRequest(
+                appId = appId,
+                email = email,
+                password = password,
+                name = name,
+                phone = phone,
+                locale = locale,
+                referralCode = referralCode?.trim()?.takeIf { it.isNotEmpty() },
+            ),
         )
         val session = decode(authed("POST", ApiPaths.REGISTER, body, bearer = null), "inscription", SessionResponse.serializer())
         saveSession(session)
         return session
     }
 
-    suspend fun login(email: String, password: String): SessionResponse {
-        val body = json.encodeToString(LoginRequest.serializer(), LoginRequest(email = email, password = password))
+    /** D53 : `appId` lève l'ambiguïté d'une même adresse sur deux marques. */
+    suspend fun login(appId: String, email: String, password: String): SessionResponse {
+        val body = json.encodeToString(LoginRequest.serializer(), LoginRequest(appId = appId, email = email, password = password))
         val session = decode(authed("POST", ApiPaths.LOGIN, body, bearer = null), "connexion", SessionResponse.serializer())
         saveSession(session)
         return session
@@ -254,6 +265,21 @@ class ApiClient(
     }
 
     suspend fun me(): MeResponse = decode(authed("GET", ApiPaths.ME, null), "compte", MeResponse.serializer())
+
+    /** Données protégées et temps en ligne, sommés sur les appareils du compte. */
+    suspend fun stats(): StatsDto = decode(authed("GET", ApiPaths.ME_STATS, null), "statistiques", StatsDto.serializer())
+
+    /** Code parrain du compte, tiré à la première lecture. */
+    suspend fun referral(): ReferralDto = decode(authed("GET", ApiPaths.ME_REFERRAL, null), "parrainage", ReferralDto.serializer())
+
+    /**
+     * Usage du jour (total, pas un delta : le serveur garde le maximum) et rapports
+     * par configuration (témoin différentiel, D63). 20 rapports au plus (D64).
+     */
+    suspend fun telemetry(usage: UsageDto?, reports: List<ConfigReportDto>) {
+        val body = json.encodeToString(TelemetryRequest.serializer(), TelemetryRequest(usage, reports.take(20).ifEmpty { null }))
+        authed("POST", ApiPaths.TELEMETRY, body)
+    }
 
     suspend fun subscription(): SubscriptionResponse =
         decode(authed("GET", ApiPaths.ME_SUBSCRIPTION, null), "abonnement", SubscriptionResponse.serializer())
@@ -290,6 +316,11 @@ class ApiClient(
 
     suspend fun revokeDevice(deviceId: String) {
         authed("DELETE", ApiPaths.ME_DEVICES + "/" + deviceId, body = null)
+    }
+
+    /** Signale au serveur qu'un fichier de secours a été importé (observation admin, offline-bundle). */
+    suspend fun markOfflineConsumed(bundleId: String) {
+        authed("POST", ApiPaths.OFFLINE_BUNDLES + "/" + bundleId + "/consumed", body = null)
     }
 
     /* ------------------------------------------------------------------- bundle */
@@ -392,7 +423,8 @@ class ApiClient(
         // Le texte signé doit être exactement le texte envoyé : on choisit donc
         // le corps *avant* de calculer la preuve.
         val payload = body ?: if (method.uppercase() in BODY_METHODS) EMPTY_JSON else ""
-        val proof = auth.proof(method, path, payload)
+        // Le serveur signe `req.url.split("?")[0]` : la query part dans l'URL, pas dans la preuve.
+        val proof = auth.proof(method, path.substringBefore('?'), payload)
         val headers = buildMap {
             putAll(proof.asHeaders())
             auth.deviceToken()?.let { put(HEADER_DEVICE_TOKEN, it) }
@@ -515,11 +547,36 @@ class ApiClient(
         val email: String,
         val password: String,
         val name: String,
+        /** D53 : obligatoire, normalisé côté serveur (8 à 15 chiffres, `+` optionnel). */
+        val phone: String,
         val locale: String? = null,
+        /** Code parrain facultatif ; inconnu = 400 côté serveur. */
+        val referralCode: String? = null,
     )
 
     @Serializable
-    data class LoginRequest(val email: String, val password: String)
+    data class StatsDto(
+        val bytesUp: Long = 0,
+        val bytesDown: Long = 0,
+        val seconds: Long = 0,
+        val todayBytes: Long = 0,
+        val todaySeconds: Long = 0,
+    )
+
+    @Serializable
+    data class ReferralDto(val code: String, val invited: Int = 0)
+
+    @Serializable
+    data class UsageDto(val day: String, val bytesUp: Long, val bytesDown: Long, val seconds: Int)
+
+    @Serializable
+    data class ConfigReportDto(val configId: String, val ok: Boolean, val latencyMs: Int? = null)
+
+    @Serializable
+    data class TelemetryRequest(val usage: UsageDto? = null, val reports: List<ConfigReportDto>? = null)
+
+    @Serializable
+    data class LoginRequest(val appId: String, val email: String, val password: String)
 
     @Serializable
     data class RefreshRequest(val refreshToken: String)
@@ -556,6 +613,8 @@ class ApiClient(
         val daysRemaining: Int = 0,
         val deviceLimit: Int = 1,
         val activationPending: Boolean = false,
+        /** Type de serveurs que le forfait actif donne (D45). */
+        val endpointTier: String = "free-labs",
     )
 
     @Serializable
@@ -618,6 +677,8 @@ class ApiClient(
         val featured: Boolean = false,
         val sortOrder: Int = 0,
         val revision: Int,
+        /** D45 : `free-labs` = illimité, `paid-gcp` = limité. */
+        val endpointTier: String = "free-labs",
     )
 
     @Serializable
@@ -780,6 +841,10 @@ object ApiPaths {
     const val REFRESH = "/v1/auth/refresh"
     const val LOGOUT = "/v1/auth/logout"
     const val ME = "/v1/me"
+    const val ME_STATS = "/v1/me/stats"
+    const val OFFLINE_BUNDLES = "/v1/offline-bundles"
+    const val ME_REFERRAL = "/v1/me/referral"
+    const val TELEMETRY = "/v1/me/telemetry"
     const val ME_SUBSCRIPTION = "/v1/me/subscription"
     const val ME_DEVICES = "/v1/me/devices"
     const val ME_DEVICE_ACTIVATE = "/v1/me/devices/current/activate"

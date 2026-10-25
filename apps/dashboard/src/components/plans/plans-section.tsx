@@ -1,0 +1,62 @@
+import { Suspense } from "react";
+import { Icon } from "@/components/common/icon";
+import { UpdatedAt } from "@/components/common/updated-at";
+import { EmptyBlock, ForbiddenBlock } from "@/components/page/empty";
+import { TableCard, TableRowsSkeleton } from "@/components/page/table";
+import { can } from "@/lib/roles";
+import { getMe, withSession } from "@/server/context";
+import { getServices } from "@/server/services";
+import { AppPlansRows } from "./app-plans-table";
+import { PLAN_COLUMNS } from "./plans-columns";
+import { PlanSheet } from "./plan-sheet";
+
+const MISSING_LABELS: Record<string, string> = {
+  appName: "nom de l'application",
+  packageName: "identifiant de paquet",
+  theme: "thème",
+  supportUrl: "lien d'assistance",
+};
+
+/**
+ * Une carte par marque de la communauté. La liste des marques est une donnée
+ * (elle vient de l'API) : elle est dans le Suspense de la page ; chaque tableau
+ * suspend ensuite ses seules lignes.
+ */
+export async function PlansSection({ params }: { params: Promise<{ communityId: string }> }) {
+  const { communityId } = await params;
+  const me = await getMe();
+  if (!can(me, "plans.read", communityId)) return <ForbiddenBlock />;
+
+  const apps = (await withSession(() => getServices().plans.listApps())).filter((a) => a.communityId === communityId);
+  if (apps.length === 0) {
+    return <EmptyBlock icon="smartphone" title="Aucune marque" description="Cette communauté n'a pas encore d'application." />;
+  }
+  const canManage = can(me, "plans.manage", communityId);
+
+  return (
+    <>
+      {apps.map((app) => (
+        <section key={app.id} aria-label={app.name} className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-title-3 font-semibold tracking-tight">{app.name}</h2>
+              <p className="font-mono text-footnote text-muted-foreground">{app.packageName}</p>
+            </div>
+            {canManage ? <PlanSheet mode="create" appId={app.id} /> : null}
+          </div>
+          {!app.brandReady ? (
+            <p role="status" className="flex items-start gap-2 rounded-xl border border-border bg-warning-soft px-4 py-3 text-footnote text-warning-text">
+              <Icon name="warning" className="mt-0.5 size-4" />
+              Marque incomplète. À renseigner avant un build : {app.brandMissing.map((m) => MISSING_LABELS[m] ?? m).join(", ")}.
+            </p>
+          ) : null}
+          <TableCard label={`Forfaits de ${app.name}`} columns={PLAN_COLUMNS} footer={<UpdatedAt />}>
+            <Suspense fallback={<TableRowsSkeleton columns={PLAN_COLUMNS} rows={3} />}>
+              <AppPlansRows appId={app.id} canManage={canManage} />
+            </Suspense>
+          </TableCard>
+        </section>
+      ))}
+    </>
+  );
+}

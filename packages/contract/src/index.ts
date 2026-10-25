@@ -7,7 +7,7 @@ export type IsoDate = string;
 export type Ulid = string;
 
 export type Appearance = "light" | "dark" | "auto";
-export type ThemeId = "halo" | "mono" | "vector" | "otaku";
+export type ThemeId = "billet" | "halo" | "mono" | "vector" | "otaku";
 export type Platform = "android" | "ios";
 
 export type DeviceStatus = "enrolled" | "active" | "revoked";

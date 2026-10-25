@@ -90,6 +90,14 @@ interface TunnelEngine {
     /** Latence mesurée à travers [tag], en millisecondes, ou échec motivé. */
     suspend fun measureDelayMs(tag: String, probeUrl: String = DEFAULT_PROBE_URL, timeoutMs: Int = 5_000): Result<Int>
 
+    /** Sortie retenue par un groupe (`selector` ou `urltest`) : le tag du nœud qui porte le trafic. */
+    suspend fun currentOutbound(group: String): Result<String> =
+        Result.failure(UnsupportedOperationException("Lecture du groupe non disponible."))
+
+    /** Octets cumulés envoyés/reçus par le tunnel depuis son démarrage. */
+    suspend fun trafficTotals(): Result<TrafficTotals> =
+        Result.failure(UnsupportedOperationException("Compteurs non disponibles."))
+
     companion object {
         /** Point de contrôle : 204, sans contenu, joignable partout. */
         const val DEFAULT_PROBE_URL = "https://www.gstatic.com/generate_204"

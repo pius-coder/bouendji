@@ -39,6 +39,8 @@ object BrandTokens {
 
     /** Les quatre identités visuelles (nœud `ui-identities`), pas quatre palettes. */
     enum class Theme(val id: String) {
+        /** Le design « Le Billet » du prototype lelexxl2a2, palette d'origine (D91). */
+        BILLET("billet"),
         HALO("halo"),
         MONO("mono"),
         VECTOR("vector"),
@@ -52,7 +54,7 @@ object BrandTokens {
     }
 
     /** Identifiant du thème injecté au build. */
-    const val themeId: String = "halo"
+    const val themeId: String = "billet"
 
     val theme: Theme = Theme.fromId(themeId)
 
@@ -60,16 +62,16 @@ object BrandTokens {
     const val appName: String = "Bouendji VPN"
 
     /** Doit rester égal à `applicationId` dans `build.gradle.kts`. */
-    const val packageName: String = "cm.bouendji.vpn"
+    const val packageName: String = "com.bouendji.vpn"
 
     /** Base d'API : **sans** chemin (la signature couvre le chemin exact), https obligatoire. */
-    const val apiBaseUrl: String = "https://api.invalid"
+    const val apiBaseUrl: String = "https://api.numzer0.store"
 
     /** Ligne `apps.id` côté serveur. Sans elle, `/v1/auth/register` refuse la requête. */
-    const val appId: String = "00000000-0000-0000-0000-000000000000"
+    const val appId: String = "f3d5ee21-55f5-4885-bf6a-ba3af77ec70b"
 
     /** Contact de l'administrateur de la marque, affiché quand plus rien ne passe (D19). */
-    const val supportUrl: String = "https://support.invalid"
+    const val supportUrl: String = "mailto:support@henshins.online"
 
     /** Couleur d'accent `#RRGGBB`, ou `null` pour suivre le thème. */
     val accent: String? = null
@@ -78,13 +80,20 @@ object BrandTokens {
      * Clé publique Ed25519 (SPKI DER, base64) qui signe les bundles hors-ligne.
      * Vide = import hors-ligne refusé, avec un message explicite.
      */
-    const val offlineBundleSigningKeyB64: String = ""
+    const val offlineBundleSigningKeyB64: String = "MCowBQYDK2VwAyEADpJiokJbnFPbgtdSPuweH+T6TpmP9TnY0i2lruG7KtQ="
 
     /** Locale par défaut des écrans ; le serveur accepte deux lettres minuscules. */
     const val defaultLocale: String = "fr"
 
+    /** Mot de la carte de membre (« NJI » chez Bouendji). Vide = pas de carte nommée. */
+    const val memberWord: String = "NJI"
+
+    /** Communauté de la marque, affichée dans Aide et Connexion. Vide = rangée masquée. */
+    const val communityWhatsappUrl: String = ""
+    const val communityTelegramUrl: String = ""
+
     /** Version d'app envoyée à l'enrôlement. Remplacée par le build si besoin. */
-    const val appVersion: String = "0.1.0"
+    const val appVersion: String = "1.0.0-beta.2"
 
     private val PLACEHOLDERS = setOf("api.invalid", "support.invalid")
 

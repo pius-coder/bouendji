@@ -31,7 +31,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { isUniqueViolation, type Database, type Queryable, type Row } from "../db.js";
 import { requireAdmin, roleInCommunity, scopedCommunity, type AdminContext, type StaffRole } from "../lib/auth.js";
-import { hashPassword, newId } from "../lib/crypto.js";
+import { encryptSecret, hashPassword, newId } from "../lib/crypto.js";
 import { fail } from "../lib/errors.js";
 // `services/payments.ts` n'expose aucun décaissement (il orchestre
 // commande -> paiement -> activation). Le fournisseur de versement est donc
@@ -139,6 +139,36 @@ const payoutResolveSchema = z
   .strict();
 
 /** Levier manuel de l'exigence 3 : forcer un nœud hors (ou de retour dans) la liste. */
+const HOSTNAME_RE = /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Nœud « manuel » : un serveur que l'API n'a pas déployé (Cloud Run lancé à la
+ * main, image tierce) et qui ne s'enregistre donc pas lui-même. Une ligne par
+ * SNI : chaque variante est une sortie distincte pour la bascule du client.
+ *
+ * L'UUID est chiffré en base comme les autres (`credential`) et n'est jamais
+ * renvoyé ni écrit dans l'audit.
+ */
+const manualEndpointSchema = z
+  .object({
+    /** Préfixe de `deployment_key` : republier le même groupe remplace ses lignes. */
+    group: z.string().trim().regex(/^[a-z0-9-]{2,40}$/, "Groupe : minuscules, chiffres et tirets."),
+    label: z.string().trim().min(2).max(40),
+    region: z.string().trim().min(2).max(24),
+    /** Adresse composée par le client (IP ou nom) : avec le fronting, celle du frontal. */
+    address: z.string().trim().min(1).max(253).refine((v) => HOSTNAME_RE.test(v), "Adresse invalide."),
+    port: z.number().int().min(1).max(65_535).default(443),
+    snis: z.array(z.string().trim().refine((v) => HOSTNAME_RE.test(v), "SNI invalide.")).min(1).max(12),
+    /** Host du WebSocket s'il diffère du SNI (domain fronting vers Cloud Run). */
+    hostHeader: z.string().trim().refine((v) => HOSTNAME_RE.test(v), "Host invalide.").nullish(),
+    wsPath: z.string().trim().regex(/^\/[^\s?#]{0,200}$/, "Chemin : commence par / , sans espace ni query."),
+    uuid: z.string().trim().regex(UUID_RE, "UUID invalide."),
+    ttlHours: z.number().int().min(1).max(720),
+    tier: z.enum(["free-labs", "paid-gcp"]).default("free-labs"),
+  })
+  .strict();
+
 const endpointHealthSchema = z
   .object({
     state: z.enum(["down", "healthy"]),
@@ -178,6 +208,8 @@ const planCreateSchema = z
     featured: z.boolean().optional(),
     active: z.boolean().optional(),
     sortOrder: z.number().int().min(0).max(1000).optional(),
+    /** D45 : type de serveurs que le forfait achète (illimité = free-labs, limité = paid-gcp). */
+    endpointTier: z.enum(["free-labs", "paid-gcp"]).optional(),
   })
   .strict();
 
@@ -473,6 +505,7 @@ function planDto(row: Row) {
     featured: row.featured === true,
     active: plan.active,
     sortOrder: Number(row.sort_order),
+    endpointTier: row.endpoint_tier === "paid-gcp" ? "paid-gcp" : "free-labs",
     /** Même valeur que le `409 CONFLICT` renvoyé par la création de commande. */
     revision: planRevision(plan),
   };
@@ -560,7 +593,7 @@ function payoutDto(row: Row) {
 }
 
 /** Thèmes qu'`inject-brand.mjs` sait rendre : un autre nom ne produit aucun APK. */
-const BRAND_THEMES: readonly string[] = ["halo", "mono", "vector", "otaku"];
+const BRAND_THEMES: readonly string[] = ["billet", "halo", "mono", "vector", "otaku"];
 /** Le paquet de démonstration est refusé par l'injecteur : il ne construit pas. */
 const RESERVED_PACKAGE = "cm.bouendji.vpn";
 
@@ -826,8 +859,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       await db.tx(async (q) => {
         await q.query(
           `INSERT INTO plans (id, app_id, code, name, description, price_xaf, duration_days,
-                              device_limit, badge, featured, active, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+                              device_limit, badge, featured, active, sort_order, endpoint_tier)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
           [
             id,
             req.params.appId,
@@ -841,6 +874,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
             input.featured ?? false,
             input.active ?? true,
             input.sortOrder ?? 0,
+            input.endpointTier ?? "free-labs",
           ],
         );
         await appendAudit(q, admin, req, {
@@ -880,14 +914,15 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     const featured = input.featured ?? before.featured === true;
     const active = input.active ?? before.active === true;
     const sortOrder = input.sortOrder ?? Number(before.sort_order);
+    const endpointTier = input.endpointTier ?? ((before.endpoint_tier as string) || "free-labs");
 
     await db.tx(async (q) => {
       await q.query(
         `UPDATE plans
             SET name = $2, description = $3, price_xaf = $4, duration_days = $5,
-                device_limit = $6, badge = $7, featured = $8, active = $9, sort_order = $10
+                device_limit = $6, badge = $7, featured = $8, active = $9, sort_order = $10, endpoint_tier = $11
           WHERE id = $1`,
-        [req.params.planId, name, description, priceXaf, durationDays, deviceLimit, badge, featured, active, sortOrder],
+        [req.params.planId, name, description, priceXaf, durationDays, deviceLimit, badge, featured, active, sortOrder, endpointTier],
       );
       await appendAudit(q, admin, req, {
         action: "plan.update",
@@ -1713,6 +1748,64 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
    * ce qui fait bouger l'ETag du bundle — sans lui, le client garde le nœud mort
    * en cache (D48).
    */
+  app.post(`${PREFIX}/endpoints/manual`, async (req, reply) => {
+    const admin = await requireAdmin(db, req);
+    authorize(admin, "endpoint.write", null);
+    const input = parseBody(manualEndpointSchema, req.body);
+    const expiresAt = new Date(Date.now() + input.ttlHours * 3_600_000);
+    const keys = input.snis.map((_, index) => `manual:${input.group}:${index + 1}`);
+
+    let revision = 0;
+    const ids: string[] = [];
+    await db.tx(async (q) => {
+      for (const [index, sni] of input.snis.entries()) {
+        const label = input.snis.length > 1 ? `${input.label} ${index + 1}` : input.label;
+        const row = await q.one<Row>(
+          `INSERT INTO endpoints
+             (id, deployment_key, label, host, port, protocol, transport, security, sni, ws_path, ws_host,
+              credential, identity_mode, region, capacity, status, health, last_seen_at, expires_at, tier)
+           VALUES ($1,$2,$3,$4,$5,'vless','ws','tls',$6,$7,$8,$9,'shared',$10,80,'active','unknown',now(),$11,$12)
+           ON CONFLICT (deployment_key) DO UPDATE
+              SET label = EXCLUDED.label, host = EXCLUDED.host, port = EXCLUDED.port, sni = EXCLUDED.sni,
+                  ws_path = EXCLUDED.ws_path, ws_host = EXCLUDED.ws_host, credential = EXCLUDED.credential,
+                  region = EXCLUDED.region, status = 'active', health = 'unknown', down_since = NULL,
+                  down_reason = NULL, expires_at = EXCLUDED.expires_at, tier = EXCLUDED.tier, updated_at = now()
+           RETURNING id`,
+          [
+            newId(),
+            keys[index],
+            label,
+            input.address,
+            input.port,
+            sni,
+            input.wsPath,
+            input.hostHeader ?? null,
+            encryptSecret(input.uuid),
+            input.region,
+            expiresAt,
+            input.tier,
+          ],
+        );
+        if (row) ids.push(String(row.id));
+      }
+      // Les variantes retirées du groupe sortent du pool.
+      await q.query(
+        `UPDATE endpoints SET status = 'expired', expires_at = LEAST(expires_at, now()), updated_at = now()
+          WHERE deployment_key LIKE $1 AND NOT (deployment_key = ANY($2::text[])) AND status <> 'expired'`,
+        [`manual:${input.group}:%`, keys],
+      );
+      revision = await bumpPoolRevision(q);
+      await appendAudit(q, admin, req, {
+        action: "endpoint.manual",
+        targetType: "endpoint",
+        targetId: input.group,
+        after: { group: input.group, count: input.snis.length, region: input.region, expiresAt: expiresAt.toISOString() },
+      });
+    });
+
+    return reply.code(201).send({ group: input.group, count: ids.length, ids, expiresAt: expiresAt.toISOString(), poolRevision: revision });
+  });
+
   app.post<{ Params: { endpointId: string } }>(`${PREFIX}/endpoints/:endpointId/health`, async (req) => {
     const admin = await requireAdmin(db, req);
     authorize(admin, "endpoint.write", null);

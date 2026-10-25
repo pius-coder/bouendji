@@ -14,6 +14,8 @@ export interface VlessTarget {
   security: "tls" | "none";
   sni?: string | null;
   wsPath?: string | null;
+  /** En-tête Host du WebSocket s'il diffère du SNI (domain fronting). */
+  hostHeader?: string | null;
   fingerprint?: string | null;
   alpn?: string | null;
   label?: string | null;
@@ -30,7 +32,7 @@ export function buildVlessUri(target: VlessTarget): string {
     params.set("fp", target.fingerprint ?? "chrome");
     if (target.alpn) params.set("alpn", target.alpn);
     // The WS Host header must match what the front proxy routes on (CDN/LB).
-    params.set("host", target.sni ?? target.host);
+    params.set("host", target.hostHeader ?? target.sni ?? target.host);
   } else {
     params.set("security", "none");
   }

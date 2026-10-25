@@ -50,6 +50,13 @@ test("documentation : un navigateur doit pouvoir l'ouvrir", async () => {
   }
 });
 
+test("pages de paiement : le navigateur ouvert par l'app ne part pas au leurre", async () => {
+  for (const url of ["/pay/return/ord_123", "/pay/mock/mock_abc"]) {
+    const res = await app.inject({ method: "GET", url, headers: { accept: "text/html" } });
+    assert.notEqual(res.statusCode, 302, url);
+  }
+});
+
 test("client JSON sans metadata : JSON normal, pas de redirect", async () => {
   const res = await app.inject({ method: "GET", url: "/v1/me", headers: { accept: "application/json" } });
   assert.notEqual(res.statusCode, 302);

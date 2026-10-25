@@ -274,3 +274,21 @@ marque), soit corriger CONTRIBUTING pour dire « présence suffisante ».
 
 
 
+
+
+## Ouvertes le 2026-10-24
+
+- ~~**Image d'endpoint hébergée par nous**~~ **réglé par D96 (GHCR)** — pour Cloud Run (au lieu de l'image
+  tierce `docker.io/ajndjd2/ahmed-vip1`, dont l'UUID est figé et public) :
+  Cloud Run tire depuis Docker Hub public ou Artifact Registry → il faut le
+  compte Docker Hub de l'utilisateur (ou un projet GCP avec Artifact Registry).
+  À faire aussi : variables `ENDPOINT_FRONT_ADDRESS` / `ENDPOINT_FRONT_SNIS` dans
+  `infra/endpoint` pour que le nœud s'enregistre directement en fronting (D93).
+- **Lien de la communauté WhatsApp/Telegram** de la marque de test : non fourni
+  (`communityWhatsappUrl` vide), la rangée et le bouton restent masqués.
+- **Récompense du parrainage** (D95) : montant, plafond, anti-abus.
+
+- **Builds sur R2** (D100) : non implémenté ; `builds.ts` vise encore Vercel Blob.
+- ~~Sous-domaine Cloudflare~~ : réglé par D101 (`api`, `dl`, `node1`, `node2`).
+- ~~`cloud-run-url`~~ : réglé — `entrypoint.sh` déduit l'URL des métadonnées
+  Cloud Run quand `PUBLIC_HOST` est absent (2026-10-24).

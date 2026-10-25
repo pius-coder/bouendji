@@ -50,3 +50,6 @@ apps/android/app/debug/
 
 # Variables Cloud Run (contiennent le secret d ingestion) : jamais committées.
 infra/endpoint/*.env
+
+# Etat local des agents (worktrees, sessions)
+.claude/

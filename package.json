@@ -11,7 +11,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev --filter=@vpn/api",
+    "dev": "turbo run dev",
     "dev:dashboard": "turbo run dev --filter=@vpn/dashboard",
     "build": "turbo run build",
     "test": "turbo run test --filter=@vpn/api",
