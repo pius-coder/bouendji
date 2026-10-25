@@ -10,8 +10,8 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import java.net.ServerSocket
 import java.security.SecureRandom
-import java.time.Instant
-import java.util.Base64
+import cm.bouendji.vpn.crypto.B64
+import cm.bouendji.vpn.util.IsoTime
 
 /* ------------------------------------------------------------------- modèle */
 
@@ -55,8 +55,7 @@ data class BundlePayload(
     fun expiresAtMs(): Long = parseInstant(expiresAt) ?: 0L
 }
 
-fun parseInstant(value: String): Long? =
-    runCatching { Instant.parse(value).toEpochMilli() }.getOrNull()
+fun parseInstant(value: String): Long? = IsoTime.parseMs(value)
 
 /* ------------------------------------------------------------------ une sortie */
 
@@ -128,7 +127,19 @@ object SingBoxConfig {
         /** JSON complet, à garder uniquement en mémoire. */
         val json: String,
         val nodeTags: List<String>,
-        val expiresAtMs: Long,
+        /** `configIds[i]` est l'identifiant serveur (`endpoints.id`) de la sortie `nodeTags[i]` : clé de la télémétrie. */
+        val configIds: List<String>,
+        /**
+         * D67, échéance « douce » : la première configuration qui expire. À
+         * cette heure on retire le bundle et on reconstruit, **sans** vider le
+         * coffre ni annoncer d'expiration.
+         */
+        val nextConfigExpiryMs: Long,
+        /**
+         * Échéance de l'enveloppe = `min(fin des droits, dernière config)` (D49).
+         * Seule une fin de droits confirmée y provoque « expiré » (D67).
+         */
+        val bundleExpiresAtMs: Long,
         /** Reconnexion préventive : `maxSessionSeconds - 60` (D25). */
         val reconnectAfterSeconds: Int,
         val clashApiPort: Int?,
@@ -252,12 +263,15 @@ object SingBoxConfig {
         }
 
         val maxSession = usable.minOf { it.first.maxSessionSeconds.coerceAtLeast(120) }
-        val expiresAt = usable.minOf { it.third }.let { minOf(it, payload.expiresAtMs().takeIf { v -> v > 0 } ?: it) }
+        val lastConfig = usable.maxOf { it.third }
+        val envelope = payload.expiresAtMs().takeIf { it > 0 } ?: lastConfig
 
         return TunnelPlan(
             json = json.toString(),
             nodeTags = nodeTags,
-            expiresAtMs = expiresAt,
+            configIds = usable.map { it.first.id },
+            nextConfigExpiryMs = usable.minOf { it.third },
+            bundleExpiresAtMs = minOf(envelope, lastConfig),
             // D25 : se reconnecter avant la coupure imposée, pas au moment où
             // elle arrive. 60 s de marge, jamais moins de 60 s de session.
             reconnectAfterSeconds = (maxSession - 60).coerceAtLeast(60),
@@ -381,7 +395,7 @@ object SingBoxConfig {
     private fun randomSecret(): String {
         val bytes = ByteArray(18)
         SecureRandom().nextBytes(bytes)
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+        return B64.encodeUrl(bytes)
     }
 
     private const val DEFAULT_CLASH_PORT = 20_990

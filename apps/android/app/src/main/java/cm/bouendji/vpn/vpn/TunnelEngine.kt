@@ -90,6 +90,15 @@ interface TunnelEngine {
     /** Latence mesurée à travers [tag], en millisecondes, ou échec motivé. */
     suspend fun measureDelayMs(tag: String, probeUrl: String = DEFAULT_PROBE_URL, timeoutMs: Int = 5_000): Result<Int>
 
+    /**
+     * Sortie réellement utilisée : `now` du selector, puis `now` du `urltest`
+     * s'il est sélectionné (`clashapi/proxies.go:80`).
+     */
+    suspend fun activeOutbound(): Result<String> = Result.failure(UnsupportedOperationException("non pris en charge"))
+
+    /** Octets montants et descendants depuis le démarrage du moteur (`clashapi/connections.go`, `uploadTotal`/`downloadTotal`). */
+    suspend fun trafficTotals(): Result<Pair<Long, Long>> = Result.failure(UnsupportedOperationException("non pris en charge"))
+
     companion object {
         /** Point de contrôle : 204, sans contenu, joignable partout. */
         const val DEFAULT_PROBE_URL = "https://www.gstatic.com/generate_204"
@@ -123,47 +132,6 @@ class UnavailableTunnelEngine(
 }
 
 /**
- * Gabarit d'adaptateur `libbox` — **non branché**, **non compilé**.
- *
- * TODO(verify against libbox X.Y.Z) — remplacer `X.Y.Z` par une version réelle
- * une fois qu'elle est choisie ; les points à vérifier avant d'écrire une seule
- * ligne d'appel :
- *
- *  - nom du paquet et de la classe d'entrée (`io.nekohasekai.libbox…` ?) ;
- *  - démarrage avec un `ParcelFileDescriptor` déjà établi, et propriété du fd ;
- *  - API de changement de sortie à chaud (selector) : existe-t-elle, ou faut-il
- *    passer par l'API Clash ?
- *  - format exact de `experimental.clash_api` dans la version retenue ;
- *  - comportement de `protect()` : callback unique ou par socket ;
- *  - licence GPL-3.0 : embarquer `libbox` oblige à publier les sources
- *    correspondantes (nœud `singbox-engine`). Ce n'est pas un détail de build.
- *
- * Le jour où ces points sont tranchés, remplacer le corps des méthodes ; la
- * classe reste hors du graphe par défaut tant que `isAvailable()` renvoie
- * `false`.
- */
-class LibboxTunnelEnginePlaceholder : TunnelEngine {
-
-    override val name: String = "libbox-placeholder"
-
-    override fun isAvailable(): Boolean = false
-
-    override suspend fun start(request: TunnelRequest): Result<Unit> = Result.failure(
-        UnsupportedOperationException("TODO(verify against libbox X.Y.Z) : adaptateur non écrit."),
-    )
-
-    override suspend fun stop() = Unit
-
-    override suspend fun selectOutbound(tag: String): Result<Unit> = Result.failure(
-        UnsupportedOperationException("TODO(verify against libbox X.Y.Z) : bascule non écrite."),
-    )
-
-    override suspend fun measureDelayMs(tag: String, probeUrl: String, timeoutMs: Int): Result<Int> = Result.failure(
-        UnsupportedOperationException("TODO(verify against libbox X.Y.Z) : mesure non écrite."),
-    )
-}
-
-/**
  * Bus d'état, observé par l'UI et par la notification.
  *
  * Volontairement un singleton : le service vit dans le même processus que l'UI,
@@ -184,5 +152,25 @@ object TunnelStateBus {
     fun publish(state: TunnelState, detail: String? = null) {
         _detail.value = detail
         _state.value = state
+        if (state != TunnelState.CONNECTED && state != TunnelState.RECONNECTING) _link.value = LinkInfo()
+    }
+
+    /** Mesures du tunnel actif — la seule source des chiffres affichés à l'accueil. */
+    data class LinkInfo(
+        /** Dernière latence mesurée à travers la sortie active, `null` = pas encore mesurée. */
+        val latencyMs: Int? = null,
+        /** Libellé de la sortie active (le `label` du bundle, jamais l'URI). */
+        val exitLabel: String? = null,
+        /** D61 : aucune sortie ne répond — bandeau non bloquant, le tunnel reste ouvert. */
+        val degraded: Boolean = false,
+        /** Début de la session courante (epoch ms), 0 si aucune. */
+        val connectedSinceMs: Long = 0,
+    )
+
+    private val _link = MutableStateFlow(LinkInfo())
+    val link: StateFlow<LinkInfo> = _link.asStateFlow()
+
+    fun publishLink(info: LinkInfo) {
+        _link.value = info
     }
 }

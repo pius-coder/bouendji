@@ -117,6 +117,28 @@ class LibboxTunnelEngine(private val context: Context) : TunnelEngine {
         }
     }
 
+    override suspend fun activeOutbound(): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(clashPort != 0) { "API de contrôle indisponible." }
+            var tag = JSONObject(clash("GET", "/proxies/${SingBoxConfig.SELECTOR_TAG}")).optString("now")
+            // Le selector pointe sur `auto` tant qu'aucune bascule n'est forcée :
+            // la sortie réelle est alors le `now` du urltest.
+            if (tag == SingBoxConfig.AUTO_TAG) {
+                tag = JSONObject(clash("GET", "/proxies/${SingBoxConfig.AUTO_TAG}")).optString("now")
+            }
+            require(tag.isNotBlank()) { "Sortie active inconnue." }
+            tag
+        }
+    }
+
+    override suspend fun trafficTotals(): Result<Pair<Long, Long>> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(clashPort != 0) { "API de contrôle indisponible." }
+            val body = JSONObject(clash("GET", "/connections"))
+            body.optLong("uploadTotal", 0L) to body.optLong("downloadTotal", 0L)
+        }
+    }
+
     /* ------------------------------------------------------------- interne */
 
     private fun stopInternal() {

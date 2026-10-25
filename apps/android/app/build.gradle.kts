@@ -42,6 +42,26 @@ android {
         // Le libellé visible vient du même fichier que BrandTokens.appName.
         // Toute divergence entre les deux est un défaut de build, pas un détail.
         manifestPlaceholders["appName"] = brandValue("appName", "Bouendji VPN")
+
+        // Couleurs de l'icône de lanceur : propres à la marque, injectées au
+        // build (D2/D30) au lieu d'être figées dans `res/values`.
+        resValue("color", "ic_launcher_background", brandValue("launcherBackground", "#0B1322"))
+        resValue("color", "ic_launcher_mark", brandValue("launcherMark", "#7FB6FF"))
+    }
+
+    /*
+     * Compatibilité appareils (notes/compat-abi-minsdk.md) : un APK par ABI,
+     * plus un APK universel. Les quatre ABI viennent de `libbox.aar`
+     * (`tools/build-libbox.ps1 -FullAbi`). Un APK par ABI pèse environ le quart
+     * de l'universel : c'est ce qu'on propose en premier sur data mobile.
+     */
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
     }
 
     buildTypes {
@@ -80,6 +100,35 @@ android {
 
     packaging {
         resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}")
+        // `libbox.so` pèse 64 à 73 Mo par ABI : compressé dans l'APK (fichier
+        // à télécharger bien plus léger sur data mobile), extrait à l'installation.
+        jniLibs.useLegacyPackaging = true
+    }
+
+    testOptions {
+        // Les classes Android (Log, etc.) renvoient leurs valeurs par défaut en
+        // test JVM : la logique testée n'en dépend pas, mais un appel isolé ne
+        // doit pas faire échouer un test pour une raison étrangère.
+        unitTests.isReturnDefaultValues = true
+    }
+}
+
+/*
+ * `versionCode` par ABI : universel = base × 10, ABI = base × 10 + rang. Une
+ * mise à jour reste installable d'un même type d'APK au suivant ; un APK
+ * d'ABI ne peut pas être remplacé par l'universel de même version (le
+ * gestionnaire refuse une rétrogradation).
+ */
+val abiRank = mapOf("armeabi-v7a" to 1, "arm64-v8a" to 2, "x86" to 3, "x86_64" to 4)
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            val abi = output.filters
+                .firstOrNull { it.filterType == com.android.build.api.variant.FilterConfiguration.FilterType.ABI }
+                ?.identifier
+            val base = brandValue("versionCode", "1").toInt()
+            output.versionCode.set(base * 10 + (abiRank[abi] ?: 0))
+        }
     }
 }
 

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard-kit",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["--cwd", "C:/Users/HP/Documents/Codex/2026-10-19/es/outputs/vpn-platform/apps/dashboard", "x", "next", "dev", "-p", "3100"],
+      "port": 3100
+    }
+  ]
+}

@@ -9,7 +9,7 @@
 agp = "8.5.2"                  # compatible Gradle 8.7
 kotlin = "2.0.20"
 compileSdk = "35"              # plateforme compilée
-minSdk = "26"                  # plancher réel : ECDH Keystore exige 31 (voir README)
+minSdk = "23"                  # Keystore KeyGenParameterSpec (API 23) ; voir knowledge/agents/android-white-label-opus/notes/compat-abi-minsdk.md
 targetSdk = "35"
 coreKtx = "1.13.1"
 lifecycle = "2.8.5"

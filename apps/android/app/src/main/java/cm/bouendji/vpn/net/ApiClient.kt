@@ -18,10 +18,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import cm.bouendji.vpn.util.IsoTime
 import java.io.IOException
-import java.time.ZoneOffset
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 /**
@@ -85,16 +83,14 @@ class ApiClient(
         private const val KEY_ACCESS_EXPIRES = "auth.accessExpiresAt"
         private const val KEY_BUNDLE_ETAG = "bundle.etag"
 
-        fun defaultHttpClient(): OkHttpClient = OkHttpClient.Builder()
+        fun defaultHttpClientBuilder(): OkHttpClient.Builder = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
             .callTimeout(30, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-            .build()
 
-        /** Le bundle est scellé avec la clé AGREE : sans ECDH, rien n'est déchiffrable. */
-        fun canOpenBundles(): Boolean = DeviceKeys.supportsAgreement()
+        fun defaultHttpClient(): OkHttpClient = defaultHttpClientBuilder().build()
     }
 
     /** URL de base validée : https, pas de chemin, pas de query. */
@@ -136,16 +132,9 @@ class ApiClient(
         androidVersion: Int = Build.VERSION.SDK_INT,
         integrityToken: String? = null,
     ): EnrollResponse {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            keys.ensureAgreementKey()
-        } else {
-            throw ApiException(
-                status = 0,
-                code = ApiCodes.DEVICE_PROOF_INVALID,
-                message = "Cet appareil (Android ${Build.VERSION.SDK_INT}) ne peut pas générer de clé " +
-                    "d'accord : l'enrôlement exige Android 12 ou plus récent.",
-            )
-        }
+        // Android 12+ : clé d'accord dans le Keystore ; Android 6 à 11 : repli
+        // logiciel chiffré au repos (DeviceKeys, notes/compat-abi-minsdk.md).
+        keys.ensureAgreementKey()
         keys.ensureSigningKey()
 
         val installationId = auth.installationId()
@@ -217,19 +206,21 @@ class ApiClient(
         email: String,
         password: String,
         name: String,
+        phone: String,
         locale: String? = null,
     ): SessionResponse {
         val body = json.encodeToString(
             RegisterRequest.serializer(),
-            RegisterRequest(appId = appId, email = email, password = password, name = name, locale = locale),
+            RegisterRequest(appId = appId, email = email, password = password, name = name, phone = phone, locale = locale),
         )
         val session = decode(authed("POST", ApiPaths.REGISTER, body, bearer = null), "inscription", SessionResponse.serializer())
         saveSession(session)
         return session
     }
 
+    /** D53 : `appId` est obligatoire, le compte est propre à la marque. */
     suspend fun login(email: String, password: String): SessionResponse {
-        val body = json.encodeToString(LoginRequest.serializer(), LoginRequest(email = email, password = password))
+        val body = json.encodeToString(LoginRequest.serializer(), LoginRequest(appId = appId, email = email, password = password))
         val session = decode(authed("POST", ApiPaths.LOGIN, body, bearer = null), "connexion", SessionResponse.serializer())
         saveSession(session)
         return session
@@ -279,6 +270,29 @@ class ApiClient(
         return decode(authed("POST", ApiPaths.ORDERS, body), "commande", OrderDto.serializer())
     }
 
+    /** Dernières commandes du compte (`GET /v1/orders`, sans curseur). */
+    suspend fun orders(limit: Int = 5): OrdersResponse =
+        decode(authed("GET", ApiPaths.ORDERS + "?limit=" + limit.coerceIn(1, 100), null), "commandes", OrdersResponse.serializer())
+
+    /**
+     * Télémétrie (`POST /v1/me/telemetry`, 202). Rend le code HTTP, ou `0`
+     * sans réponse : la file décide seule de rejouer (D64).
+     */
+    suspend fun telemetry(body: String): Int = try {
+        authed("POST", ApiPaths.TELEMETRY, body).status
+    } catch (error: ApiException) {
+        if (error.status > 0) error.status else 0
+    }
+
+    /**
+     * Observation côté administration (`POST /v1/offline-bundles/:id/consumed`,
+     * jeton + preuve d'appareil, `offline.ts:64`). `true` : inutile de réessayer.
+     */
+    suspend fun offlineConsumed(bundleId: String): Boolean {
+        val response = sendSigned("POST", ApiPaths.OFFLINE_BUNDLES + "/" + bundleId + "/consumed", null, null, emptyMap())
+        return response.status in 200..499 && response.status != 408 && response.status != 429
+    }
+
     suspend fun order(orderId: String, refresh: Boolean = false): OrderDto {
         val path = ApiPaths.ORDERS + "/" + orderId + if (refresh) "?refresh=1" else ""
         return decode(authed("GET", path, null), "commande", OrderDto.serializer())
@@ -315,10 +329,10 @@ class ApiClient(
         val deviceId = auth.deviceId()
             ?: throw ApiException(401, ApiCodes.UNAUTHENTICATED, "Appareil non enrôlé.")
 
-        val plain = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val plain = run {
             try {
                 DeviceEnvelope.open(
-                    keys = keys,
+                    agree = keys::agreementSecret,
                     deviceId = deviceId,
                     revision = dto.revision,
                     ephemeralKeyB64 = dto.envelope.ephemeralKey,
@@ -331,8 +345,6 @@ class ApiClient(
             } catch (error: DeviceEnvelope.OpenException) {
                 throw ApiException(0, ApiCodes.DEVICE_PROOF_INVALID, error.message ?: "Bundle indéchiffrable.", cause = error)
             }
-        } else {
-            throw ApiException(0, ApiCodes.DEVICE_PROOF_INVALID, "Déchiffrement impossible : Android 12 requis.")
         }
 
         val payload = try {
@@ -392,7 +404,10 @@ class ApiClient(
         // Le texte signé doit être exactement le texte envoyé : on choisit donc
         // le corps *avant* de calculer la preuve.
         val payload = body ?: if (method.uppercase() in BODY_METHODS) EMPTY_JSON else ""
-        val proof = auth.proof(method, path, payload)
+        // Le serveur signe `req.url.split("?")[0]` (lib/auth.ts) : la query
+        // n'entre pas dans la preuve. Sans ce découpage, `?refresh=1` levait
+        // dans `DeviceProof.canonical` avant tout envoi.
+        val proof = auth.proof(method, path.substringBefore('?'), payload)
         val headers = buildMap {
             putAll(proof.asHeaders())
             auth.deviceToken()?.let { put(HEADER_DEVICE_TOKEN, it) }
@@ -445,13 +460,8 @@ class ApiClient(
      * téléphone dont l'horloge dérive de plusieurs minutes.
      */
     private fun syncClockFromHeaders(headers: Headers) {
-        val value = headers["date"] ?: return
-        val instant = runCatching {
-            ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME)
-                .withZoneSameInstant(ZoneOffset.UTC)
-                .toInstant()
-        }.getOrNull() ?: return
-        auth.syncClock(instant.toString())
+        val serverMs = IsoTime.parseHttpDate(headers["date"]) ?: return
+        auth.syncClockMs(serverMs)
     }
 
     private fun <T> decode(response: RawResponse, what: String, deserializer: DeserializationStrategy<T>): T {
@@ -515,11 +525,13 @@ class ApiClient(
         val email: String,
         val password: String,
         val name: String,
+        /** D53 : obligatoire, normalisé par le serveur (8 à 15 chiffres, `+` optionnel). */
+        val phone: String,
         val locale: String? = null,
     )
 
     @Serializable
-    data class LoginRequest(val email: String, val password: String)
+    data class LoginRequest(val appId: String, val email: String, val password: String)
 
     @Serializable
     data class RefreshRequest(val refreshToken: String)
@@ -556,6 +568,8 @@ class ApiClient(
         val daysRemaining: Int = 0,
         val deviceLimit: Int = 1,
         val activationPending: Boolean = false,
+        /** D45 : `free-labs` ou `paid-gcp`. Lu, jamais interprété par l'app. */
+        val endpointTier: String? = null,
     )
 
     @Serializable
@@ -649,6 +663,9 @@ class ApiClient(
     )
 
     @Serializable
+    data class OrdersResponse(val items: List<OrderDto> = emptyList(), val nextCursor: String? = null)
+
+    @Serializable
     data class SealedEnvelopeDto(
         val version: Int,
         val ephemeralKey: String,
@@ -725,6 +742,10 @@ object ApiCodes {
     const val DEVICE_REVOKED = "DEVICE_REVOKED"
     const val DEVICE_PROOF_INVALID = "DEVICE_PROOF_INVALID"
     const val SUBSCRIPTION_REQUIRED = "SUBSCRIPTION_REQUIRED"
+    const val INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
+    const val RATE_LIMITED = "RATE_LIMITED"
+    const val ORDER_NOT_PAYABLE = "ORDER_NOT_PAYABLE"
+    const val PAYMENT_PROVIDER_ERROR = "PAYMENT_PROVIDER_ERROR"
 
     /** Locaux : jamais renvoyés par le serveur. */
     const val NETWORK = "NETWORK_UNAVAILABLE"
@@ -784,4 +805,6 @@ object ApiPaths {
     const val ME_DEVICES = "/v1/me/devices"
     const val ME_DEVICE_ACTIVATE = "/v1/me/devices/current/activate"
     const val BUNDLE = "/v1/configuration-bundles/current"
+    const val TELEMETRY = "/v1/me/telemetry"
+    const val OFFLINE_BUNDLES = "/v1/offline-bundles"
 }

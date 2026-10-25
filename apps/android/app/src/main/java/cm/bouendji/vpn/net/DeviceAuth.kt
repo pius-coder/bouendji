@@ -1,6 +1,5 @@
 package cm.bouendji.vpn.net
 
-import android.util.Base64
 import cm.bouendji.vpn.crypto.DeviceKeys
 import cm.bouendji.vpn.crypto.SecureStore
 import java.security.MessageDigest
@@ -147,6 +146,12 @@ class DeviceAuth(
         store.remove(KEY_DEVICE_ID)
     }
 
+    /** Nouvelle installation logique : le prochain enrôlement crée un nouvel appareil. */
+    fun resetInstallation() {
+        store.remove(KEY_INSTALLATION_ID)
+        store.remove(KEY_CLOCK_SKEW)
+    }
+
     fun isEnrolled(): Boolean = deviceToken() != null && keys.hasIdentity()
 
     /* ---------------------------------------------------------------- horloge */
@@ -156,7 +161,12 @@ class DeviceAuth(
      * d'un `serverTime` ISO-8601 reçu dans une réponse.
      */
     fun syncClock(serverTimeIso: String) {
-        val serverMs = runCatching { java.time.Instant.parse(serverTimeIso).toEpochMilli() }.getOrNull() ?: return
+        val serverMs = cm.bouendji.vpn.util.IsoTime.parseMs(serverTimeIso) ?: return
+        syncClockMs(serverMs)
+    }
+
+    /** Même mémorisation, à partir d'une heure serveur déjà en millisecondes (en-tête `Date`). */
+    fun syncClockMs(serverMs: Long) {
         store.putString(KEY_CLOCK_SKEW, (serverMs - System.currentTimeMillis()).toString())
     }
 
@@ -194,6 +204,6 @@ class DeviceAuth(
     fun newNonce(): String {
         val bytes = ByteArray(NONCE_BYTES)
         random.nextBytes(bytes)
-        return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        return cm.bouendji.vpn.crypto.B64.encodeUrl(bytes)
     }
 }

@@ -1,12 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Couleurs de la fenêtre avant que Compose ne dessine, et fond de l'icône
-  adaptative. Les vraies couleurs d'identité ne vivent pas ici : elles dépendent
-  de la marque et ne peuvent pas être des ressources figées. La couche `ui/` qui
-  les portait a été supprimée (D33) et sera réécrite ; ces deux valeurs-ci sont
-  des garde-fous de fenêtre, pas une palette.
+  Fond de fenêtre avant la première frame Compose. Neutre volontairement :
+  aucune couleur de marque n'est figée en ressource (D2/D30). Les couleurs de
+  l'icône viennent de `resValue` (build.gradle.kts, `brand.properties`).
 -->
 <resources>
-    <color name="brand_window">#F7FAFF</color>
-    <color name="ic_launcher_background">#0B1322</color>
+    <color name="brand_window">#FFFFFF</color>
 </resources>

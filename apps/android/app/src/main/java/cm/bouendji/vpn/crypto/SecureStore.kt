@@ -35,7 +35,7 @@ import javax.crypto.spec.GCMParameterSpec
  * est supprimée et `null` est renvoyé : la donnée est perdue, pas silencieusement
  * remplacée par une valeur fausse.
  */
-class SecureStore(context: Context) {
+class SecureStore(context: Context) : cm.bouendji.vpn.util.KeyValueStore {
 
     companion object {
         private const val PREFS = "vpn.secure.v1"
@@ -81,7 +81,7 @@ class SecureStore(context: Context) {
 
     /* -------------------------------------------------------------- écriture */
 
-    fun putString(key: String, value: String): Boolean =
+    override fun putString(key: String, value: String): Boolean =
         putBytes(key, value.toByteArray(Charsets.UTF_8))
 
     fun putBytes(key: String, plain: ByteArray): Boolean = synchronized(lock) {
@@ -99,7 +99,7 @@ class SecureStore(context: Context) {
 
     /* --------------------------------------------------------------- lecture */
 
-    fun getString(key: String): String? = getBytes(key)?.toString(Charsets.UTF_8)
+    override fun getString(key: String): String? = getBytes(key)?.toString(Charsets.UTF_8)
 
     fun getBytes(key: String): ByteArray? = synchronized(lock) {
         val encoded = prefs.getString(key, null) ?: return null
@@ -127,9 +127,9 @@ class SecureStore(context: Context) {
         }
     }
 
-    fun contains(key: String): Boolean = prefs.contains(key)
+    override fun contains(key: String): Boolean = prefs.contains(key)
 
-    fun remove(key: String) {
+    override fun remove(key: String) {
         synchronized(lock) { prefs.edit().remove(key).commit() }
     }
 

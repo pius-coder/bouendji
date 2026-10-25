@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Icône des lanceurs Android 6 et 7 (API 23-25), qui ne connaissent pas
+  l'icône adaptative : fond arrondi + même avant-plan vectoriel. Sur API 26+,
+  `mipmap-anydpi-v26/` prend le relais. Aucune image matricielle.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/ic_launcher_background" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/ic_launcher_foreground" />
+</layer-list>

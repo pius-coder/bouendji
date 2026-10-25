@@ -3,19 +3,30 @@ package cm.bouendji.vpn.vpn
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import cm.bouendji.vpn.AppContainer
+import cm.bouendji.vpn.MainActivity
+import cm.bouendji.vpn.R
 import cm.bouendji.vpn.VpnApplication
+import cm.bouendji.vpn.access.ExpiryPolicy
+import cm.bouendji.vpn.access.ExpiryVerdict
 import cm.bouendji.vpn.brand.BrandTokens
+import cm.bouendji.vpn.config.BundlePayload
 import cm.bouendji.vpn.config.SingBoxConfig
+import cm.bouendji.vpn.config.parseInstant
+import cm.bouendji.vpn.sync.BundleSync
+import cm.bouendji.vpn.telemetry.TelemetryQueue
+import cm.bouendji.vpn.util.IsoTime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,29 +35,29 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Le service VPN.
  *
- * Règles tenues ici, et vérifiables en le lisant :
+ * Ce qu'il tient, et où le vérifier en le lisant :
  *
- * 1. **Notification permanente obligatoire.** Le service passe en avant-plan
- *    avant de tenter quoi que ce soit ; s'il ne peut pas établir le tunnel, il
- *    s'arrête et le dit au lieu de rester « connecté » à vide.
- * 2. **La configuration ne touche jamais le disque en clair.** Elle est lue
- *    chiffrée depuis [cm.bouendji.vpn.offline.ConfigVault], construite en
- *    mémoire par [SingBoxConfig], passée au moteur, puis oubliée.
- * 3. **Aucun état mensonger.** L'état publié est celui du moteur, pas celui
- *    qu'on espère : un moteur absent donne « aucune connexion disponible ».
- * 4. **Reconnexion préventive** à `max_session_seconds - 60` (D25), pas à la
- *    coupure : la valeur vient du bundle, jamais d'une constante ici.
- * 5. **Pas de résurrection silencieuse.** `START_NOT_STICKY` : si Android tue
- *    le service, il ne le relance pas sans que l'utilisateur l'ait demandé.
- *    Le « toujours actif » est un réglage système, pas une astuce de service.
- *
- * Ce qui n'est **pas** dans ce lot : le consentement (`VpnService.prepare`) est
- * déclenché par l'UI, les statistiques de débit, le récepteur de démarrage, et
- * la bascule automatique (vague failover).
+ * 1. **Avant-plan d'abord** (`startForegroundService` impose 5 s), puis la
+ *    connexion ; un échec arrête le service et dit pourquoi.
+ * 2. **La configuration ne touche jamais le disque en clair** : coffre chiffré
+ *    → JSON en mémoire → moteur.
+ * 3. **D25** : reconnexion préventive à `maxSessionSeconds − 60`.
+ * 4. **D67, deux échéances** : la première configuration qui meurt déclenche un
+ *    nouveau tirage, sans vider le coffre ; seule une fin de droits prouvée
+ *    produit « abonnement expiré ».
+ * 5. **D70** : boucle de mesure à travers le tunnel (60 s, puis 30 s → 2 min →
+ *    10 min quand rien ne répond), bascule forcée après 2 échecs de la sortie
+ *    active, rapports en file (D64).
+ * 6. **D61** : aucune sortie ne répond → bandeau (`LinkInfo.degraded`), pas de
+ *    coupure ; reprise automatique (D19).
+ * 7. `START_NOT_STICKY` : Android ne relance pas le service sans demande ; le
+ *    « VPN permanent » est un réglage système, qui démarre ce service lui-même.
  */
 class VpnTunnelService : VpnService() {
 
@@ -55,6 +66,7 @@ class VpnTunnelService : VpnService() {
         const val ACTION_STOP = "cm.bouendji.vpn.action.STOP"
         const val ACTION_RECONNECT = "cm.bouendji.vpn.action.RECONNECT"
 
+        private const val TAG = "VpnTunnel"
         private const val CHANNEL_ID = "vpn-state"
         private const val NOTIFICATION_ID = 4101
 
@@ -65,35 +77,36 @@ class VpnTunnelService : VpnService() {
 
         private val DNS_SERVERS = listOf("1.1.1.1", "1.0.0.1")
 
-        /**
-         * Démarre le tunnel. À appeler après un `VpnService.prepare()` accepté :
-         * sans consentement, le service s'arrête proprement.
-         */
+        /** D19 : reprise automatique quand plus rien n'est servi. */
+        private val RETRY_MS = longArrayOf(30_000, 120_000, 600_000)
+
         fun start(context: Context) {
-            ContextCompat.startForegroundService(
-                context,
-                Intent(context, VpnTunnelService::class.java).setAction(ACTION_START),
-            )
+            ContextCompat.startForegroundService(context, Intent(context, VpnTunnelService::class.java).setAction(ACTION_START))
         }
 
         fun stop(context: Context) {
-            context.startService(
-                Intent(context, VpnTunnelService::class.java).setAction(ACTION_STOP),
-            )
+            context.startService(Intent(context, VpnTunnelService::class.java).setAction(ACTION_STOP))
         }
 
-        /** `null` = consentement déjà donné ; sinon l'Intent à lancer avec `startActivityForResult`. */
+        /** `null` = consentement déjà donné ; sinon l'Intent système à lancer. */
         fun consentIntent(context: Context): Intent? = VpnService.prepare(context)
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val lifecycle = Mutex()
 
     private var tun: ParcelFileDescriptor? = null
-    private var reconnectJob: Job? = null
-    private var expiryJob: Job? = null
+    private var plan: SingBoxConfig.TunnelPlan? = null
+    private var labels: Map<String, String> = emptyMap()
+    private var connectedSince = 0L
+    private var retryRound = 0
+
     private var connectJob: Job? = null
-    private var lastPlan: SingBoxConfig.TunnelPlan? = null
-    private var connectedSince: Long = 0L
+    private var reconnectJob: Job? = null
+    private var softExpiryJob: Job? = null
+    private var hardExpiryJob: Job? = null
+    private var monitorJob: Job? = null
+    private var retryJob: Job? = null
 
     private val container: AppContainer
         get() = (application as VpnApplication).container
@@ -111,47 +124,30 @@ class VpnTunnelService : VpnService() {
                 shutdown(detail = null)
                 return START_NOT_STICKY
             }
-
             ACTION_RECONNECT -> {
-                // On passe en avant-plan d'abord : si l'intent arrive par
-                // `startForegroundService`, l'appel doit suivre dans les 5 s,
-                // même pour finir en arrêt immédiat.
                 promoteToForeground(TunnelState.RECONNECTING, "Reconnexion…")
-                if (lastPlan == null) {
-                    shutdown(detail = "Aucune configuration à reconnecter.")
-                } else {
-                    reconnect()
-                }
-                return START_NOT_STICKY
+                launchConnect()
             }
-
             else -> {
-                // Avant-plan d'abord : `startForegroundService` impose de
-                // promouvoir ou d'arrêter dans les 5 s, y compris quand il n'y
-                // a pas de consentement VPN et que le service va s'éteindre.
+                // ACTION_START, ou démarrage par le système (« VPN permanent »).
                 promoteToForeground(TunnelState.CONNECTING, "Préparation du tunnel…")
-
-                // `prepare()` non nul = consentement absent ou retiré.
                 if (VpnService.prepare(this) != null) {
-                    shutdown(detail = "Consentement VPN requis.")
+                    shutdown(detail = "Autorisation VPN requise.")
                     return START_NOT_STICKY
                 }
-                connect()
-                return START_NOT_STICKY
+                launchConnect()
             }
         }
+        return START_NOT_STICKY
     }
 
-    /** Appelé quand une autre application VPN prend la main : le tunnel meurt. */
     override fun onRevoke() {
         publish(TunnelState.STOPPED, "Un autre VPN a pris la main : tunnel arrêté.")
         shutdown(detail = null, keepState = true)
     }
 
     override fun onDestroy() {
-        reconnectJob?.cancel()
-        expiryJob?.cancel()
-        connectJob?.cancel()
+        cancelJobs()
         closeTun()
         scope.cancel()
         super.onDestroy()
@@ -159,93 +155,154 @@ class VpnTunnelService : VpnService() {
 
     /* ------------------------------------------------------------------ connexion */
 
-    private fun connect() {
+    private fun launchConnect() {
         connectJob?.cancel()
-        connectJob = scope.launch { connectInternal() }
+        connectJob = scope.launch { lifecycle.withLock { connectInternal() } }
     }
 
     private suspend fun connectInternal() {
         val engine = container.tunnelEngine
         if (!engine.isAvailable()) {
-            // Honnêteté : pas de moteur, pas de tunnel, pas de « connecté ».
-            shutdown(detail = "Moteur sing-box indisponible dans cette version.")
+            shutdown(detail = "Le moteur VPN n'a pas pu être chargé sur cet appareil.")
             return
         }
 
-        val payload = container.vault.read()
+        // Liste locale d'abord ; un tirage seulement si elle est vide ou morte.
+        var payload = container.vault.read()
+        var built = payload?.let(::buildPlan)
+        if (built == null) {
+            syncQuietly()
+            payload = container.vault.read()
+            built = payload?.let(::buildPlan)
+        }
         if (payload == null) {
-            shutdown(detail = "Aucune configuration enregistrée : connectez-vous ou importez un bundle.")
+            shutdown(detail = "Aucun accès enregistré : connectez-vous et activez un forfait.")
+            return
+        }
+        if (built == null) {
+            onNothingUsable()
             return
         }
 
-        val plan = SingBoxConfig.build(
-            payload = payload,
-            tun = SingBoxConfig.TunOptions(
-                address = "$TUN_ADDRESS/$TUN_PREFIX_LENGTH",
-                mtu = TUN_MTU,
-            ),
-        )
-        if (plan == null) {
-            container.vault.clear()
-            publish(TunnelState.NO_CONNECTION, "Toutes les configurations ont expiré.")
-            shutdown(detail = null, keepState = true)
-            return
-        }
-        if (plan.expiresAtMs <= System.currentTimeMillis()) {
-            container.vault.clear()
-            publish(TunnelState.SUBSCRIPTION_EXPIRED, "Abonnement expiré : aucune sortie valide.")
-            shutdown(detail = null, keepState = true)
-            return
-        }
-
-        lastPlan = plan
-
+        stopEngine()
+        closeTun()
         val descriptor = establishTun()
         if (descriptor == null) {
-            shutdown(detail = "Android n'a pas accordé l'interface tunnel.")
+            shutdown(detail = "Android n'a pas accordé l'interface VPN.")
             return
         }
         tun = descriptor
 
         val result = engine.start(
             TunnelRequest(
-                configJson = plan.json,
+                configJson = built.json,
                 tun = descriptor,
                 protect = { fd -> protect(fd) },
                 onFatal = { reason ->
-                    // Le moteur abandonne : on ne laisse pas la notification
-                    // annoncer un tunnel mort.
                     publish(TunnelState.NO_CONNECTION, reason)
-                    shutdown(detail = null, keepState = true)
+                    scheduleRetry()
                 },
-                clashApiPort = plan.clashApiPort,
-                clashApiSecret = plan.clashApiSecret,
+                clashApiPort = built.clashApiPort,
+                clashApiSecret = built.clashApiSecret,
             ),
         )
-
         if (result.isFailure) {
             closeTun()
-            shutdown(detail = result.exceptionOrNull()?.message ?: "Le moteur a refusé de démarrer.")
+            Log.w(TAG, "démarrage du moteur refusé : ${result.exceptionOrNull()?.javaClass?.simpleName}")
+            shutdown(detail = "Le moteur VPN a refusé de démarrer.")
             return
         }
 
+        plan = built
+        labels = labelsFor(payload, built)
+        retryRound = 0
         connectedSince = System.currentTimeMillis()
         publish(TunnelState.CONNECTED, null)
-        scheduleReconnect(plan.reconnectAfterSeconds)
-        scheduleExpiry(plan.expiresAtMs)
+        TunnelStateBus.publishLink(TunnelStateBus.LinkInfo(connectedSinceMs = connectedSince))
+
+        scheduleReconnect(built.reconnectAfterSeconds)
+        scheduleSoftExpiry(built.nextConfigExpiryMs)
+        scheduleHardExpiry(built.bundleExpiresAtMs)
+        startMonitor(built)
     }
 
-    /**
-     * Reconstruit le tunnel avec la configuration courante. Utilisé par la
-     * reconnexion préventive et plus tard par la bascule quand le selector ne
-     * suffit pas.
-     */
-    private fun reconnect() {
-        connectJob?.cancel()
-        connectJob = scope.launch {
-            runCatching { container.tunnelEngine.stop() }
+    private fun buildPlan(payload: BundlePayload): SingBoxConfig.TunnelPlan? = SingBoxConfig.build(
+        payload = payload,
+        tun = SingBoxConfig.TunOptions(address = "$TUN_ADDRESS/$TUN_PREFIX_LENGTH", mtu = TUN_MTU),
+    )
+
+    private fun labelsFor(payload: BundlePayload, built: SingBoxConfig.TunnelPlan): Map<String, String> {
+        val byId = payload.configs.associate { it.id to it.label }
+        return built.nodeTags.zip(built.configIds).associate { (tag, id) -> tag to (byId[id] ?: tag) }
+    }
+
+    /** Plus aucune configuration valide localement : droits finis, ou nœuds morts ? */
+    private fun onNothingUsable() {
+        val verdict = ExpiryPolicy.atBundleExpiry(
+            nowMs = System.currentTimeMillis(),
+            rightsEndsAtMs = container.access.rightsEndsAtMs(),
+            endedByServer = container.access.rightsEndedByServer(),
+        )
+        if (verdict == ExpiryVerdict.RIGHTS_ENDED) {
+            container.vault.clear()
+            publish(TunnelState.SUBSCRIPTION_EXPIRED, "Votre accès a expiré.")
+            shutdown(detail = null, keepState = true)
+        } else {
+            stopEngine()
             closeTun()
-            connectInternal()
+            publish(TunnelState.NO_CONNECTION, "Aucun serveur disponible pour le moment. Nouvel essai automatique.")
+            scheduleRetry()
+        }
+    }
+
+    /** D19 : reprise avec backoff, le service reste au premier plan et le dit. */
+    private fun scheduleRetry() {
+        retryJob?.cancel()
+        val wait = RETRY_MS[retryRound.coerceAtMost(RETRY_MS.size - 1)]
+        retryRound++
+        retryJob = scope.launch {
+            delay(wait)
+            if (!isActive) return@launch
+            promoteToForeground(TunnelState.RECONNECTING, "Nouvel essai de connexion…")
+            lifecycle.withLock { connectInternal() }
+        }
+    }
+
+    /** Tirage du bundle ; ne lève jamais, ne vide le coffre que sur preuve. */
+    private suspend fun syncQuietly(): BundleSync.Outcome? {
+        if (runCatching { container.api.hasSession() }.getOrDefault(false).not()) return null
+        val outcome = runCatching { container.bundleSync.sync() }.getOrNull() ?: return null
+        when (outcome) {
+            BundleSync.Outcome.Revoked -> {
+                publish(TunnelState.DEVICE_REVOKED, "Cet appareil a été révoqué.")
+                shutdown(detail = null, keepState = true)
+            }
+            BundleSync.Outcome.RightsEnded -> {
+                publish(TunnelState.SUBSCRIPTION_EXPIRED, "Votre accès a expiré.")
+                shutdown(detail = null, keepState = true)
+            }
+            else -> Unit
+        }
+        return outcome
+    }
+
+    /** Reconstruit le tunnel si le serveur a changé la liste servie. */
+    private suspend fun refreshAndReload() {
+        val outcome = syncQuietly()
+        if (outcome is BundleSync.Outcome.Updated && outcome.changed) {
+            promoteToForeground(TunnelState.RECONNECTING, "Nouvelle liste de serveurs…")
+            lifecycle.withLock { connectInternal() }
+            return
+        }
+        // Rien de neuf : on replanifie sur la prochaine configuration encore vivante.
+        val next = container.vault.read()?.configs
+            ?.mapNotNull { parseInstant(it.expiresAt) }
+            ?.filter { it > System.currentTimeMillis() }
+            ?.minOrNull()
+        if (next == null) {
+            lifecycle.withLock { onNothingUsable() }
+        } else {
+            scheduleSoftExpiry(next)
         }
     }
 
@@ -258,11 +315,11 @@ class VpnTunnelService : VpnService() {
             .addAddress(TUN_ADDRESS, TUN_PREFIX_LENGTH)
             .addRoute("0.0.0.0", 0)
             .setBlocking(false)
-
-        for (server in DNS_SERVERS) {
-            runCatching { builder.addDnsServer(server) }
-        }
-
+        for (server in DNS_SERVERS) runCatching { builder.addDnsServer(server) }
+        // Le trafic de l'application elle-même (API, renouvellement du bundle)
+        // ne passe pas par le tunnel : sinon un tunnel mort empêcherait de
+        // récupérer la liste qui le réparerait.
+        runCatching { builder.addDisallowedApplication(packageName) }
         return runCatching { builder.establish() }.getOrNull()
     }
 
@@ -273,67 +330,117 @@ class VpnTunnelService : VpnService() {
 
     /* --------------------------------------------------------------- planification */
 
-    /** D25 : se reconnecter avant la coupure, avec 60 s de marge. */
     private fun scheduleReconnect(afterSeconds: Int) {
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             delay(afterSeconds.coerceAtLeast(60) * 1_000L)
             if (!isActive) return@launch
             promoteToForeground(TunnelState.RECONNECTING, "Renouvellement préventif de la session…")
-            runCatching { container.tunnelEngine.stop() }
-            closeTun()
-            connect()
+            lifecycle.withLock { connectInternal() }
         }
     }
 
-    /**
-     * À l'expiration du bundle, le tunnel ne doit plus être présenté comme
-     * protégé. On coupe et on dit pourquoi : c'est vérifiable côté serveur
-     * (les UUID meurent à la même heure) et honnête côté utilisateur.
-     */
-    private fun scheduleExpiry(expiresAtMs: Long) {
-        expiryJob?.cancel()
-        val wait = expiresAtMs - System.currentTimeMillis()
-        if (wait <= 0) {
-            publish(TunnelState.SUBSCRIPTION_EXPIRED, "Abonnement expiré.")
-            shutdown(detail = null, keepState = true)
-            return
+    private fun scheduleSoftExpiry(atMs: Long) {
+        softExpiryJob?.cancel()
+        softExpiryJob = scope.launch {
+            delay((atMs - System.currentTimeMillis()).coerceAtLeast(1_000))
+            if (isActive) refreshAndReload()
         }
-        expiryJob = scope.launch {
-            delay(wait)
+    }
+
+    private fun scheduleHardExpiry(atMs: Long) {
+        hardExpiryJob?.cancel()
+        hardExpiryJob = scope.launch {
+            delay((atMs - System.currentTimeMillis()).coerceAtLeast(1_000))
             if (!isActive) return@launch
-            container.vault.clear()
-            publish(TunnelState.SUBSCRIPTION_EXPIRED, "Abonnement expiré : reconnexion impossible.")
-            shutdown(detail = null, keepState = true)
+            syncQuietly()
+            lifecycle.withLock {
+                val payload = container.vault.read()
+                if (payload?.let(::buildPlan) == null) onNothingUsable() else connectInternal()
+            }
+        }
+    }
+
+    /* ------------------------------------------------------------ mesure (D70) */
+
+    private fun startMonitor(current: SingBoxConfig.TunnelPlan) {
+        monitorJob?.cancel()
+        val policy = FailoverPolicy(current.nodeTags)
+        val tagToConfig = current.nodeTags.zip(current.configIds).toMap()
+        monitorJob = scope.launch {
+            var lastUp = 0L
+            var lastDown = 0L
+            var lastTick = System.currentTimeMillis()
+            // Première mesure rapide : l'accueil affiche une latence réelle tôt.
+            delay(5_000)
+            while (isActive) {
+                val engine = container.tunnelEngine
+                val active = engine.activeOutbound().getOrNull()
+                val latencies = current.nodeTags.associateWith { tag -> engine.measureDelayMs(tag).getOrNull() }
+                for ((tag, latency) in latencies) {
+                    val configId = tagToConfig[tag] ?: continue
+                    container.telemetry.add(TelemetryQueue.Report(configId, latency != null, latency))
+                }
+
+                var shown = active
+                when (val decision = policy.onRound(active, latencies)) {
+                    is FailoverPolicy.Decision.Switch -> {
+                        if (engine.selectOutbound(decision.toTag).isSuccess) shown = decision.toTag
+                    }
+                    // Hors de la boucle : une reconstruction annule la boucle elle-même.
+                    FailoverPolicy.Decision.AllDown -> scope.launch { refreshAndReload() }
+                    FailoverPolicy.Decision.Keep -> Unit
+                }
+                TunnelStateBus.publishLink(
+                    TunnelStateBus.LinkInfo(
+                        latencyMs = shown?.let { latencies[it] },
+                        exitLabel = shown?.let { labels[it] },
+                        degraded = latencies.isNotEmpty() && latencies.values.all { it == null },
+                        connectedSinceMs = connectedSince,
+                    ),
+                )
+
+                // Consommation comptée par le moteur (D52, source `device`).
+                val now = System.currentTimeMillis()
+                engine.trafficTotals().getOrNull()?.let { (up, down) ->
+                    // Compteurs remis à zéro par un redémarrage du moteur : on repart du total.
+                    val dUp = if (up >= lastUp) up - lastUp else up
+                    val dDown = if (down >= lastDown) down - lastDown else down
+                    container.telemetry.addUsage(IsoTime.localDay(now), dUp, dDown, (now - lastTick) / 1_000)
+                    lastUp = up
+                    lastDown = down
+                }
+                lastTick = now
+                container.flushPending()
+
+                delay(policy.nextIntervalMs())
+            }
         }
     }
 
     /* ------------------------------------------------------------------ arrêt */
 
-    private fun shutdown(detail: String?, keepState: Boolean = false) {
-        reconnectJob?.cancel()
-        expiryJob?.cancel()
-        connectJob?.cancel()
-        stopEngineAsync()
-        closeTun()
-        lastPlan = null
-        connectedSince = 0L
-
-        if (!keepState) publish(TunnelState.STOPPED, detail)
-
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-        stopSelf()
+    private fun cancelJobs() {
+        for (job in listOf(reconnectJob, softExpiryJob, hardExpiryJob, monitorJob, retryJob)) job?.cancel()
     }
 
-    /**
-     * Arrêt du moteur hors du scope du service : `shutdown` est appelée depuis
-     * `onRevoke`, où le scope est sur le point d'être annulé. Un scope dédié
-     * garantit que `stop()` va au bout ; il meurt avec la coroutine.
-     */
-    private fun stopEngineAsync() {
-        CoroutineScope(Dispatchers.IO).launch {
-            runCatching { container.tunnelEngine.stop() }
-        }
+    private fun stopEngine() {
+        monitorJob?.cancel()
+        CoroutineScope(Dispatchers.IO).launch { runCatching { container.tunnelEngine.stop() } }
+    }
+
+    private fun shutdown(detail: String?, keepState: Boolean = false) {
+        cancelJobs()
+        connectJob?.cancel()
+        stopEngine()
+        closeTun()
+        plan = null
+        connectedSince = 0L
+        if (!keepState) publish(TunnelState.STOPPED, detail)
+        // Dernière chance d'envoyer les rapports d'échec avant de s'éteindre.
+        CoroutineScope(Dispatchers.IO).launch { runCatching { container.flushPending() } }
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     /* ------------------------------------------------------------ notification */
@@ -342,13 +449,8 @@ class VpnTunnelService : VpnService() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(NotificationManager::class.java) ?: return
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "${BrandTokens.appName} — état du tunnel",
-            // IMPORTANCE_LOW : la notification est permanente, pas une alerte.
-            NotificationManager.IMPORTANCE_LOW,
-        ).apply {
-            description = "État de la connexion, durée de la session en cours."
+        val channel = NotificationChannel(CHANNEL_ID, "État de la connexion", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "Notification permanente tant que le VPN est actif."
             setShowBadge(false)
         }
         manager.createNotificationChannel(channel)
@@ -358,37 +460,37 @@ class VpnTunnelService : VpnService() {
         publish(state, detail)
         val notification = buildNotification(state, detail)
         if (Build.VERSION.SDK_INT >= 34) {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-            )
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
-            @Suppress("DEPRECATION")
             startForeground(NOTIFICATION_ID, notification)
         }
     }
 
     private fun buildNotification(state: TunnelState, detail: String?): Notification {
-        val text = detail ?: label(state)
+        val open = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val stop = PendingIntent.getService(
+            this, 1,
+            Intent(this, VpnTunnelService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            // Icône système en attendant l'icône de marque : aucune image n'est
-            // produite dans ce lot.
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setSmallIcon(R.drawable.ic_stat_tunnel)
             .setContentTitle(BrandTokens.appName)
-            .setContentText(text)
+            .setContentText(detail ?: label(state))
+            .setContentIntent(open)
+            .addAction(0, "Déconnecter", stop)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(state == TunnelState.CONNECTED)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-
         if (state == TunnelState.CONNECTED && connectedSince > 0) {
-            // La durée vit dans la notification, pas à côté du bouton.
             builder.setWhen(connectedSince).setUsesChronometer(true)
         }
-
         return builder.build()
     }
 
@@ -396,8 +498,6 @@ class VpnTunnelService : VpnService() {
         TunnelStateBus.publish(state, detail)
         val manager = getSystemService(NotificationManager::class.java) ?: return
         if (state == TunnelState.STOPPED) {
-            // Un état arrêté ne laisse pas de notification : la disparition de
-            // l'icône est elle-même une information honnête.
             runCatching { manager.cancel(NOTIFICATION_ID) }
             return
         }
@@ -405,12 +505,12 @@ class VpnTunnelService : VpnService() {
     }
 
     private fun label(state: TunnelState): String = when (state) {
-        TunnelState.STOPPED -> "Arrêté"
+        TunnelState.STOPPED -> "Déconnecté"
         TunnelState.CONNECTING -> "Connexion…"
         TunnelState.CONNECTED -> "Connecté"
         TunnelState.RECONNECTING -> "Reconnexion…"
-        TunnelState.NO_CONNECTION -> "Aucune connexion disponible"
-        TunnelState.SUBSCRIPTION_EXPIRED -> "Abonnement expiré"
+        TunnelState.NO_CONNECTION -> "Aucun serveur disponible"
+        TunnelState.SUBSCRIPTION_EXPIRED -> "Accès expiré"
         TunnelState.DEVICE_REVOKED -> "Appareil révoqué"
     }
 }
