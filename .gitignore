@@ -53,3 +53,5 @@ infra/endpoint/*.env
 
 # Etat local des agents (worktrees, sessions)
 .claude/
+.vercel
+.env*
