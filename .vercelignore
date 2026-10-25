@@ -1,0 +1,19 @@
+# Rien de ce qui suit n'est nécessaire pour construire @vpn/dashboard.
+# But : garder l'envoi sous quelques Mo (le réseau de cette machine coupe).
+node_modules
+.next
+.turbo
+.vercel
+.git
+.claude
+.arena
+preview
+docs
+tools
+knowledge
+infra
+apps/android
+apps/dashboard/.next
+apps/api/data
+*.apk
+*.log

@@ -627,3 +627,20 @@ ferme une question ouverte ou un défaut vérifié dans le code.
   visibles, ombres seulement sur surface, tiroirs et menus ; document non
   défilant, seule la surface défile, barre d'outils et en-tête de tableau
   collants. Détail et suivi : `30-clients/dashboard-plan`.
+
+- **D109** (2026-10-25) - **Dashboard sur Vercel, projet `freeteam5/vpn-dashboard`** :
+  Root Directory = `apps/dashboard`, construit par Turbo (`bun run build
+  --filter=@vpn/dashboard`) pour que `@vpn/contract/dist` existe. Domaine
+  vise : `a.numzer0.store` (zone Cloudflare, id `3c461aaf6c029e6649deb30d04d5d5cd`),
+  CNAME vers `cname.vercel-dns.com` en DNS-only. Le lien Git automatique a
+  echoue (`repo_no_access`) : l'app Vercel n'a pas les droits d'ecriture sur
+  `pius-coder/bouendji`.
+- **D110** (2026-10-25) - **Neon = cible de migration, pas la base active** : la
+  base de production reste `dokku-postgres-vpn-db` sur `aura-vps` ; la base
+  Neon `neondb` (eu-central-1) existe mais etait **vide** (0 table) au
+  2026-10-25. Migration vers Neon prevue "plus tard", comme base de dump.
+- **D111** (2026-10-25) - **Identifiants Fapshi poses sur `vpn-api`**
+  (`FAPSHI_API_USER`, `FAPSHI_API_KEY`) avec `--no-restart`. Le passage
+  en paiement reel reste **bloque** : `BUILD_CALLBACK_SECRET` et
+  `FAPSHI_WEBHOOK_SECRET` sont absents, et `PAYMENT_PROVIDER` vaut encore
+  `mock` (garde-fou `config.ts` l. 197-214).
