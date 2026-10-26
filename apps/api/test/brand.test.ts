@@ -29,14 +29,13 @@ const { createDb } = await import("../src/db.js");
 const { buildApp } = await import("../src/app.js");
 const { buildBrandSpec, validateBrandSpec } = await import("../src/lib/brand.js");
 const { openAdminSession } = await import("../src/lib/auth.js");
-const { applyAdminMigrations } = await import("./adminMigrations.js");
 const { ApiFailure } = await import("../src/lib/errors.js");
 const { env } = await import("../src/config.js");
 
 type Json = Record<string, any>;
 
 const db = await createDb();
-await applyAdminMigrations(db);
+// Les migrations sont appliquées par l'exécuteur R0, dans `createDb`.
 const app = await buildApp({ db });
 
 after(async () => {

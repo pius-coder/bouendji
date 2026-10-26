@@ -28,11 +28,10 @@ process.env.JWT_SECRET = "test-secret-admin-test-secret";
 const { createDb } = await import("../src/db.js");
 const { buildApp } = await import("../src/app.js");
 const { openAdminSession } = await import("../src/lib/auth.js");
-const { applyAdminMigrations } = await import("./adminMigrations.js");
 const { encryptSecret } = await import("../src/lib/crypto.js");
 
 const db = await createDb();
-await applyAdminMigrations(db);
+// Les migrations sont appliquées par l'exécuteur R0, dans `createDb`.
 // app.ts est maintenant câblé par l'orchestrateur (registerAdminRoutes y figure) :
 // le test passe par la vraie application, sans greffe locale.
 const app = await buildApp({ db });

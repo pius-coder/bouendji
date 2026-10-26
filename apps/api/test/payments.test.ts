@@ -26,7 +26,6 @@ const { setMockPaymentStatus, getMockPaymentStatus } = await import("../src/serv
 const { planRevision, refundOrder, commissionFor, toOrderDto } = await import("../src/services/payments.js");
 
 const db = await createDb();
-await (await import("./r6schema.js")).applyR6Migrations(db);
 const app = await buildApp({ db });
 
 after(async () => {

@@ -34,7 +34,8 @@ const migration064 = await import("../src/migrations/064_subscriptions_order_uni
 const { canonicalProof } = await import("../src/lib/crypto.js");
 
 const db = await createDb();
-await applyR6Migrations(db);
+// Les migrations 000-081 (000, 001, puis celles des lots) sont déjà appliquées
+// par l'exécuteur du lot R0, dans `createDb`.
 const app = await buildApp({ db });
 
 after(async () => {
