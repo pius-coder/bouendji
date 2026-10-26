@@ -86,3 +86,22 @@ peut renvoyer l'entrée.
   désinstaller une fois.
 - Non testé : connexion au compte, écran Forfaits avec curseurs (aucune offre
   sur mesure en prod : prix à fournir, D125), paiement Fapshi réel, tunnel.
+
+## Les 7 autres communautés (même soir)
+
+- Demande de l'utilisateur : nom de l'app = nom de la communauté, thème au hasard.
+- **Apps créées en base de prod** (SQL, une par communauté, `support_url`
+  `mailto:support@henshins.online`, paquet `cm.bouendji.<nom>`) :
+  Teste (otaku) `cb6dbc5e-…`, GoatVpn (vector) `bc625882-…`, James Pro (otaku)
+  `d73f4abe-…`, Gregor44 vpn (mono) `e01f7a55-…`, dalas npv (otaku) `32a037c3-…`,
+  Saitrix (mono) `da24b189-…`, NevVPN (vector) `ce57954c-…`.
+- Manifestes `tools/brands/<slug>.json` validés par `inject-brand.mjs`.
+- Run `android-brand` `40374332072` : **7 APK compilées et signées** (artefacts
+  du run, ~30 Mo zippées) ; étape R2 en échec (secrets R2 absents).
+- Pas de logo : les APK portent l'icône par défaut du dépôt (fantôme Bouendji).
+- Aucune de ces apps n'a de forfait : elles affichent « Aucun forfait ».
+- **Curseur invisible** : aucune offre sur mesure en prod. Prix d'exemple acceptés
+  par l'utilisateur (1 j = 150 F/Go, 30 j = 400 F/Go, 1-50 Go, 1-30 j, nuit
+  200/200/350 F) mais **non appliqués** : la prod a **0 serveur 3x-ui**, donc un
+  forfait à quota vendu ne donnerait aucune connexion. Bloqué en attente de
+  l'utilisateur.
