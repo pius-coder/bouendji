@@ -88,7 +88,7 @@ export const env = {
     githubToken: process.env.GITHUB_TOKEN ?? "",
     repo: process.env.GITHUB_REPO ?? "",
     workflow: process.env.GITHUB_WORKFLOW ?? "android-brand.yml",
-    ref: process.env.GITHUB_REF ?? "main",
+    ref: process.env.GITHUB_REF ?? "master",
     publicBaseUrl: process.env.BUILDS_BASE_URL ?? "",
     /** Secret du callback CI (distinct du secret d'ingestion, D66). */
     callbackSecret: process.env.BUILD_CALLBACK_SECRET ?? "",
