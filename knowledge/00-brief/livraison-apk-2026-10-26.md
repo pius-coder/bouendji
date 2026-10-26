@@ -148,3 +148,26 @@ peut renvoyer l'entrée.
 - Décision utilisateur : **pas de compatibilité legacy**, déployer le nouveau
   dashboard. `next build` local réussi. Bloqué : aucune session Vercel sur ce
   PC (`npx vercel login` à faire par l'utilisateur), projet `freeteam5/vpn-dashboard` (D109).
+
+## Dashboard redéployé (nouveau, sans compatibilité legacy)
+
+- Connexion Vercel faite par l'utilisateur (compte `pneumapath1-2167`, équipe
+  `freeteam5`). Dépôt relié au projet `vpn-dashboard` (`.vercel/` et `.env.local`
+  ignorés par git). Variables de production présentes : `API_BASE_URL`,
+  `DASHBOARD_ACCESS_KEY`. Racine du projet : `apps/dashboard`.
+- `vercel deploy --prod` depuis la racine du dépôt (commit `9036668`) :
+  `vpn-dashboard-9pijxp7nl-freeteam5.vercel.app` prêt, alias
+  https://vpn-dashboard-seven.vercel.app. Vérifié : `/login` → 200, `/` → 307
+  vers `/login`. Non vérifié : connexion réelle et pages après connexion.
+- Pas de déploiement automatique (lien Git refusé, D109) : chaque mise à jour =
+  `npx vercel@65.3.1 deploy --prod --scope freeteam5` depuis la racine.
+
+## Redmi (test, USB)
+
+- Redmi 2409BRN2CA, Android 14, arm64. `adb install` refusé
+  (`INSTALL_FAILED_USER_RESTRICTED`) : Xiaomi exige « Installer via USB ».
+  Contournement : APK copiées dans `/sdcard/Download` (attention : Git Bash
+  réécrit `/sdcard/...` ; utiliser `MSYS_NO_PATHCONV=1`), installées à la main.
+- dalas npv 1.1.1 installée et lancée : identité sahel visible (brun, chevrons,
+  en-têtes ◆). Police manuscrite à l'écran : probablement la police système
+  choisie sur le téléphone (non vérifié).
