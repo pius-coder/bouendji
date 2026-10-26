@@ -29,3 +29,12 @@
 - fait: Nouveaux: nightSlots.test (espace reseau, cle usage unique, 4 h, binding, claim, destinataires), manualVless.test, nodeIdentity.test, healthProbation.test, telegramDelivery.test (fetch simule). poolWatch.test reecrit (fuseau, 15 min, relance 5 min, verrou, reessai). Ciblés: 35/35 route+poolWatch, 28/28 unitaires+telegram (avant correction d'une attente fausse, corrigee: 1 cas 26->23 h UTC).
 - etat: ok
 - suite: Attendre suite complete (typecheck + test) puis commits
+
+## 2026-10-26T12:41:35Z · Arret demande
+
+- fait: Commit 8708cdf sur w1/r8. Suite complete verte 217/217 avant arret. Note reste-a-faire.md ecrite.
+- etat: ok
+- suite: Aucune
+
+## 2026-10-26T12:41:37Z · CLÔTURE
+Commit 8708cdf sur w1/r8 : typecheck vert, suite API 217/217 verte. Reste a faire dans knowledge/agents/w1-api-r8-haiku/notes/reste-a-faire.md.

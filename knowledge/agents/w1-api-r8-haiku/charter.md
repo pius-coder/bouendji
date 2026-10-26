@@ -2,7 +2,7 @@
 id: w1-api-r8-haiku
 title: Vague 1 - R8 nuit, Telegram, reseau
 kind: agent
-status: active
+status: done
 updated: 2026-10-26
 scope: "Creneaux de nuit et cle de deploiement par creneau, Telegram multi-destinataires et rappels, noms aleatoires, ajout de noeud par lien VLESS, probation de sante."
 owns: [knowledge/agents/w1-api-r8-haiku]

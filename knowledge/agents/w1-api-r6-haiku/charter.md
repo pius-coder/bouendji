@@ -2,7 +2,7 @@
 id: w1-api-r6-haiku
 title: Vague 1 - R6 forfaits, tarifs, paiement
 kind: agent
-status: active
+status: done
 updated: 2026-10-26
 scope: "Familles de forfaits, quota, options de nuit, reglages tarifaires saisis par les owners, prix plancher, commande avec plage, abonnement avec quota, corrections webhook et double abonnement."
 owns: [knowledge/agents/w1-api-r6-haiku]
