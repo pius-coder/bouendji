@@ -1,9 +1,10 @@
 import type { FastifyRequest } from "fastify";
 import { SignJWT, jwtVerify } from "jose";
 import { env } from "../config.js";
-import type { Database, Row } from "../db.js";
-import { canonicalProof, hashToken, verifyDeviceSignature } from "./crypto.js";
-import { fail } from "./errors.js";
+import type { Database, Queryable, Row } from "../db.js";
+import { canonicalProof, hashToken, newId, verifyDeviceSignature } from "./crypto.js";
+import type { ApiErrorCode } from "@vpn/contract";
+import { ApiFailure, fail } from "./errors.js";
 
 export interface AuthContext {
   userId: string;
@@ -15,11 +16,16 @@ export interface AuthContext {
 }
 
 /**
- * Global identity. `owner` is a single person-shaped role, not a level: there
- * is no `super_admin` and no `admin` value to compare against (see
- * knowledge/40-money/roles-and-commissions.md).
+ * Rôles plateforme, cumulables : une personne peut être `owner` et `reseau`
+ * (D120). Le rang sert seulement à la forme historique `platformRole` :
+ * owner > reseau > none. Les décisions se prennent sur `platformRoles`.
+ * `owner` est une qualité de personne, pas un niveau : il n'existe pas de
+ * `super_admin` (knowledge/40-money/roles-and-commissions.md).
  */
-export type PlatformRole = "none" | "owner";
+export type PlatformRoleName = "owner" | "reseau";
+export type PlatformRole = "none" | PlatformRoleName;
+
+export const PLATFORM_ROLES: readonly PlatformRoleName[] = ["owner", "reseau"];
 
 /** Local permission, granted per community. Never global. */
 export type StaffRole = "community_admin" | "support" | "finance";
@@ -34,16 +40,23 @@ export interface AdminMembership {
 
 /**
  * What a request handler is allowed to know. Deliberately *not* built from the
- * token claims: the token only proves identity (`sub`), and every permission is
- * re-read from the database on each request. Deactivating an account or
- * revoking a membership therefore takes effect on the next call, even though
- * the token itself lives 8 hours.
+ * token claims: the token only proves identity (`sub`) and a session (`sid`),
+ * and every permission is re-read from the database on each request.
+ * Deactivating an account, revoking a membership or revoking the session takes
+ * effect on the next call, even though the token itself lives 8 hours.
  */
 export interface AdminContext {
   adminId: string;
+  /** Session révocable qui a produit le jeton (claim `sid`). */
+  sessionId: string;
+  /** Rang le plus haut porté : owner, puis reseau, sinon none. */
   platformRole: PlatformRole;
+  /** Tous les rôles portés, dans l'ordre de PLATFORM_ROLES. */
+  platformRoles: readonly PlatformRoleName[];
   /** Active memberships only, unknown role values filtered out. */
   memberships: AdminMembership[];
+  /** Tant que vrai, seules les routes de compte sont accessibles (garde app.ts). */
+  mustChangePassword: boolean;
   admin: Row;
 }
 
@@ -60,6 +73,12 @@ const adminKey = () => encoder.encode(`admin:${env.jwtSecret}`);
  */
 export const MOBILE_AUDIENCE = "vpn-mobile";
 export const ADMIN_AUDIENCE = "vpn-admin";
+
+/** Durée d'un jeton administrateur. La révocation passe par la session, pas par ce délai. */
+export const ADMIN_TOKEN_TTL_MS = 8 * 3600 * 1000;
+
+/** `last_seen_at` n'est écrit qu'au plus une fois par minute : pas une écriture par requête. */
+const SESSION_TOUCH_INTERVAL = "1 minute";
 
 export async function issueAccessToken(input: {
   userId: string;
@@ -84,15 +103,14 @@ export async function issueAccessToken(input: {
   return { token, expiresAt };
 }
 
+/** Signe un jeton administrateur rattaché à une session existante. */
 export async function issueAdminToken(input: {
   adminId: string;
-  role: "platform" | "partner";
-  communityId: string | null;
+  sessionId: string;
 }): Promise<{ token: string; expiresAt: Date }> {
-  const expiresAt = new Date(Date.now() + 8 * 3600 * 1000);
+  const expiresAt = new Date(Date.now() + ADMIN_TOKEN_TTL_MS);
   const token = await new SignJWT({
-    role: input.role,
-    cid: input.communityId,
+    sid: input.sessionId,
     typ: "admin",
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
@@ -103,6 +121,25 @@ export async function issueAdminToken(input: {
     .setExpirationTime(Math.floor(expiresAt.getTime() / 1000))
     .sign(adminKey());
   return { token, expiresAt };
+}
+
+/**
+ * Ouvre une session révocable et signe son jeton. C'est le seul chemin de
+ * fabrication d'un jeton administrateur : sans ligne `admin_sessions`, le jeton
+ * n'ouvre rien.
+ */
+export async function openAdminSession(
+  q: Queryable,
+  input: { adminId: string; userAgent?: string | null },
+): Promise<{ token: string; expiresAt: Date; sessionId: string }> {
+  const sessionId = newId();
+  await q.query("INSERT INTO admin_sessions (id, admin_id, user_agent) VALUES ($1, $2, $3)", [
+    sessionId,
+    input.adminId,
+    input.userAgent ? input.userAgent.slice(0, 300) : null,
+  ]);
+  const { token, expiresAt } = await issueAdminToken({ adminId: input.adminId, sessionId });
+  return { token, expiresAt, sessionId };
 }
 
 function bearer(req: FastifyRequest): string | null {
@@ -195,7 +232,22 @@ export async function verifyDeviceProof(db: Database, req: FastifyRequest, devic
   await db.query("UPDATE devices SET last_seen_at = now() WHERE id = $1", [device.id]);
 }
 
-export async function requireAdmin(db: Database, req: FastifyRequest): Promise<AdminContext> {
+/**
+ * Une seule lecture par requête. La garde de `app.ts` et la route appellent
+ * `requireAdmin` : la seconde reprend le résultat de la première, sans seconde
+ * série de requêtes, et une erreur reste la même pour toute la requête.
+ */
+const adminByRequest = new WeakMap<object, Promise<AdminContext>>();
+
+export function requireAdmin(db: Database, req: FastifyRequest): Promise<AdminContext> {
+  const known = adminByRequest.get(req);
+  if (known) return known;
+  const pending = loadAdmin(db, req);
+  adminByRequest.set(req, pending);
+  return pending;
+}
+
+async function loadAdmin(db: Database, req: FastifyRequest): Promise<AdminContext> {
   const token = bearer(req);
   if (!token) throw fail.unauthenticated();
   let payload: Record<string, unknown>;
@@ -206,8 +258,36 @@ export async function requireAdmin(db: Database, req: FastifyRequest): Promise<A
     throw fail.unauthenticated("Session administrateur expirée.");
   }
   if (payload.typ !== "admin") throw fail.forbidden();
+  if (typeof payload.sid !== "string" || typeof payload.sub !== "string") throw fail.unauthenticated();
+
+  // La session est lue avant le compte : une session révoquée meurt même si le
+  // compte reste actif, et une session d'un autre compte n'existe pas pour lui.
+  const session = await db.one<Row>("SELECT id, admin_id, revoked_at FROM admin_sessions WHERE id = $1", [payload.sid]);
+  if (!session || session.admin_id !== payload.sub || session.revoked_at) {
+    throw fail.unauthenticated("Session révoquée.");
+  }
+  await db.query(
+    `UPDATE admin_sessions SET last_seen_at = now()
+      WHERE id = $1 AND last_seen_at < now() - interval '${SESSION_TOUCH_INTERVAL}'`,
+    [session.id],
+  );
+
   const admin = await db.one<Row>("SELECT * FROM admin_users WHERE id = $1 AND active = true", [payload.sub]);
   if (!admin) throw fail.forbidden("Compte administrateur désactivé.");
+
+  return buildAdminContext(db, admin, String(session.id));
+}
+
+/**
+ * Relit rôles et appartenances d'un compte déjà authentifié. Sert à la requête
+ * (`requireAdmin`) et à la réponse de connexion, qui doit dire la même chose.
+ */
+export async function buildAdminContext(db: Queryable, admin: Row, sessionId: string): Promise<AdminContext> {
+  const roleRows = await db.query<Row>("SELECT role FROM admin_platform_roles WHERE admin_id = $1", [admin.id]);
+  const granted = new Set<string>(roleRows.map((row) => String(row.role)));
+  // Colonne legacy : un owner créé avant la table reste owner tant qu'elle dit owner.
+  if (admin.platform_role === "owner") granted.add("owner");
+  const platformRoles = PLATFORM_ROLES.filter((role) => granted.has(role));
 
   const rows = await db.query<Row>(
     `SELECT id, community_id, role
@@ -221,14 +301,39 @@ export async function requireAdmin(db: Database, req: FastifyRequest): Promise<A
     .filter((row) => STAFF_ROLES.includes(row.role as StaffRole) && typeof row.community_id === "string")
     .map((row) => ({ id: row.id as string, communityId: row.community_id as string, role: row.role as StaffRole }));
 
-  const platformRole: PlatformRole = admin.platform_role === "owner" ? "owner" : "none";
-
   return {
-    adminId: admin.id as string,
-    platformRole,
+    adminId: String(admin.id),
+    sessionId,
+    platformRole: platformRoles[0] ?? "none",
+    platformRoles,
     memberships,
+    mustChangePassword: admin.must_change_password === true,
     admin,
   };
+}
+
+/** Un rôle plateforme porté, cumulable avec les autres. */
+export function hasPlatformRole(admin: AdminContext, role: PlatformRoleName): boolean {
+  return admin.platformRoles.includes(role);
+}
+
+/**
+ * Routes qui restent ouvertes tant que le mot de passe doit changer : le compte
+ * lui-même et l'authentification. Tout le reste répond `PASSWORD_CHANGE_REQUIRED`.
+ */
+export function passwordChangeExempt(path: string): boolean {
+  return path === "/v1/admin/me" || path.startsWith("/v1/admin/me/") || path.startsWith("/v1/admin/auth/");
+}
+
+/**
+ * Code renvoyé tant que le mot de passe doit changer. Il n'est pas encore dans
+ * API_ERROR_CODES (packages/contract, hors de ce lot) : la conversion est
+ * isolée ici, à remplacer par la valeur du contrat dès qu'elle y figure.
+ */
+const PASSWORD_CHANGE_CODE = "PASSWORD_CHANGE_REQUIRED" as unknown as ApiErrorCode;
+
+export function passwordChangeRequired(): ApiFailure {
+  return new ApiFailure(403, PASSWORD_CHANGE_CODE, "Changez votre mot de passe avant de continuer.");
 }
 
 /** The staff role this admin holds in one community, if any. */
@@ -249,7 +354,7 @@ export function roleInCommunity(admin: AdminContext, communityId: string): Staff
  * admin with several memberships must say which one.
  */
 export function scopedCommunity(admin: AdminContext, requested?: string | null): string | null {
-  if (admin.platformRole === "owner") return requested ?? null;
+  if (hasPlatformRole(admin, "owner")) return requested ?? null;
   if (!requested) {
     const first = admin.memberships[0];
     if (!first) throw fail.forbidden("Aucune communauté rattachée à ce compte.");

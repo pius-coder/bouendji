@@ -30,6 +30,9 @@ const { buildApp } = await import("../src/app.js");
 const { canonicalProof } = await import("../src/lib/crypto.js");
 
 export const db = await createDb();
+// Migrations admin (010-012) : l'exécuteur du lot R0 n'est pas dans cette copie.
+const { applyAdminMigrations } = await import("./adminMigrations.js");
+await applyAdminMigrations(db);
 export const app = await buildApp({ db });
 
 export async function closeAll(): Promise<void> {

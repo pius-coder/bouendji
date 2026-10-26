@@ -1,142 +1,154 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import type { Database, Row } from "../db.js";
-import { issueAdminToken, type AdminMembership, type AdminContext, type PlatformRole } from "../lib/auth.js";
-import { verifyPassword } from "../lib/crypto.js";
+import type { Database, Queryable, Row } from "../db.js";
+import { buildAdminContext, openAdminSession, type AdminContext } from "../lib/auth.js";
+import { AttemptCounter } from "../lib/attempts.js";
+import { hashPassword, newId, verifyPassword } from "../lib/crypto.js";
 import { fail } from "../lib/errors.js";
-import { appendAudit, parseBody } from "./admin.js";
+import { adminMeView, appendAudit, parseBody } from "./admin.js";
 
 /**
  * Connexion du dashboard.
  *
  * Elle est séparée des routes d'administration parce qu'elle est la seule à ne
  * pas exiger de jeton — donc la seule exposée à une devinette de mot de passe.
- * Deux compteurs, pas un : par adresse IP (un attaquant qui balaie) et par
- * compte (un attaquant qui vise). Un compteur seulement par IP laisserait
- * passer un essai lent sur un compte précis ; un compteur seulement par compte
- * laisserait verrouiller le propriétaire depuis un réseau tiers.
+ *
+ * Deux compteurs, pas un :
+ * - par **couple compte + IP** : un attaquant qui vise un compte depuis une
+ *   adresse ne verrouille pas ce compte pour les autres adresses. Un compteur
+ *   par compte seul laisserait un tiers verrouiller le propriétaire ;
+ * - par **IP** : un attaquant qui balaie plusieurs comptes depuis une même
+ *   adresse est freiné.
+ *
+ * Seuls les échecs sont journalisés (`admin.login_failed`), sans jamais dire si
+ * le compte existe. Un succès remet le compteur du couple à zéro.
  *
  * En mémoire : sur plusieurs instances, la limite est par instance. C'est
- * assumé et écrit dans le rapport — un verrou distribué demanderait Redis, qui
- * n'existe pas dans cette architecture.
+ * assumé — un verrou distribué demanderait Redis, qui n'existe pas ici.
  */
+
+const WINDOW_MS = 15 * 60_000;
+const MAX_PER_ACCOUNT_IP = 8;
+const MAX_PER_IP = 20;
+
+const accountAttempts = new AttemptCounter(MAX_PER_ACCOUNT_IP, WINDOW_MS);
+const ipAttempts = new AttemptCounter(MAX_PER_IP, WINDOW_MS);
+
+/**
+ * Hachage factice pour les comptes inconnus : la réponse prend le même temps
+ * que pour un compte existant, et un chronomètre ne dit donc pas quels comptes
+ * existent.
+ */
+const UNKNOWN_ACCOUNT_HASH = hashPassword(randomUUID());
+
+/** Numéro WhatsApp : 9 chiffres, préfixe +237 facultatif, espaces et tirets ignorés. */
+const WHATSAPP_RE = /^(?:\+?237)?(\d{9})$/;
+
+/** Forme canonique stockée : les 9 chiffres seuls. */
+export function normalizeWhatsapp(raw: string): string | null {
+  const compact = raw.replace(/[\s.-]/g, "");
+  const match = WHATSAPP_RE.exec(compact);
+  return match?.[1] ?? null;
+}
+
+export type LoginIdentity = { kind: "email"; value: string } | { kind: "whatsapp"; value: string };
+
+/** Un identifiant est un courriel s'il contient « @ », sinon un numéro WhatsApp. */
+export function normalizeIdentifier(raw: string): LoginIdentity | null {
+  const trimmed = raw.trim();
+  if (trimmed.includes("@")) {
+    const email = trimmed.toLowerCase();
+    return z.string().email().max(190).safeParse(email).success ? { kind: "email", value: email } : null;
+  }
+  const phone = normalizeWhatsapp(trimmed);
+  return phone ? { kind: "whatsapp", value: phone } : null;
+}
 
 const LoginBody = z
   .object({
-    email: z.string().trim().toLowerCase().email().max(190),
+    identifier: z.string().trim().min(3).max(190).optional(),
+    /** Forme historique, toujours acceptée : le dashboard actuel envoie `email`. */
+    email: z.string().trim().min(3).max(190).optional(),
     password: z.string().min(1).max(200),
   })
-  .strict();
+  .strict()
+  .refine((value) => value.identifier !== undefined || value.email !== undefined, "Identifiant requis.");
 
-const WINDOW_MS = 15 * 60_000;
-const MAX_PER_IP = 20;
-const MAX_PER_ACCOUNT = 8;
-
-interface Bucket {
-  count: number;
-  resetAt: number;
-}
-
-function newLimiter() {
-  const buckets = new Map<string, Bucket>();
-
-  return {
-    hit(key: string, max: number): void {
-      const now = Date.now();
-      // Nettoyage à l'occasion : sans lui, la table grossit indéfiniment sur un
-      // service qui tourne 4 h.
-      if (buckets.size > 5_000) {
-        for (const [candidate, bucket] of buckets) {
-          if (bucket.resetAt <= now) buckets.delete(candidate);
-        }
-      }
-      const bucket = buckets.get(key);
-      if (!bucket || bucket.resetAt <= now) {
-        buckets.set(key, { count: 1, resetAt: now + WINDOW_MS });
-        return;
-      }
-      bucket.count += 1;
-      if (bucket.count > max) {
-        throw fail.rateLimited(Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)));
-      }
-    },
-    clear(key: string): void {
-      buckets.delete(key);
-    },
-  };
+/** Échec de connexion journalisé : jamais le mot de passe, jamais l'identifiant saisi. */
+async function recordFailure(q: Queryable, req: FastifyRequest, adminId: string | null, reason: string): Promise<void> {
+  const userAgent = req.headers["user-agent"];
+  await q.query(
+    `INSERT INTO audit_log
+       (id, actor_id, actor_type, actor_role, action, target, target_type, target_id,
+        community_id, ip, user_agent, meta, before_state, after_state)
+     VALUES ($1, $2, 'admin', NULL, 'admin.login_failed', $3, 'admin', $4, NULL, $5, $6, $7::jsonb, NULL, NULL)`,
+    [
+      newId(),
+      adminId,
+      `admin:${adminId ?? "inconnu"}`,
+      adminId ?? "inconnu",
+      req.ip ?? null,
+      typeof userAgent === "string" ? userAgent.slice(0, 300) : null,
+      JSON.stringify({ reason }),
+    ],
+  );
 }
 
 export function registerAdminAuthRoutes(app: FastifyInstance, db: Database): void {
-  const limiter = newLimiter();
-
-  app.post("/v1/admin/auth/login", async (req: FastifyRequest) => {
+  app.post("/v1/admin/auth/login", async (req) => {
     const input = parseBody(LoginBody, req.body);
+    const identity = normalizeIdentifier(input.identifier ?? input.email ?? "");
+    if (!identity) {
+      throw fail.validation({ identifier: "Email ou numéro WhatsApp invalide." });
+    }
 
-    limiter.hit(`ip:${req.ip}`, MAX_PER_IP);
-    const accountKey = `account:${input.email}`;
-    limiter.hit(accountKey, MAX_PER_ACCOUNT);
+    const ip = req.ip ?? "";
+    const accountKey = `${identity.value}|${ip}`;
+    const ipGate = ipAttempts.hit(ip);
+    if (!ipGate.allowed) throw fail.rateLimited(ipGate.retryAfterSeconds);
+    const accountGate = accountAttempts.hit(accountKey);
+    if (!accountGate.allowed) throw fail.rateLimited(accountGate.retryAfterSeconds);
 
-    const admin = await db.one<Row>("SELECT * FROM admin_users WHERE email = $1", [input.email]);
+    const admin =
+      identity.kind === "email"
+        ? await db.one<Row>("SELECT * FROM admin_users WHERE email = $1", [identity.value])
+        : await db.one<Row>("SELECT * FROM admin_users WHERE whatsapp_number = $1", [identity.value]);
+
     // Même réponse pour « inconnu » et « mauvais mot de passe » : la différence
-    // dirait quels courriels existent.
-    if (!admin || !verifyPassword(input.password, String(admin.password_hash))) {
+    // dirait quels comptes existent.
+    const passwordOk = verifyPassword(input.password, String(admin?.password_hash ?? UNKNOWN_ACCOUNT_HASH));
+    if (!admin || !passwordOk) {
+      await recordFailure(db, req, admin ? String(admin.id) : null, admin ? "bad_password" : "unknown_account");
       throw fail.invalidCredentials();
     }
-    if (!admin.active) throw fail.forbidden("Compte administrateur désactivé.");
+    if (!admin.active) {
+      await recordFailure(db, req, String(admin.id), "inactive");
+      throw fail.forbidden("Compte administrateur désactivé.");
+    }
 
-    limiter.clear(accountKey);
+    accountAttempts.reset(accountKey);
 
-    const platformRole: PlatformRole = admin.platform_role === "owner" ? "owner" : "none";
-    const { token, expiresAt } = await issueAdminToken({
-      adminId: String(admin.id),
-      role: platformRole === "owner" ? "platform" : "partner",
-      communityId: null,
-    });
-
-    const memberships = await db.query<Row>(
-      `SELECT id, community_id, role
-         FROM community_memberships
-        WHERE admin_user_id = $1 AND status = 'active'
-        ORDER BY community_id`,
-      [admin.id],
-    );
-
-    const context: AdminContext = {
-      adminId: String(admin.id),
-      platformRole,
-      memberships: memberships.map(
-        (row): AdminMembership => ({
-          id: String(row.id),
-          communityId: String(row.community_id),
-          role: String(row.role) as AdminMembership["role"],
-        }),
-      ),
-      admin,
-    };
+    const adminId = String(admin.id);
+    const session = await openAdminSession(db, { adminId, userAgent: req.headers["user-agent"] ?? null });
+    const context: AdminContext = await buildAdminContext(db, admin, session.sessionId);
 
     await appendAudit(db, context, req, {
       action: "admin.login",
       targetType: "admin",
-      targetId: String(admin.id),
+      targetId: adminId,
       communityId: null,
     });
 
+    const expiresAt = session.expiresAt.toISOString();
     return {
-      // Deux noms pour le même jeton : le dashboard lit l'un ou l'autre.
-      accessToken: token,
-      token,
-      accessExpiresAt: expiresAt.toISOString(),
-      expiresAt: expiresAt.toISOString(),
-      admin: {
-        id: String(admin.id),
-        email: String(admin.email),
-        name: String(admin.name),
-        platformRole,
-        memberships: context.memberships.map((membership) => ({
-          communityId: membership.communityId,
-          role: membership.role,
-        })),
-      },
+      token: session.token,
+      expiresAt,
+      mustChangePassword: context.mustChangePassword,
+      // Alias de compatibilité : le dashboard lit l'un ou l'autre.
+      accessToken: session.token,
+      accessExpiresAt: expiresAt,
+      admin: adminMeView(context),
     };
   });
 }

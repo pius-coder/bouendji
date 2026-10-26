@@ -667,22 +667,75 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
 
   "POST /v1/admin/auth/login": {
     summary: "Connexion à la console",
-    description: "Connexion par mot de passe après la clé partagée `X-Access-Key` (obligatoire en production). Message identique pour compte inconnu et mot de passe faux. TTL 8 heures.",
+    description: "Connexion par courriel ou numéro WhatsApp (`identifier`), après la clé partagée `X-Access-Key` (obligatoire en production). `email` reste accepté. Message identique pour compte inconnu et mot de passe faux. Jeton lié à une session révocable, TTL 8 heures. `mustChangePassword` vrai : seules les routes de compte répondent.",
     tags: ["administration"],
     security: [{ accessKey: [] }],
-    body: { type: "object", additionalProperties: false, required: ["email", "password"], properties: { email: str("Email.", { format: "email" }), password: str("Mot de passe.") } },
+    body: { type: "object", additionalProperties: false, properties: { identifier: str("Courriel ou numéro WhatsApp (9 chiffres, +237 facultatif)."), email: str("Forme historique du courriel.", { format: "email" }), password: str("Mot de passe.") }, required: ["password"] },
     response: withErrors({
-      200: jsonResponse("Session d'administration.", { properties: { accessToken: str("Jeton `vpn-admin`."), token: str("Alias du même jeton."), accessExpiresAt: str("Expiration.", { format: "date-time" }), admin: shape({ id: str("Admin."), email: str("Email."), platformRole: str("`owner` ou `none`."), memberships: arrayOf(shape({ communityId: str("Communauté."), role: str("Rôle local.") }), "Appartenances.") }) } }),
-      429: errorResponse("Trop de tentatives. `retryAfter` en secondes."),
+      200: jsonResponse("Session d'administration.", { properties: { token: str("Jeton `vpn-admin`."), expiresAt: str("Expiration.", { format: "date-time" }), mustChangePassword: { type: "boolean" }, accessToken: str("Alias du même jeton."), accessExpiresAt: str("Alias d'expiresAt.", { format: "date-time" }), admin: shape({ id: str("Admin."), email: str("Email."), name: str("Nom."), whatsappNumber: str("Numéro WhatsApp, 9 chiffres, ou null."), platformRole: str("Rang le plus haut : `owner`, `reseau` ou `none`."), platformRoles: arrayOf(str("`owner` ou `reseau`."), "Rôles cumulables."), mustChangePassword: { type: "boolean" }, memberships: arrayOf(shape({ communityId: str("Communauté."), role: str("Rôle local.") }), "Appartenances.") }) } }),
+      400: errorResponse("Identifiant invalide ou champ inconnu."),
+      429: errorResponse("Trop de tentatives pour ce compte depuis cette adresse, ou pour cette adresse. `retryAfter` en secondes."),
     }),
   },
 
-  "GET /v1/admin/me": {
-    summary: "Contexte de la session",
-    description: "Rôle plateforme et appartenances relus en base à chaque requête, jamais lus dans le jeton.",
+  "POST /v1/admin/auth/logout": {
+    summary: "Déconnexion",
+    description: "Révoque la session qui a servi à appeler la route.",
     tags: ["administration"],
     security: ADMIN_SECURITY,
-    response: withErrors({ 200: jsonResponse("Contexte.", { properties: { id: str("Admin."), platformRole: str("Rôle."), memberships: arrayOf(shape({}), "Appartenances.") } }) }),
+    response: withErrors({ 204: { description: "Session révoquée." } }),
+  },
+
+  "GET /v1/admin/me": {
+    summary: "Contexte du compte connecté",
+    description: "Rôles plateforme (cumulables) et appartenances relus en base à chaque requête, jamais lus dans le jeton. `mustChangePassword` vrai : changer le mot de passe avant toute autre route.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    response: withErrors({ 200: jsonResponse("Contexte.", { properties: { id: str("Admin."), email: str("Email."), name: str("Nom."), whatsappNumber: str("Numéro WhatsApp ou null."), platformRoles: arrayOf(str("`owner` ou `reseau`."), "Rôles cumulables."), platformRole: str("Rang le plus haut."), mustChangePassword: { type: "boolean" }, memberships: arrayOf(shape({ communityId: str("Communauté."), role: str("Rôle local.") }), "Appartenances."), onboarding: { description: "État de l'onboarding, ou null." } } }) }),
+  },
+
+  "PATCH /v1/admin/me": {
+    summary: "Modifier son profil",
+    description: "Nom, numéro WhatsApp (unique ; `null` l'efface) et identifiant Telegram (`null` l'efface). Au moins un champ.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    body: { type: "object", additionalProperties: false, properties: { name: str("Nom.", { minLength: 2, maxLength: 120 }), whatsappNumber: str("Numéro WhatsApp, ou null.", { maxLength: 40 }), telegramChatId: str("Identifiant Telegram (chiffres), ou null.", { maxLength: 21 }) } },
+    response: withErrors({ 200: jsonResponse("Contexte mis à jour, même forme que GET /me.", { properties: { id: str("Admin.") } }), 409: errorResponse("Numéro déjà utilisé.") }),
+  },
+
+  "POST /v1/admin/me/password": {
+    summary: "Changer son mot de passe",
+    description: "Révoque toutes les sessions, y compris celle-ci, et renvoie un jeton neuf. Douze caractères minimum. Lève le drapeau de changement obligatoire.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    body: { type: "object", additionalProperties: false, required: ["currentPassword", "newPassword"], properties: { currentPassword: str("Mot de passe actuel."), newPassword: str("Nouveau mot de passe.", { minLength: 12 }) } },
+    response: withErrors({ 200: jsonResponse("Nouvelle session.", { properties: { token: str("Jeton `vpn-admin`."), expiresAt: str("Expiration.", { format: "date-time" }) } }), 429: errorResponse("Trop de tentatives sur le mot de passe actuel.") }),
+  },
+
+  "GET /v1/admin/me/sessions": {
+    summary: "Lister mes sessions",
+    description: "Sessions non révoquées et encore valables. `current` marque celle de la requête. Jamais de jeton.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    response: withErrors({ 200: jsonResponse("Sessions.", { properties: { sessions: arrayOf(shape({ id: str("Session."), createdAt: str("Ouverture.", { format: "date-time" }), lastSeenAt: str("Dernière activité.", { format: "date-time" }), userAgent: str("Navigateur ou null."), current: { type: "boolean" } }), "Sessions.") } }) }),
+  },
+
+  "DELETE /v1/admin/me/sessions/:sessionId": {
+    summary: "Révoquer une de mes sessions",
+    description: "Ne fonctionne que sur ses propres sessions ; une autre répond 404.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    params: { type: "object", required: ["sessionId"], properties: { sessionId: str("Session.") } },
+    response: withErrors({ 204: { description: "Session révoquée." }, 404: errorResponse("Session introuvable.") }),
+  },
+
+  "DELETE /v1/admin/me/sessions": {
+    summary: "Révoquer mes autres sessions",
+    description: "Seul `scope=others` est accepté : toutes sauf la session de la requête.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    querystring: { type: "object", required: ["scope"], properties: { scope: { type: "string", enum: ["others"] } } },
+    response: withErrors({ 204: { description: "Sessions révoquées." }, 400: errorResponse("Portée inconnue.") }),
   },
 
   "GET /v1/admin/communities": {

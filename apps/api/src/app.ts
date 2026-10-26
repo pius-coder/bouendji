@@ -7,8 +7,10 @@ import type { Database } from "./db.js";
 import { rateLimitError } from "./lib/attempts.js";
 import { registerDecoyGuard } from "./lib/decoy.js";
 import { ApiFailure } from "./lib/errors.js";
+import { passwordChangeExempt, passwordChangeRequired, requireAdmin } from "./lib/auth.js";
 import { registerOpenApi, registerOpenApiReference } from "./openapi.js";
 import { registerAdminRoutes } from "./routes/admin.js";
+import { registerAdminAccountRoutes } from "./routes/adminAccount.js";
 import { registerAdminAuthRoutes } from "./routes/adminAuth.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerBuildRoutes } from "./routes/builds.js";
@@ -199,6 +201,19 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     }
 
     /*
+     * Changement de mot de passe obligatoire : tant que `must_change_password`
+     * est vrai, toute route d'administration hors compte et authentification
+     * répond 403 PASSWORD_CHANGE_REQUIRED. Une seule garde, pas une par route.
+     */
+    if (req.url.startsWith("/v1/admin")) {
+      const path = req.url.split("?")[0] ?? req.url;
+      if (!passwordChangeExempt(path)) {
+        const admin = await requireAdmin(db, req);
+        if (admin.mustChangePassword) throw passwordChangeRequired();
+      }
+    }
+
+    /*
      * D56 — l'ingestion porte un horodatage pour qu'une requête capturée ne
      * reste pas éternellement rejouable. Le callback de build a son **propre**
      * secret (D66) et ne passe donc pas par cette vérification.
@@ -291,6 +306,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerPaymentRoutes(app, db);
   registerAdminRoutes(app, db);
   registerAdminAuthRoutes(app, db);
+  registerAdminAccountRoutes(app, db);
   registerBuildRoutes(app, db);
   registerOfflineRoutes(app, db);
   await registerOpenApiReference(app);

@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
 const { app, db, call, closeAll } = await import("./support.js");
-const { issueAdminToken } = await import("../src/lib/auth.js");
+const { openAdminSession } = await import("../src/lib/auth.js");
 const { endpointToConfig } = await import("../src/services/endpoints.js");
 const { parseVlessUri } = await import("../src/lib/vless.js");
 
@@ -23,14 +23,14 @@ const OWNER = "adm_manual_owner";
 const PARTNER = "adm_manual_partner";
 for (const [id, platformRole, role] of [[OWNER, "owner", "platform"], [PARTNER, "none", "partner"]] as const) {
   await db.query(
-    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
-     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $1, $3, $4, true)`,
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active, must_change_password)
+     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $1, $3, $4, true, false)`,
     [id, `${id}@example.test`, role, platformRole],
   );
 }
 
 async function as(adminId: string, role: "platform" | "partner") {
-  const { token } = await issueAdminToken({ adminId, role, communityId: null });
+  const { token } = await openAdminSession(db, { adminId });
   return (payload: unknown) =>
     call("POST", "/v1/admin/endpoints/manual", { payload, headers: { authorization: `Bearer ${token}` } });
 }

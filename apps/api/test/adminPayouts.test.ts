@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
 import { call, closeAll, db } from "./support.js";
-import { issueAdminToken } from "../src/lib/auth.js";
+import { openAdminSession } from "../src/lib/auth.js";
 import { payments } from "../src/lib/fapshi.js";
 
 after(async () => {
@@ -61,8 +61,8 @@ for (const [id, email, platformRole] of [
   [ADMIN_OTHER, "money-admin-other@example.com", "none"],
 ] as const) {
   await db.query(
-    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
-     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $3, $4, $5, true)`,
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active, must_change_password)
+     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $3, $4, $5, true, false)`,
     [id, email, id.replace("adm_money_", "Compte "), platformRole === "owner" ? "platform" : "partner", platformRole],
   );
 }
@@ -127,7 +127,7 @@ for (const [id, legacyRole] of [
   [SUPPORT, "partner"],
   [ADMIN_OTHER, "partner"],
 ] as const) {
-  const { token } = await issueAdminToken({ adminId: id, role: legacyRole, communityId: null });
+  const { token } = await openAdminSession(db, { adminId: id });
   tokens[id] = token;
 }
 

@@ -28,13 +28,15 @@ process.env.MOCK_BUILDS = "true";
 const { createDb } = await import("../src/db.js");
 const { buildApp } = await import("../src/app.js");
 const { buildBrandSpec, validateBrandSpec } = await import("../src/lib/brand.js");
-const { issueAdminToken } = await import("../src/lib/auth.js");
+const { openAdminSession } = await import("../src/lib/auth.js");
+const { applyAdminMigrations } = await import("./adminMigrations.js");
 const { ApiFailure } = await import("../src/lib/errors.js");
 const { env } = await import("../src/config.js");
 
 type Json = Record<string, any>;
 
 const db = await createDb();
+await applyAdminMigrations(db);
 const app = await buildApp({ db });
 
 after(async () => {
@@ -89,8 +91,8 @@ const ADMINS: Array<[string, string, string]> = [
 ];
 for (const [id, email, platformRole] of ADMINS) {
   await db.query(
-    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
-     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $3, $4, $5, true)`,
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active, must_change_password)
+     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $3, $4, $5, true, false)`,
     [id, email, id, platformRole === "owner" ? "platform" : "partner", platformRole],
   );
 }
@@ -109,7 +111,7 @@ for (const [id, communityId, role] of [
 
 const tokens: Record<string, string> = {};
 for (const [id, , platformRole] of ADMINS) {
-  const { token } = await issueAdminToken({ adminId: id, role: platformRole === "owner" ? "platform" : "partner", communityId: null });
+  const { token } = await openAdminSession(db, { adminId: id });
   tokens[id] = token;
 }
 

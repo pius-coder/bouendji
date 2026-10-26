@@ -20,7 +20,7 @@ process.env.OFFLINE_BUNDLE_SIGNING_KEY = ed.privateKey
 process.env.OFFLINE_BUNDLE_TTL_MINUTES = "60";
 
 const { app, db, call, seedApp, publishEndpoint, newKeyPair, closeAll } = await import("./support.js");
-const { issueAdminToken } = await import("../src/lib/auth.js");
+const { openAdminSession } = await import("../src/lib/auth.js");
 const { openEnvelope } = await import("../src/lib/crypto.js");
 const { offlineSignedMessage } = await import("../src/services/offlineBundles.js");
 
@@ -33,8 +33,8 @@ const suffix = randomUUID().slice(0, 8);
 
 async function makeAdmin(id: string, platformRole: "owner" | "none", communityId?: string): Promise<string> {
   await db.query(
-    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
-     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $1, $3, $4, true)`,
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active, must_change_password)
+     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $1, $3, $4, true, false)`,
     [id, `${id}@test.local`, platformRole === "owner" ? "platform" : "partner", platformRole],
   );
   if (communityId) {
@@ -44,11 +44,7 @@ async function makeAdmin(id: string, platformRole: "owner" | "none", communityId
       [`mem_${id}`, id, communityId],
     );
   }
-  const { token } = await issueAdminToken({
-    adminId: id,
-    role: platformRole === "owner" ? "platform" : "partner",
-    communityId: null,
-  });
+  const { token } = await openAdminSession(db, { adminId: id });
   return token;
 }
 

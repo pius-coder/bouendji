@@ -19,7 +19,7 @@ import { after, test } from "node:test";
 process.env.RATE_LIMIT_ENFORCE = "1";
 
 const { db, call, closeAll, enrollDevice, seedApp, signProof } = await import("./support.js");
-const { ADMIN_AUDIENCE, MOBILE_AUDIENCE, issueAdminToken } = await import("../src/lib/auth.js");
+const { ADMIN_AUDIENCE, MOBILE_AUDIENCE, openAdminSession } = await import("../src/lib/auth.js");
 const { BUNDLE_PATH } = await import("../src/routes/bundle.js");
 const { purgeExpired } = await import("../src/services/maintenance.js");
 const { decodeJwt, SignJWT } = await import("jose");
@@ -129,11 +129,11 @@ test("audience : un jeton mobile est refusé par les routes d'administration", a
 test("audience : un jeton d'administration est refusé par les routes mobiles", async () => {
   const adminId = `adm_${randomUUID().slice(0, 8)}`;
   await db.query(
-    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role)
-     VALUES ($1, $2, 'x', 'Admin test', 'platform', 'owner')`,
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, must_change_password)
+     VALUES ($1, $2, 'x', 'Admin test', 'platform', 'owner', false)`,
     [adminId, `${adminId}@example.test`],
   );
-  const { token } = await issueAdminToken({ adminId, role: "platform", communityId: null });
+  const { token } = await openAdminSession(db, { adminId });
   assert.equal(decodeJwt(token).aud, ADMIN_AUDIENCE, "le jeton admin porte son audience");
 
   // Contrôle positif : sur sa propre surface, il passe.
@@ -168,8 +168,8 @@ test("audience : le claim est vérifié, pas seulement la clé de signature", as
   // Et l'inverse : clé admin correcte, audience mobile.
   const adminId = `adm_${randomUUID().slice(0, 8)}`;
   await db.query(
-    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role)
-     VALUES ($1, $2, 'x', 'Admin forgé', 'platform', 'owner')`,
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, must_change_password)
+     VALUES ($1, $2, 'x', 'Admin forgé', 'platform', 'owner', false)`,
     [adminId, `${adminId}@example.test`],
   );
   const wrongWay = await forgeToken({ keyPrefix: "admin", audience: MOBILE_AUDIENCE, subject: adminId, typ: "admin" });
