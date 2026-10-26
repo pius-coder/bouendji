@@ -43,12 +43,14 @@ seconde demande de paiement.
 - `POST /v1/admin/communities/:id/payouts` calcule le montant depuis les
   commissions disponibles ; le montant n'est jamais fourni par le client
   (`apps/api/src/routes/admin.ts` ~874-936).
-- `POST /v1/admin/payouts/:id/approve` ne fait que passer
-  `status='approved'` (`admin.ts` ~938-966). **Aucun appel `fapshi.payout()`
-  n'est câblé** : la méthode existe dans `lib/fapshi.ts` mais n'a aucun
-  appelant. Les « routes api-money » citées en commentaire n'existent pas
-  (`apps/api/src/routes/` ne contient pas `money.ts`).
-- Conséquence : aujourd'hui, un versement approuvé **n'envoie pas d'argent**.
+- **Corrigé le 2026-10-26 (audit `audit-api-ops-haiku`)** : `approve` passe
+  `status='approved'`, puis `POST /v1/admin/payouts/:id/pay` appelle
+  `payoutProvider.payout` (`routes/admin.ts:1498`), réel seulement si
+  `PAYMENT_PROVIDER=fapshi` (`lib/fapshi.ts:150`), sinon fournisseur simulé.
+  Risque relevé : si l'écriture de la référence échoue après un virement
+  réussi, le versement repasse `approved` (`admin.ts:1512-1534`) et peut être
+  rejoué ; la protection dépend de l'idempotence `externalId` chez Fapshi
+  (non vérifié).
 
 ## Sens des flux
 

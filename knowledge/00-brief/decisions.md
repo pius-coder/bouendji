@@ -644,3 +644,70 @@ ferme une question ouverte ou un défaut vérifié dans le code.
   en paiement reel reste **bloque** : `BUILD_CALLBACK_SECRET` et
   `FAPSHI_WEBHOOK_SECRET` sont absents, et `PAYMENT_PROVIDER` vaut encore
   `mock` (garde-fou `config.ts` l. 197-214).
+
+- **D113** (2026-10-26) - **Forfait limite = client 3x-ui dedie, coupure a l'epuisement** :
+  le plan limite tourne sur des VM Google Cloud **permanentes** avec 3x-ui. Chaque
+  abonne d'un forfait limite recoit **son propre client VLESS** (lien unique), ce qui
+  permet de suivre son trafic et de couper son acces depuis 3x-ui. Quota epuise :
+  acces coupe et l'app propose directement d'acheter un nouveau forfait (pas de
+  debit reduit, pas de pack data separe). L'illimite reste sur des noeuds
+  ephemeres (liens temporaires, redeployes toutes les 2 a 4 h). Dit par
+  l'utilisateur le 2026-10-26.- **D114** (2026-10-26) - **3x-ui pilote par l'API, sans geste admin** : paiement
+  confirme d'un forfait limite -> l'API cree le client 3x-ui (quota, echeance),
+  suit sa consommation, et l'acces est coupe a l'epuisement. Confirme par
+  l'utilisateur le 2026-10-26.
+- **D115** (2026-10-26) - **Deux familles de forfaits, pas d'illimite seul** :
+  (1) **Limite** = quantite de data fixe (client 3x-ui dedie, D113/D114).
+  (2) **Limite + illimite de nuit** = le meme quota de jour, plus de la data
+  illimitee la nuit sur les serveurs ephemeres. Un serveur illimite vit 4 h :
+  un deploiement a **20 h** (jusqu'a 24 h), un second a **24 h** (jusqu'a 4 h).
+  L'utilisateur choisit sa plage : **20 h-24 h**, **24 h-4 h** ou **20 h-4 h**
+  (les deux deploiements). L'admin de communaute fixe quotas, durees et prix
+  par option ; l'utilisateur choisit sur une **page de paiement** de l'app (a
+  creer) qui affiche le prix. Les abonnes illimites voient la liste des serveurs
+  illimites avec ping ; en cas d'echec, ils demandent un fichier de secours a
+  l'admin (seul cas d'usage). Corrige par l'utilisateur le 2026-10-26.- **D116** (2026-10-26) - **Pas d'email, WhatsApp partout** : une communaute
+  porte un lien de groupe WhatsApp et le numero WhatsApp de l'admin. Pas de
+  reinitialisation de mot de passe par email. L'app affiche au premier lancement
+  un pop-up « Bienvenue sur <nom de l'app> » qui propose de rejoindre la
+  communaute (la plupart des installations viennent du lien de telechargement,
+  sans contact prealable avec l'admin).- **D117** (2026-10-26) - **Libre-service des marques** : chaque admin de
+  communaute cree sa communaute et son application pendant son onboarding et
+  **demande** le build ; l'owner valide, la pipeline construit et depose l'APK
+  sur R2. **Un admin = une seule application.** L'owner voit qui est connecte.
+- **D118** (2026-10-26) - **Connexion par email OU numero WhatsApp** :
+  l'onboarding demande le numero WhatsApp en option, explique son usage par des
+  cartes. Un **guide par role** explique l'usage de la plateforme et les cas
+  documentes dans `knowledge/`.
+- **D119** (2026-10-26) - **Serveurs de nuit deployes a la main, rappel
+  Telegram** : pas de deploiement automatique. Le bot Telegram notifie
+  **plusieurs destinataires** (deux owners + le role deploiement) ; aujourd'hui
+  `config.ts` n'accepte qu'un `TELEGRAM_CHAT_ID`. Le bot doit etre teste de bout
+  en bout. L'utilisateur fournira le jeton du bot et les ID.
+- **D120** (2026-10-26) - **Nouveau role plateforme « Reseau »** (deploiement
+  des serveurs) avec sa propre interface, attribue par l'owner. Les roles
+  plateforme sont cumulables (une personne peut etre owner et reseau).
+- **D121** (2026-10-26) - **Prix plancher** : la plateforme fixe le cout de
+  base du Go et ses marges, d'ou un prix minimum. L'admin de communaute fixe
+  ses prix au-dessus de ce minimum, aide par un **indicateur de prix** qui
+  explique le calcul. La page de paiement est dans l'app, au theme de la marque.- **D122** (2026-10-26) - **API sur Dokku, plus sur Vercel** : Vercel reste
+  pour le dashboard ; l'API reste `vpn-api` sur Dokku (connexions longues pour
+  le SSE). Le `apps/api/vercel.json` n'est plus une cible.
+- **D123** (2026-10-26) - **Deux comptes Google Cloud, deux usages** :
+  (a) un **compte GCP durable** sert **uniquement le forfait limite** : VM(s)
+  permanentes avec 3x-ui, **creees par les owners seuls**, qui enregistrent le
+  lien et l'acces du panneau 3x-ui dans le dashboard (espace Plateforme) ;
+  (b) les **comptes Qwiklabs** servent **uniquement l'illimite de nuit** :
+  nœuds Cloud Run deployes par le role Reseau. Jamais de compte durable pour la
+  nuit. En attendant la VM GCP, les tests 3x-ui se font sur `aura-vps`.
+- **D124** (2026-10-26) - **Cle de deploiement par creneau de nuit** (decide par
+  l'orchestrateur, l'utilisateur ne savait pas) : le membre Reseau ne voit jamais
+  `ENDPOINT_INGEST_SECRET`. Le dashboard lui donne pour chaque creneau une cle a
+  usage unique, valable jusqu'a la fin du creneau, qu'il colle dans Cloud Run ;
+  l'API l'echange a l'enregistrement du nœud. Raison : la valeur reste visible
+  dans la console d'un compte Qwiklabs jetable ; une fuite ne vaut qu'un
+  creneau. Reversible si l'utilisateur prefere le secret global.- **D125** (2026-10-26) - **Aucun tarif code en dur** : cout du Go, cout par
+  plage de nuit, marge plateforme **et plafond de commission** sont saisis par
+  les owners dans le dashboard (Plateforme > Tarifs), sans valeur par defaut
+  dans le code. Le plafond de 30 % actuel (D35) devient une valeur reglable par
+  les owners.
