@@ -27,10 +27,12 @@ process.env.JWT_SECRET = "test-secret-admin-test-secret";
 
 const { createDb } = await import("../src/db.js");
 const { buildApp } = await import("../src/app.js");
-const { issueAdminToken } = await import("../src/lib/auth.js");
+const { openAdminSession } = await import("../src/lib/auth.js");
+const { applyAdminMigrations } = await import("./adminMigrations.js");
 const { encryptSecret } = await import("../src/lib/crypto.js");
 
 const db = await createDb();
+await applyAdminMigrations(db);
 // app.ts est maintenant câblé par l'orchestrateur (registerAdminRoutes y figure) :
 // le test passe par la vraie application, sans greffe locale.
 const app = await buildApp({ db });
@@ -80,8 +82,8 @@ for (const [id, email, platformRole, legacyRole] of [
   [NEWCOM_ADMIN, "newcom-admin@example.com", "none", "partner"],
 ] as const) {
   await db.query(
-    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
-     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $3, $4, $5, true)`,
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active, must_change_password)
+     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $3, $4, $5, true, false)`,
     [id, email, id.replace("adm_", "Compte "), legacyRole, platformRole],
   );
 }
@@ -214,7 +216,7 @@ async function tokenFor(adminId: string): Promise<string> {
   // conservé pour ne pas changer le format, mais `requireAdmin` ne le lit pas :
   // les rôles viennent de la base.
   const legacyRole = adminId === OWNER ? "platform" : "partner";
-  const { token } = await issueAdminToken({ adminId, role: legacyRole, communityId: null });
+  const { token } = await openAdminSession(db, { adminId });
   return token;
 }
 

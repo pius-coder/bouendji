@@ -350,8 +350,8 @@ test("admin HTTP : clé d'accès puis mot de passe puis JWT admin", async () => 
   const email = `${adminId}@example.test`;
   const password = "MotDePasse-Admin-E2E-2026";
   await db.query(
-    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
-     VALUES ($1, $2, $3, 'Owner E2E', 'platform', 'owner', true)`,
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active, must_change_password)
+     VALUES ($1, $2, $3, 'Owner E2E', 'platform', 'owner', true, false)`,
     [adminId, email, hashPassword(password)],
   );
 
