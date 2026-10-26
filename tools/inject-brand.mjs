@@ -156,6 +156,27 @@ function validated(spec) {
     out[field] = link.toString();
   }
 
+  // Numéro WhatsApp de contact de la communauté : facultatif, chiffres seuls
+  // (+ en tête accepté). L'API le normalise déjà ; on refait la règle ici.
+  const contactWhatsapp = String(spec.contactWhatsapp ?? "").replace(/[\s-]/g, "");
+  if (contactWhatsapp && !/^\+?\d{8,15}$/.test(contactWhatsapp)) {
+    die("contactWhatsapp : 8 à 15 chiffres, + facultatif en tête");
+  }
+  out.contactWhatsapp = contactWhatsapp;
+
+  // Référence du logo : URL https, ou clé R2 relative (ex. brands/marque/logo.png).
+  // Le fichier lui-même n'est pas lu ici : la référence est écrite dans
+  // brand.properties pour que la pipeline sache quoi récupérer.
+  const logoRef = String(spec.logoRef ?? "").trim();
+  if (logoRef) {
+    const isHttps = logoRef.startsWith("https://");
+    const isKey = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,511}$/.test(logoRef) && !logoRef.includes("..");
+    if (logoRef.length > 512 || /[\u0000-\u001f\u007f]/.test(logoRef) || (!isHttps && !isKey)) {
+      die("logoRef : URL https ou clé R2 relative attendue");
+    }
+  }
+  out.logoRef = logoRef;
+
   const locale = (spec.defaultLocale ?? "fr").toLowerCase();
   if (!/^[a-z]{2}$/.test(locale)) die("defaultLocale doit être deux lettres minuscules");
   out.defaultLocale = locale;
@@ -219,6 +240,8 @@ function writeBrandProperties(path, brand) {
     `versionCode=${brand.versionCode}`,
     `versionName=${brand.versionName}`,
     `theme=${brand.theme}`,
+    `contactWhatsapp=${brand.contactWhatsapp}`,
+    `logoRef=${brand.logoRef}`,
     "",
   ];
   writeFileSync(path, lines.join("\n"), "utf8");

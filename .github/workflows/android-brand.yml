@@ -7,8 +7,14 @@ name: android-brand
 # l'admin remet à ses utilisateurs.
 #
 # Déclencheurs :
-#   - workflow_dispatch : le dashboard (ou un humain) fournit le manifeste ;
+#   - workflow_dispatch : l'API le déclenche après validation de l'owner (D117),
+#     ou un humain le lance à la main ;
 #   - push d'un manifeste sous tools/brands/*.json : build de cette marque.
+#     Un push qui ne touche que ce fichier de workflow ne construit RIEN.
+#
+# Callbacks (D66) : `running` au démarrage, `succeeded` à la fin, `failed` si
+# une étape échoue. L'API ignore les rapports qui arrivent après un état
+# terminal (garde de transition côté routes/builds.ts).
 
 on:
   workflow_dispatch:
@@ -24,7 +30,6 @@ on:
   push:
     paths:
       - "tools/brands/*.json"
-      - ".github/workflows/android-brand.yml"
 
 permissions:
   contents: read
@@ -60,12 +65,19 @@ jobs:
           fi
           # Push : les manifestes modifiés par ce commit (hors exemple).
           CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'tools/brands/*.json' | grep -v '_example.json' || true)
-          if [ -z "$CHANGED" ]; then CHANGED="tools/brands/bouendji.json"; fi
+          # Aucun manifeste modifié : aucun build. (Plus de repli sur bouendji.json,
+          # qui publiait une APK de production à chaque push du workflow.)
+          if [ -z "$CHANGED" ]; then
+            echo "Aucun manifeste modifié : aucun build."
+            echo "list=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           LIST=$(printf '%s\n' $CHANGED | node -e 'const l=require("fs").readFileSync(0,"utf8").trim().split("\n").filter(Boolean);console.log(JSON.stringify(l))')
           echo "list=$LIST" >> "$GITHUB_OUTPUT"
 
   build:
     needs: specs
+    if: ${{ needs.specs.outputs.list != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -111,6 +123,19 @@ jobs:
           echo "$PKG$VN$VC" | grep -Eq '^[A-Za-z0-9._+-]+$' || { echo "package ou version non sûrs"; exit 1; }
           echo "pkg=$PKG" >> "$GITHUB_OUTPUT"
           echo "artifact=${PKG}-${VN}-${VC}.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Signaler le démarrage au backend
+        if: ${{ inputs.build_callback_url != '' }}
+        # Informatif : une API injoignable au démarrage ne doit pas tuer le build.
+        continue-on-error: true
+        env:
+          URL: ${{ inputs.build_callback_url }}
+          TOKEN: ${{ secrets.BUILD_CALLBACK_TOKEN }}
+        run: |
+          set -euo pipefail
+          BODY=$(node -e 'console.log(JSON.stringify({status:"running",runId:process.env.GITHUB_RUN_ID}))')
+          curl --fail --silent --show-error -X POST "$URL" \
+            -H "authorization: Bearer $TOKEN" -H "content-type: application/json" --data "$BODY"
 
       - name: Injecter la marque
         env:
@@ -220,7 +245,6 @@ jobs:
 
       - name: Signaler au backend
         if: ${{ inputs.build_callback_url != '' }}
-        continue-on-error: true
         env:
           URL: ${{ inputs.build_callback_url }}
           TOKEN: ${{ secrets.BUILD_CALLBACK_TOKEN }}
@@ -229,5 +253,18 @@ jobs:
         run: |
           set -euo pipefail
           BODY=$(node -e 'console.log(JSON.stringify({status:"succeeded",sha256:process.env.SHA,apkUrl:process.env.APK_URL,runId:process.env.GITHUB_RUN_ID}))')
+          curl --fail --silent --show-error -X POST "$URL" \
+            -H "authorization: Bearer $TOKEN" -H "content-type: application/json" --data "$BODY"
+
+      - name: Signaler l'échec au backend
+        # Dernière étape : elle ne s'exécute que si une étape précédente a échoué.
+        # Sans elle, le build reste `queued` ou `running` pour toujours.
+        if: ${{ failure() && inputs.build_callback_url != '' }}
+        env:
+          URL: ${{ inputs.build_callback_url }}
+          TOKEN: ${{ secrets.BUILD_CALLBACK_TOKEN }}
+        run: |
+          set -euo pipefail
+          BODY=$(node -e 'console.log(JSON.stringify({status:"failed",runId:process.env.GITHUB_RUN_ID}))')
           curl --fail --silent --show-error -X POST "$URL" \
             -H "authorization: Bearer $TOKEN" -H "content-type: application/json" --data "$BODY"
