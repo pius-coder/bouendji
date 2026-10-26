@@ -5,6 +5,7 @@ import { createDb } from "./db.js";
 import { sweepEndpoints } from "./services/endpoints.js";
 import { purgeExpired, purgedTotal } from "./services/maintenance.js";
 import { checkPoolExpiry, newPoolWatchState } from "./services/poolWatch.js";
+import { startXuiWorker } from "./services/xuiWorker.js";
 
 /**
  * Process entrypoint.
@@ -36,6 +37,7 @@ const logger: FastifyServerOptions["logger"] = env.isProduction
 const db = await createDb();
 const app = await buildApp({ db, logger });
 const poolWatch = newPoolWatchState();
+startXuiWorker(db, app.log); // forfait limité 3x-ui (D113/D114) : tâche de fond, sous verrou consultatif
 
 if (env.ingest.secret.length === 0) {
   app.log.warn("ENDPOINT_INGEST_SECRET est vide : /v1/internal/* répondra 503 (ingestion fermée).");

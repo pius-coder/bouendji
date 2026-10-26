@@ -322,7 +322,10 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
     summary: "Récupérer la liste de configurations",
     description:
       "Renvoie une enveloppe **chiffrée** : aucun hôte, aucun UUID, aucun `vless://` en clair. " +
-      "Le client l'ouvre en mémoire avec sa clé d'accord. Un `If-None-Match` à jour reçoit 304, sauf si l'enveloppe en cache est expirée.",
+      "Le client l'ouvre en mémoire avec sa clé d'accord. Un `If-None-Match` à jour reçoit 304, sauf si l'enveloppe en cache est expirée. " +
+      "Format des configurations (une fois ouvertes) : `id`, `label`, `uri`, `expiresAt`, `region`, `maxSessionSeconds`, et `startsAt` (ISO 8601) " +
+      "**uniquement** sur les nœuds de nuit d'un forfait `limited_night` (début du créneau acheté). Un forfait limité reçoit une seule configuration, " +
+      "le client 3x-ui dédié de l'abonné (`id` = `xui-<subscriptionId>`), jamais un credential partagé. Forfait limité épuisé ou expiré : liste vide.",
     tags: ["bundle"],
     security: DEVICE_SECURITY,
     headers: { type: "object", properties: { "if-none-match": str("ETag du bundle précédent.") } },
@@ -1077,6 +1080,108 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
     params: PARAM_APP_ID,
     body: { type: "object", additionalProperties: false, required: ["mime", "data"], properties: { mime: { type: "string", enum: ["image/png", "image/svg+xml"] }, data: str("Contenu en base64.") } },
     response: withErrors({ 200: jsonResponse("Logo enregistré.", { properties: { appId: str("Application."), logoKey: str("Clé de stockage."), sha256: str("Empreinte SHA-256.") } }), 422: errorResponse("Logo refusé (type, taille ou contenu).") }),
+  },
+
+  /* ---------------------------------------------- serveurs 3x-ui (lot R7) */
+
+  "GET /v1/admin/xui/servers": {
+    summary: "Lister les serveurs 3x-ui (forfait limité)",
+    description: "Propriétaire seul. Le jeton n'est jamais renvoyé : seulement `tokenSet`.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    response: withErrors({
+      200: jsonResponse("Serveurs.", {
+        properties: {
+          servers: arrayOf(
+            shape({
+              id: str("Serveur."),
+              label: str("Libellé."),
+              panelUrl: str("Racine du panneau, chemin de base compris."),
+              inboundId: int("Inbound des clients."),
+              capacity: int("Clients maximum."),
+              active: { type: "boolean", description: "Attribution et lecture du trafic." },
+              publicHost: str("Hôte public de la VM dans l'URI VLESS."),
+              publicPort: int("Port public."),
+              security: str("`tls` ou `none`."),
+              sni: str("SNI, facultatif."),
+              wsPath: str("Chemin WebSocket."),
+              wsHost: str("En-tête Host, facultatif."),
+              tokenSet: { type: "boolean", description: "Un jeton est scellé (jamais renvoyé)." },
+              assigned: int("Abonnements rattachés."),
+              createdAt: str("Création.", { format: "date-time" }),
+            }),
+            "Serveurs.",
+          ),
+        },
+      }),
+    }),
+  },
+
+  "POST /v1/admin/xui/servers": {
+    summary: "Ajouter un serveur 3x-ui",
+    description: "Le jeton est scellé avec MASTER_KEY à l'écriture. Propriétaire seul.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    body: {
+      type: "object",
+      additionalProperties: false,
+      required: ["label", "panelUrl", "apiToken", "inboundId", "publicHost", "wsPath"],
+      properties: {
+        label: str("Libellé.", { minLength: 2, maxLength: 80 }),
+        panelUrl: str("Racine du panneau, chemin de base compris.", { maxLength: 300 }),
+        apiToken: str("Jeton Bearer du panneau (scope admin).", { minLength: 16, maxLength: 300 }),
+        inboundId: int("Inbound des clients.", { minimum: 1 }),
+        capacity: int("Clients maximum (défaut 100).", { minimum: 1, maximum: 5000 }),
+        publicHost: str("Hôte public de la VM.", { minLength: 3, maxLength: 253 }),
+        publicPort: int("Port public (défaut 443).", { minimum: 1, maximum: 65535 }),
+        security: { type: "string", enum: ["tls", "none"], description: "Sécurité de l'URI." },
+        sni: str("SNI, facultatif.", { maxLength: 253 }),
+        wsPath: str("Chemin WebSocket, commence par `/`.", { maxLength: 200 }),
+        wsHost: str("En-tête Host, facultatif.", { maxLength: 253 }),
+      },
+    },
+    response: withErrors({ 201: jsonResponse("Serveur créé (même forme que la liste).", { properties: { server: shape({ id: str("Serveur.") }) } }) }),
+  },
+
+  "PATCH /v1/admin/xui/servers/:serverId": {
+    summary: "Modifier ou désactiver un serveur 3x-ui",
+    description: "`active: false` retire le serveur de l'attribution et de la lecture du trafic. Les clients déjà créés ne sont pas coupés. Propriétaire seul.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    params: { type: "object", required: ["serverId"], properties: { serverId: str("Serveur.") } },
+    body: {
+      type: "object",
+      additionalProperties: false,
+      description: "Au moins un champ. Mêmes contraintes que la création.",
+      properties: {
+        label: str("Libellé."),
+        panelUrl: str("Racine du panneau."),
+        apiToken: str("Nouveau jeton (remplace le scellé)."),
+        inboundId: int("Inbound."),
+        capacity: int("Clients maximum."),
+        active: { type: "boolean", description: "Activation." },
+        publicHost: str("Hôte public."),
+        publicPort: int("Port public."),
+        security: { type: "string", enum: ["tls", "none"] },
+        sni: str("SNI ou null."),
+        wsPath: str("Chemin WebSocket."),
+        wsHost: str("En-tête Host ou null."),
+      },
+    },
+    response: withErrors({ 200: jsonResponse("Serveur modifié.", { properties: { server: shape({ id: str("Serveur.") }) } }) }),
+  },
+
+  "POST /v1/admin/xui/servers/:serverId/test": {
+    summary: "Tester la connexion au panneau 3x-ui",
+    description: "Vérifie le jeton et l'inbound. Répond 200 dans les deux cas : `ok` dit le résultat, le message ne contient ni jeton ni chemin de base. Propriétaire seul.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    params: { type: "object", required: ["serverId"], properties: { serverId: str("Serveur.") } },
+    response: withErrors({
+      200: jsonResponse("Résultat du test.", {
+        properties: { ok: { type: "boolean", description: "Connexion réussie." }, message: str("Message lisible."), inboundRemark: str("Nom de l'inbound, si connu.") },
+      }),
+    }),
   },
 };
 

@@ -20,7 +20,14 @@ import { env } from "../config.js";
 import type { Database, Queryable, Row } from "../db.js";
 import { newId, sealForDevice, sha256Hex, type SealedEnvelope } from "../lib/crypto.js";
 import { fail } from "../lib/errors.js";
+import { loadEntitlement } from "../routes/me.js";
 import { endpointToConfig, poolRevision, servedEndpoints } from "./endpoints.js";
+import {
+  latestLimitedSubscription,
+  loadLimitedSubscription,
+  nightRowsFor,
+  xuiLeadConfig,
+} from "./xui.js";
 
 const PREFIX = "vpn-offline-v1";
 
@@ -115,26 +122,61 @@ export async function issueOfflineBundle(
   if (device.user_id !== input.userId) throw fail.forbidden("Cet appareil n'appartient pas à cet utilisateur.");
   if (device.status === "revoked") throw fail.deviceRevoked();
 
-  const rows = await servedEndpoints(db, 12);
-  if (rows.length === 0) throw fail.conflict("Aucun nœud actif : un fichier hors-ligne ne servirait à rien.");
+  /*
+   * Forfait limité : le fichier porte le client 3x-ui dédié (et les nœuds de nuit
+   * de la plage achetée), jamais le pool partagé. Abonnement limité épuisé ou
+   * expiré : rien à émettre.
+   */
+  const { subscription, entitlement } = await loadEntitlement(db, input.userId);
+  const limited =
+    entitlement.active && subscription
+      ? await loadLimitedSubscription(db, subscription.id)
+      : await latestLimitedSubscription(db, input.userId);
+  if (limited && (!entitlement.active || limited.exhausted)) {
+    throw fail.conflict("Abonnement limité épuisé ou expiré : aucun fichier hors-ligne.");
+  }
+  const lead = limited ? await xuiLeadConfig(db, limited) : null;
+  if (limited && !lead) throw fail.conflict("Le client de cet abonnement n'est pas encore prêt côté serveur.");
+  const night =
+    limited?.family === "limited_night" && limited.nightWindow
+      ? await nightRowsFor(db, limited.nightWindow, env.ingest.drainLeadSeconds)
+      : null;
+  const rows = limited ? (night?.rows ?? []) : await servedEndpoints(db, entitlement.endpointTier);
+  if (!lead && rows.length === 0) {
+    throw fail.conflict("Aucun nœud actif : un fichier hors-ligne ne servirait à rien.");
+  }
 
   const revision = await poolRevision(db);
   const maxSessionSeconds = env.ingest.reconnectAfterSeconds;
-  const configs = rows.map((row) => {
-    const config = endpointToConfig(row);
-    return {
-      id: config.id,
-      label: config.label,
-      uri: config.uri,
-      expiresAt: config.expiresAt,
-      region: config.region,
-      maxSessionSeconds,
-    };
-  });
+  const configs = [
+    ...(lead ? [{ ...lead, maxSessionSeconds }] : []),
+    ...rows.map((row) => {
+      const config = endpointToConfig(row);
+      const startsAt = night?.startsAt.get(row.id);
+      return {
+        id: config.id,
+        label: config.label,
+        uri: config.uri,
+        expiresAt: config.expiresAt,
+        region: config.region,
+        maxSessionSeconds,
+        // Présent seulement sur les nœuds de nuit : même règle que le bundle.
+        ...(startsAt ? { startsAt } : {}),
+      };
+    }),
+  ];
 
   const now = new Date();
   const ttl = Math.max(5, Math.min(input.ttlMinutes ?? env.offline.ttlMinutes, 24 * 60));
-  const notAfter = new Date(now.getTime() + ttl * 60_000);
+  // Un fichier ne survit jamais à la fin des droits (D115 : la plage achetée).
+  let notAfter = new Date(now.getTime() + ttl * 60_000);
+  if (entitlement.active && entitlement.endsAt) {
+    const endsAt = new Date(entitlement.endsAt);
+    if (endsAt.getTime() < notAfter.getTime()) notAfter = endsAt;
+  }
+  if (notAfter.getTime() <= now.getTime()) {
+    throw fail.conflict("L'abonnement se termine trop tôt pour un fichier hors-ligne.");
+  }
   const bundleId = newId();
   const issuedAt = now.toISOString();
 
