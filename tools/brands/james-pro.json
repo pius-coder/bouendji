@@ -1,0 +1,17 @@
+{
+  "_comment": "Marque de la communauté James Pro (prod). Créée le 2026-10-26 : nom = nom de la communauté, thème tiré au hasard, pas encore de logo ni de WhatsApp.",
+  "theme": "otaku",
+  "appName": "James Pro",
+  "packageName": "cm.bouendji.jamespro",
+  "apiBaseUrl": "https://api.numzer0.store",
+  "appId": "d73f4abe-38eb-45a9-9294-9da021e412a8",
+  "supportUrl": "mailto:support@henshins.online",
+  "accent": null,
+  "offlineBundleSigningKeyB64": "MCowBQYDK2VwAyEADpJiokJbnFPbgtdSPuweH+T6TpmP9TnY0i2lruG7KtQ=",
+  "memberWord": "",
+  "communityWhatsappUrl": "",
+  "communityTelegramUrl": "",
+  "defaultLocale": "fr",
+  "versionCode": 1,
+  "versionName": "1.0.0"
+}

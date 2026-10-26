@@ -1,0 +1,17 @@
+{
+  "_comment": "Marque de la communauté Teste (prod). Créée le 2026-10-26 : nom = nom de la communauté, thème tiré au hasard, pas encore de logo ni de WhatsApp.",
+  "theme": "otaku",
+  "appName": "Teste",
+  "packageName": "cm.bouendji.test",
+  "apiBaseUrl": "https://api.numzer0.store",
+  "appId": "cb6dbc5e-4cc3-4dc0-8c06-d2ae4cfa94a9",
+  "supportUrl": "mailto:support@henshins.online",
+  "accent": null,
+  "offlineBundleSigningKeyB64": "MCowBQYDK2VwAyEADpJiokJbnFPbgtdSPuweH+T6TpmP9TnY0i2lruG7KtQ=",
+  "memberWord": "",
+  "communityWhatsappUrl": "",
+  "communityTelegramUrl": "",
+  "defaultLocale": "fr",
+  "versionCode": 1,
+  "versionName": "1.0.0"
+}

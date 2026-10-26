@@ -1,0 +1,17 @@
+{
+  "_comment": "Marque de la communauté NevVPN (prod). Créée le 2026-10-26 : nom = nom de la communauté, thème tiré au hasard, pas encore de logo ni de WhatsApp.",
+  "theme": "vector",
+  "appName": "NevVPN",
+  "packageName": "cm.bouendji.nevpn",
+  "apiBaseUrl": "https://api.numzer0.store",
+  "appId": "ce57954c-922f-455c-a210-a7b737e892d5",
+  "supportUrl": "mailto:support@henshins.online",
+  "accent": null,
+  "offlineBundleSigningKeyB64": "MCowBQYDK2VwAyEADpJiokJbnFPbgtdSPuweH+T6TpmP9TnY0i2lruG7KtQ=",
+  "memberWord": "",
+  "communityWhatsappUrl": "",
+  "communityTelegramUrl": "",
+  "defaultLocale": "fr",
+  "versionCode": 1,
+  "versionName": "1.0.0"
+}
