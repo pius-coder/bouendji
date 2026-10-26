@@ -39,8 +39,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # L'archive et son empreinte sont publiées ensemble par le workflow `libbox`.
   LIBBOX_TAG: libbox-1.14.3
-  LIBBOX_SHA256: 749de4e7bb5f21c9f5fc734c58a3ea93c9352183461af40ab8c1d565cb9f450c
   R2_PUBLIC_BASE: https://apps.numzer0.store
 
 jobs:
@@ -160,11 +160,12 @@ jobs:
           set -euo pipefail
           mkdir -p apps/android/app/libs
           for i in 1 2 3; do
-            gh release download "$LIBBOX_TAG" --repo "$GITHUB_REPOSITORY" --pattern libbox.aar --dir apps/android/app/libs --clobber && break
-            [ "$i" = 3 ] && { echo "::error::libbox.aar introuvable dans la Release $LIBBOX_TAG"; exit 1; }
+            gh release download "$LIBBOX_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'libbox.aar*' --dir apps/android/app/libs --clobber && break
+            [ "$i" = 3 ] && { echo "::error::libbox.aar introuvable dans la Release $LIBBOX_TAG (lancer le workflow libbox)"; exit 1; }
             sleep 5
           done
-          echo "$LIBBOX_SHA256  apps/android/app/libs/libbox.aar" | sha256sum -c -
+          echo "$(cat apps/android/app/libs/libbox.aar.sha256)  apps/android/app/libs/libbox.aar" | sha256sum -c -
+          rm apps/android/app/libs/libbox.aar.sha256
           unzip -l apps/android/app/libs/libbox.aar | grep -q 'jni/arm64-v8a/libbox.so'
           ls -la apps/android/app/libs/libbox.aar
 

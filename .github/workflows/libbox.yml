@@ -1,0 +1,111 @@
+name: libbox
+
+# Compile `libbox.aar` (moteur sing-box) sur GitHub et le dépose dans la Release
+# `libbox-<version>`, où le workflow `android-brand` le télécharge.
+#
+# Même recette que `tools/build-libbox.ps1` (Makefile de sing-box) :
+#   go install github.com/sagernet/gomobile/cmd/{gomobile,gobind}@v0.1.13
+#   go run ./cmd/internal/build_libbox -target android -platform android/arm64
+#
+# Pourquoi ici : la machine de développement ne peut pas télécharger le NDK et
+# les modules Go (réseau coupé sur les gros transferts). Lancé à la main, une
+# fois par version de sing-box.
+#
+# L'empreinte SHA-256 est publiée à côté (`libbox.aar.sha256`) ; `android-brand`
+# la vérifie. Un build gomobile n'est pas reproductible octet pour octet : la
+# valeur change à chaque recompilation, d'où le fichier plutôt qu'une constante.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version de sing-box (tag)"
+        required: true
+        default: "v1.14.3"
+        type: string
+  # Le fichier n est pas encore sur la branche par défaut : workflow_dispatch ne
+  # le voit pas. Un push qui modifie ce fichier lance donc la compilation.
+  push:
+    paths:
+      - ".github/workflows/libbox.yml"
+
+env:
+  VERSION: ${{ inputs.version || 'v1.14.3' }}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Sources sing-box
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: SagerNet/sing-box
+          ref: ${{ env.VERSION }}
+          path: sing-box
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: sing-box/go.mod
+          cache: false
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: gomobile et gobind
+        run: |
+          set -euo pipefail
+          go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.13
+          go install github.com/sagernet/gomobile/cmd/gobind@v0.1.13
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: NDK
+        run: |
+          set -euo pipefail
+          # build_shared/findNDK lit $ANDROID_HOME/ndk/<version>/source.properties.
+          ls "$ANDROID_HOME/ndk" || true
+          NDK_DIR=$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -z "$NDK_DIR" ] || [ ! -f "$NDK_DIR/source.properties" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.2.12479018" > /dev/null
+            NDK_DIR="$ANDROID_HOME/ndk/27.2.12479018"
+          fi
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "NDK=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "NDK : $NDK_DIR"
+
+      - name: Compiler libbox
+        working-directory: sing-box
+        run: |
+          set -euo pipefail
+          java --version
+          go run ./cmd/internal/build_libbox -target android -platform android/arm64
+          ls -la libbox*.aar
+
+      - name: Vérifier l'archive
+        working-directory: sing-box
+        run: |
+          set -euo pipefail
+          # Un .aar sans jni/arm64-v8a se compile dans l'app et plante au démarrage.
+          unzip -l libbox.aar | grep -q 'jni/arm64-v8a/libbox.so'
+          sha256sum libbox.aar | cut -d' ' -f1 > libbox.aar.sha256
+          echo "sha256=$(cat libbox.aar.sha256)"
+          echo "### libbox ${{ env.VERSION }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- sha256 : \`$(cat libbox.aar.sha256)\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Déposer dans la Release
+        working-directory: sing-box
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: libbox-${{ env.VERSION }}
+        run: |
+          set -euo pipefail
+          TAG="${TAG/libbox-v/libbox-}"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "libbox ${{ env.VERSION }} (arm64-v8a)" \
+              --notes "libbox.aar construit par le workflow libbox (sing-box ${{ env.VERSION }}, gomobile v0.1.13). Licence GPL-3.0-or-later."
+          gh release upload "$TAG" libbox.aar libbox.aar.sha256 --repo "$GITHUB_REPOSITORY" --clobber
