@@ -1,8 +1,8 @@
 /**
  * Fiches de détail, recherche et résumé d'accueil (lot R3).
  *
- * Vrai `buildApp`, vraie base PGlite, jetons admin signés par `issueAdminToken`,
- * rôles relus en base. Ce que ces tests pincent :
+ * Vrai `buildApp`, vraie base PGlite, jetons admin issus de sessions R1
+ * (`openAdminSession`), rôles relus en base. Ce que ces tests pincent :
  * - chaque fiche suit le périmètre (403 hors communauté, jamais 404) ;
  * - les montants disparaissent pour `support` (compteurs seulement) ;
  * - `finance` lit commandes et commissions de sa communauté, pas d'ailleurs ;
@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
 import { call, closeAll, db } from "./support.js";
-import { issueAdminToken } from "../src/lib/auth.js";
+import { openAdminSession } from "../src/lib/auth.js";
 import { up as migrateR3Indexes } from "../src/migrations/030_admin_detail_indexes.js";
 
 after(async () => {
@@ -41,8 +41,8 @@ for (const [id, platformRole] of [
   [ADMIN_B, "none"],
 ] as const) {
   await db.query(
-    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
-     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $3, 'partner', $4, true)`,
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active, must_change_password)
+     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $3, 'partner', $4, true, false)`,
     [id, `${id}@example.com`, id.replace("rd_", "Compte "), platformRole],
   );
 }
@@ -183,7 +183,9 @@ await db.query(
 
 const tokens: Record<string, string> = {};
 for (const id of [OWNER, ADMIN_A, SUPPORT_A, FINANCE_A, ADMIN_B]) {
-  const { token } = await issueAdminToken({ adminId: id, role: "partner", communityId: null });
+  // R1 : un jeton admin ouvre une session révocable ; le drapeau « mot de
+  // passe à changer » est posé à false dans la graine.
+  const { token } = await openAdminSession(db, { adminId: id });
   tokens[id] = token;
 }
 

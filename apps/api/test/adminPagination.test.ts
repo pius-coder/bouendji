@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
 import { call, closeAll, db } from "./support.js";
-import { issueAdminToken } from "../src/lib/auth.js";
+import { openAdminSession } from "../src/lib/auth.js";
 
 after(async () => {
   await closeAll();
@@ -30,8 +30,8 @@ for (const [id, platformRole] of [
   [FINANCE_A, "none"],
 ] as const) {
   await db.query(
-    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
-     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $1, 'partner', $3, true)`,
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active, must_change_password)
+     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $1, 'partner', $3, true, false)`,
     [id, `${id}@example.com`, platformRole],
   );
 }
@@ -115,7 +115,8 @@ for (let i = 1; i <= 5; i++) {
 
 const tokens: Record<string, string> = {};
 for (const id of [OWNER, ADMIN_A, FINANCE_A]) {
-  tokens[id] = (await issueAdminToken({ adminId: id, role: "partner", communityId: null })).token;
+  // R1 : un jeton admin ouvre une session révocable.
+  tokens[id] = (await openAdminSession(db, { adminId: id })).token;
 }
 
 async function adminCall(method: "GET", url: string, as: string) {
