@@ -33,6 +33,8 @@ export const plan = z.object({
   sortOrder: z.number(),
   endpointTier: endpointTier,
   revision: z.number().int(),
+  /** R6/D127 : `limited`, `limited_night` ou `custom` (offre sur mesure, réglée à part). */
+  family: z.string().optional(),
 });
 export type Plan = z.infer<typeof plan>;
 

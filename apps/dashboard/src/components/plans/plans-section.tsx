@@ -7,6 +7,7 @@ import { can } from "@/lib/roles";
 import { getMe, withSession } from "@/server/context";
 import { getServices } from "@/server/services";
 import { AppPlansRows } from "./app-plans-table";
+import { CustomOfferCard } from "./custom-offer-card";
 import { PLAN_COLUMNS } from "./plans-columns";
 import { PlanSheet } from "./plan-sheet";
 
@@ -50,6 +51,9 @@ export async function PlansSection({ params }: { params: Promise<{ communityId: 
               Marque incomplète. À renseigner avant un build : {app.brandMissing.map((m) => MISSING_LABELS[m] ?? m).join(", ")}.
             </p>
           ) : null}
+          <Suspense fallback={<div className="h-32 animate-pulse rounded-2xl border border-border bg-muted/40" />}>
+            <CustomOfferCard appId={app.id} canManage={canManage} />
+          </Suspense>
           <TableCard label={`Forfaits de ${app.name}`} columns={PLAN_COLUMNS} footer={<UpdatedAt />}>
             <Suspense fallback={<TableRowsSkeleton columns={PLAN_COLUMNS} rows={3} />}>
               <AppPlansRows appId={app.id} canManage={canManage} />

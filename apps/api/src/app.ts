@@ -29,6 +29,7 @@ import { registerOrderRoutes } from "./routes/orders.js";
 import { registerPaymentRoutes } from "./routes/payments.js";
 import { registerTelemetryRoutes } from "./routes/telemetry.js";
 import { registerPricingRoutes } from "./routes/pricing.js";
+import { registerAdminCustomOfferRoutes } from "./routes/adminCustomOffer.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -319,6 +320,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerBuildRoutes(app, db);
   registerOfflineRoutes(app, db);
   registerAdminDetailRoutes(app, db);
+  registerAdminCustomOfferRoutes(app, db);
   await registerOpenApiReference(app);
 
   return app;

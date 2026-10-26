@@ -63,7 +63,7 @@ async function enqueueCreates(q: Queryable): Promise<void> {
     `SELECT s.id
        FROM subscriptions s
        JOIN plans p ON p.id = s.plan_id
-      WHERE p.family IN ('limited', 'limited_night')
+      WHERE p.family IN ('limited', 'limited_night', 'custom')
         AND s.status = 'active'
         AND s.ends_at > now()
         AND s.exhausted_at IS NULL

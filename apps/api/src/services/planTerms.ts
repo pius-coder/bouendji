@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { Queryable, Row } from "../db.js";
 import { fail } from "../lib/errors.js";
 import { PLAN_FAMILIES, NIGHT_WINDOWS, type NightWindow, type PlanFamily } from "./pricing.js";
+import { customTermsSql } from "./customOffer.js";
 
 export interface NightOptionInput {
   window: NightWindow;
@@ -75,7 +76,8 @@ export function planTermsSql(alias: string, prefix = ""): string {
           ${alias}.endpoint_tier AS ${prefix}endpoint_tier,
           COALESCE((SELECT jsonb_agg(jsonb_build_object('night_window', n.night_window, 'price_xaf', n.price_xaf, 'active', n.active)
                                      ORDER BY n.night_window)
-                      FROM plan_night_options n WHERE n.plan_id = ${alias}.id), '[]'::jsonb) AS ${prefix}night_options`;
+                      FROM plan_night_options n WHERE n.plan_id = ${alias}.id), '[]'::jsonb) AS ${prefix}night_options,
+          ${customTermsSql(alias, prefix)}`;
 }
 
 export interface NightOptionRow {
@@ -95,13 +97,13 @@ export function activeNightOptions(raw: unknown): { window: NightWindow; priceXa
 
 /** DTO admin et catalogue : famille, quota et toutes les options (actives ou non). */
 export function planTermsDto(row: Row): {
-  family: PlanFamily;
+  family: PlanFamily | "custom";
   quotaBytes: number | null;
   nightOptions: { window: NightWindow; priceXaf: number; active: boolean }[];
 } {
   const list = Array.isArray(row.night_options) ? (row.night_options as NightOptionRow[]) : [];
   return {
-    family: row.family === "limited_night" ? "limited_night" : "limited",
+    family: row.family === "limited_night" ? "limited_night" : row.family === "custom" ? "custom" : "limited",
     quotaBytes: row.quota_bytes === null || row.quota_bytes === undefined ? null : Number(row.quota_bytes),
     nightOptions: list
       .map((option) => ({

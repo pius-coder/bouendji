@@ -711,3 +711,22 @@ ferme une question ouverte ou un défaut vérifié dans le code.
   les owners dans le dashboard (Plateforme > Tarifs), sans valeur par defaut
   dans le code. Le plafond de 30 % actuel (D35) devient une valeur reglable par
   les owners.
+- **D126** (2026-10-26) - **Priorite : livrer les APK aujourd'hui.** La refonte
+  du dashboard (vague 2) est suspendue ; on garde les ecrans existants et on
+  n'ajoute que ce qui sert a vendre. Travail fait par l'orchestrateur seul,
+  **sans sous-agent** (demande explicite de l'utilisateur).
+- **D127** (2026-10-26) - **Forfait sur mesure (type MyWay) remplace les anciens
+  forfaits limites.** L'abonne choisit la data (Go) et la duree (jours) par
+  curseurs. L'admin saisit un prix par Go a 1 jour et un prix par Go a 30 jours ;
+  interpolation lineaire entre les deux ; prix = Go x prix/Go(duree), arrondi
+  au multiple de 50 FCFA superieur ; bornes des curseurs reglees par l'admin ;
+  jamais sous le plancher owner (D121). **Le prix est calcule par le serveur.**
+  L'illimite de nuit reste une option ajoutee par-dessus. Aucun chiffre par
+  defaut dans le code (D125).
+- **D128** (2026-10-26) - **APK compilees uniquement sur GitHub Actions**, pour
+  toutes les communautes en prod, deposees sur R2. Une **seule cle de
+  signature** pour toutes les marques (secret GitHub + sauvegarde chez
+  l'utilisateur). Accord donne pour pousser la branche et deployer l'API en prod
+  avec migrations ; les secrets (Fapshi reel, R2, keystore) sont poses par
+  l'utilisateur lui-meme. Aucune APK distribuee avant un test reel sur le
+  Pixel 8 (tunnel + petit paiement).

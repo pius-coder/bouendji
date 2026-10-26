@@ -6,7 +6,8 @@ import { PLAN_COLUMNS, planCells } from "./plans-columns";
 
 /** Lignes des forfaits d'une marque (seule partie suspendue de la carte). */
 export async function AppPlansRows({ appId, canManage }: { appId: string; canManage: boolean }) {
-  const plans = await withSession(() => getServices().plans.listPlans({ appId }));
+  // L'offre sur mesure a sa propre carte (`CustomOfferCard`) : elle n'est pas un billet classique.
+  const plans = (await withSession(() => getServices().plans.listPlans({ appId }))).filter((p) => p.family !== "custom");
   if (plans.length === 0) {
     return (
       <TableMessage columns={PLAN_COLUMNS}>

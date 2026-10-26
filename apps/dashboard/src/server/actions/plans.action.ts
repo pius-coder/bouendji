@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getServices } from "@/server/services";
 import { id } from "@/server/api/schema-kit";
 import { planFormSchema, planFormToBody, planFormToUpdate } from "@/server/services/plans/plans.schema";
+import { customOfferFormSchema, customOfferFormToBody } from "@/server/services/plans/custom-offer.schema";
 import { runAction, type ActionResult } from "./action-result";
 
 /** Création : l'entrée client est rejouée contre le schéma du formulaire, puis contre celui du service. */
@@ -21,6 +22,15 @@ export async function updatePlanAction(planId: string, input: unknown): Promise<
     const values = planFormSchema.omit({ code: true }).parse(input);
     const updated = await getServices().plans.updatePlan({ planId: id.parse(planId), ...planFormToUpdate(values) });
     return { id: updated.id };
+  });
+}
+
+/** D127 : crée ou remplace l'offre sur mesure d'une marque. */
+export async function saveCustomOfferAction(appId: string, input: unknown): Promise<ActionResult<{ planId: string }>> {
+  return runAction(async () => {
+    const values = customOfferFormSchema.parse(input);
+    const offer = await getServices().plans.saveCustomOffer(id.parse(appId), customOfferFormToBody(values));
+    return { planId: offer?.planId ?? "" };
   });
 }
 

@@ -163,7 +163,8 @@ export interface LimitedSubscription {
   exhausted: boolean;
 }
 
-const LIMITED_FAMILIES: readonly string[] = ["limited", "limited_night"];
+/** D127 : l'offre sur mesure est un forfait limité (quota choisi par l'abonné). */
+const LIMITED_FAMILIES: readonly string[] = ["limited", "limited_night", "custom"];
 
 function toLimited(row: Row): LimitedSubscription | null {
   const family = typeof row.family === "string" ? row.family : null;
@@ -174,7 +175,8 @@ function toLimited(row: Row): LimitedSubscription | null {
   if ((row.quota_bytes === null || row.quota_bytes === undefined) && window === null) return null;
   return {
     subscriptionId: String(row.id),
-    family: family as LimitedSubscription["family"],
+    // Sur mesure : « limité + nuit » dès qu'une plage a été achetée en option.
+    family: family === "custom" ? (window === null ? "limited" : "limited_night") : (family as LimitedSubscription["family"]),
     endsAt: new Date(row.ends_at as string | Date),
     quotaBytes: row.quota_bytes === null || row.quota_bytes === undefined ? null : Number(row.quota_bytes),
     nightWindow: window === "20-24" || window === "24-04" || window === "20-04" ? window : null,
@@ -201,7 +203,7 @@ export async function latestLimitedSubscription(db: Queryable, userId: string): 
   const row = await db.one<Row>(
     `SELECT s.id, s.ends_at, s.quota_bytes, s.night_window, s.exhausted_at, p.family
        FROM subscriptions s JOIN plans p ON p.id = s.plan_id
-      WHERE s.user_id = $1 AND p.family IN ('limited', 'limited_night')
+      WHERE s.user_id = $1 AND p.family IN ('limited', 'limited_night', 'custom')
       ORDER BY s.ends_at DESC LIMIT 1`,
     [userId],
   );

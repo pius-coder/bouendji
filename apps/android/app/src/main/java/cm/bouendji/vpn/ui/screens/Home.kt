@@ -174,6 +174,31 @@ fun HomeScreen(ctx: ShellContext) {
                 align = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
+            // Forfait à quota (R6/D127) : data restante, ou épuisée avec le rachat.
+            val quota = c.quota
+            val total = quota?.quotaBytes
+            if (c.signedIn && quota != null && total != null && total > 0) {
+                val left = quota.remainingBytes ?: (total - quota.usedBytes).coerceAtLeast(0)
+                val exhausted = quota.state == "exhausted" || left <= 0
+                T(
+                    if (exhausted) "Data épuisée" else "${gigabytes(left)} restants sur ${gigabytes(total)}",
+                    color = if (exhausted) t.danger else t.label2,
+                    size = 14.sp,
+                    weight = FontWeight.Medium,
+                    align = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                )
+                if (exhausted) {
+                    T(
+                        "Racheter un forfait",
+                        color = t.accent,
+                        size = 15.sp,
+                        weight = FontWeight.SemiBold,
+                        align = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp).clickable { c.go(Screen.PLANS) },
+                    )
+                }
+            }
             if (state == TunnelState.CONNECTED && since > 0) {
                 val s = ((now - since) / 1_000).coerceAtLeast(0)
                 T(
@@ -295,4 +320,11 @@ private fun PowerControl(state: TunnelState, reduceMotion: Boolean, onClick: () 
             ) { Icon(Ic.Power, fg, size = 44.dp, strokeWidth = 2.1f) }
         }
     }
+}
+
+/** Go décimaux (10^9 octets, comme le serveur), une décimale sous 10 Go. */
+fun gigabytes(bytes: Long): String {
+    val gb = bytes / 1_000_000_000.0
+    val text = if (gb >= 10) "%.0f".format(java.util.Locale.FRANCE, gb) else "%.1f".format(java.util.Locale.FRANCE, gb)
+    return "$text Go"
 }

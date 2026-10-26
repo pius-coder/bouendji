@@ -297,10 +297,15 @@ class ApiClient(
         )
     }
 
-    suspend fun createOrder(planId: String, planRevision: Int): OrderDto {
+    suspend fun createOrder(
+        planId: String,
+        planRevision: Int,
+        nightWindow: String? = null,
+        custom: CustomChoiceDto? = null,
+    ): OrderDto {
         val body = json.encodeToString(
             CreateOrderRequest.serializer(),
-            CreateOrderRequest(planId = planId, planRevision = planRevision),
+            CreateOrderRequest(planId = planId, planRevision = planRevision, nightWindow = nightWindow, custom = custom),
         )
         return decode(authed("POST", ApiPaths.ORDERS, body), "commande", OrderDto.serializer())
     }
@@ -615,6 +620,14 @@ class ApiClient(
         val activationPending: Boolean = false,
         /** Type de serveurs que le forfait actif donne (D45). */
         val endpointTier: String = "free-labs",
+        /* R6 : présents seulement dans `GET /v1/me/subscription`. */
+        val family: String? = null,
+        val quotaBytes: Long? = null,
+        val usedBytes: Long = 0,
+        val remainingBytes: Long? = null,
+        val nightWindow: String? = null,
+        /** `active`, `exhausted` ou `expired`. */
+        val state: String? = null,
     )
 
     @Serializable
@@ -679,13 +692,56 @@ class ApiClient(
         val revision: Int,
         /** D45 : `free-labs` = illimité, `paid-gcp` = limité. */
         val endpointTier: String = "free-labs",
-    )
+        /** D115/D127 : `limited`, `limited_night` ou `custom` (sur mesure). Absent sur une API ancienne. */
+        val family: String = "limited",
+        /** Octets ; `null` = sans quota. */
+        val quotaBytes: Long? = null,
+        /** Plages de nuit proposées, prix ajouté au forfait. */
+        val nightOptions: List<NightOptionDto> = emptyList(),
+        /** D127 : bornes et prix de l'offre sur mesure ; `null` pour un forfait classique. */
+        val custom: CustomTermsDto? = null,
+    ) {
+        val isCustom: Boolean get() = family == "custom" && custom != null
+    }
+
+    @Serializable
+    data class NightOptionDto(val window: String, val priceXaf: Int)
+
+    /**
+     * Offre sur mesure (D127). L'app place les curseurs dans ces bornes et affiche
+     * une estimation avec la même formule que le serveur ; le montant facturé est
+     * celui que renvoie la commande.
+     */
+    @Serializable
+    data class CustomTermsDto(
+        val pricePerGb1dXaf: Int,
+        val pricePerGb30dXaf: Int,
+        val minGb: Int,
+        val maxGb: Int,
+        val stepGb: Int = 1,
+        val minDays: Int,
+        val maxDays: Int,
+    ) {
+        /** Même calcul que `customPriceXaf` (apps/api/src/services/customOffer.ts). */
+        fun priceXaf(gb: Int, days: Int): Int {
+            val perGb = pricePerGb1dXaf + (pricePerGb30dXaf - pricePerGb1dXaf) * (days - 1) / 29.0
+            return (kotlin.math.ceil(gb * perGb / 50.0 - 1e-9) * 50).toInt()
+        }
+    }
 
     @Serializable
     data class PlansResponse(val app: CatalogAppDto, val items: List<PlanDto> = emptyList())
 
     @Serializable
-    private data class CreateOrderRequest(val planId: String, val planRevision: Int)
+    data class CustomChoiceDto(val gb: Int, val days: Int)
+
+    @Serializable
+    private data class CreateOrderRequest(
+        val planId: String,
+        val planRevision: Int,
+        val nightWindow: String? = null,
+        val custom: CustomChoiceDto? = null,
+    )
 
     @Serializable
     data class MoneyDto(val amount: Int, val currency: String = "XAF")
@@ -707,6 +763,8 @@ class ApiClient(
         val checkout: CheckoutDto? = null,
         val failureCode: String? = null,
         val pollAfterSeconds: Int = 15,
+        val nightWindow: String? = null,
+        val custom: CustomChoiceDto? = null,
     )
 
     @Serializable

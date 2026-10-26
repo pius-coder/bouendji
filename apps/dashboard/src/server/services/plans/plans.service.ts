@@ -12,6 +12,7 @@ import {
   planIdParams,
   planUpdateBody,
 } from "./plans.schema";
+import { customOfferBody, customOfferResponse, type CustomOfferBody } from "./custom-offer.schema";
 
 export type ListPlansInput = { appId: string };
 export type CreatePlanInput = { appId: string } & PlanCreate;
@@ -41,7 +42,25 @@ export class PlansService extends BaseService {
       response: plan,
       refreshAfter: true,
     }),
+    // D127 : offre sur mesure, une par marque.
+    getCustomOffer: endpoint({ method: "GET", path: "/:appId/custom-offer", params: appIdParams, response: customOfferResponse }),
+    saveCustomOffer: endpoint({
+      method: "PUT",
+      path: "/:appId/custom-offer",
+      params: appIdParams,
+      body: customOfferBody,
+      response: customOfferResponse,
+      refreshAfter: true,
+    }),
   } as const;
+
+  async getCustomOffer(appId: string) {
+    return (await this.call(PlansService.endpoints.getCustomOffer, { params: { appId } })).offer;
+  }
+
+  async saveCustomOffer(appId: string, body: CustomOfferBody) {
+    return (await this.call(PlansService.endpoints.saveCustomOffer, { params: { appId }, body })).offer;
+  }
 
   constructor(deps: BaseServiceDeps) {
     super(deps, { basePath: "/v1/admin/apps" });

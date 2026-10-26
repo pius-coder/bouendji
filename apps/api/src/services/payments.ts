@@ -29,6 +29,14 @@ import { ApiFailure, fail } from "../lib/errors.js";
 import { payments as defaultProvider, type PaymentProvider, type ProviderPaymentStatus } from "../lib/fapshi.js";
 import { commissionCapBps, loadPricingSettings, type NightWindow } from "./pricing.js";
 import { activeNightOptions, planTermsSql } from "./planTerms.js";
+import {
+  assertChoiceAllowed,
+  customPriceXaf,
+  customRevisionMaterial,
+  customTermsFromJson,
+  type CustomChoice,
+} from "./customOffer.js";
+import { BYTES_PER_GB } from "./pricing.js";
 
 /** Fenêtre de paiement d'une commande. Même valeur que l'exemple du contrat. */
 export const ORDER_TTL_MINUTES = 24 * 60;
@@ -58,6 +66,7 @@ export interface PlanRow {
   quota_bytes: number | string | null;
   endpoint_tier: string | null;
   night_options: unknown;
+  custom_terms: unknown;
 }
 
 export interface OrderRow {
@@ -91,9 +100,12 @@ export interface OrderRow {
   plan_quota_bytes: number | string | null;
   plan_endpoint_tier: string | null;
   plan_night_options: unknown;
+  plan_custom_terms: unknown;
   /* R6 : plage choisie et quota figé à l'achat */
   night_window: string | null;
   quota_bytes: number | string | null;
+  /* D127 : durée choisie (offre sur mesure), NULL ailleurs */
+  order_duration_days: number | null;
 }
 
 export interface OrderDto {
@@ -109,6 +121,8 @@ export interface OrderDto {
   checkout?: { url: string; expiresAt: string };
   failureCode?: string;
   nightWindow?: NightWindow;
+  /** D127 : choix de l'offre sur mesure. */
+  custom?: { gb: number; days: number };
   pollAfterSeconds: number;
 }
 
@@ -118,6 +132,8 @@ export interface CreateOrderInput {
   planRevision: number;
   /** Requise pour la famille limité + nuit, interdite sinon. */
   nightWindow?: NightWindow | null;
+  /** D127 : requis pour l'offre sur mesure, interdit ailleurs. */
+  custom?: CustomChoice | null;
   utm?: Record<string, string> | null;
 }
 
@@ -181,6 +197,8 @@ export interface PlanTermsRow {
   quota_bytes?: number | string | null;
   endpoint_tier?: string | null;
   night_options?: unknown;
+  /** D127 : termes sur mesure (JSON de `customTermsSql`), absents ailleurs. */
+  custom_terms?: unknown;
 }
 
 /**
@@ -204,10 +222,15 @@ export function planRevision(plan: PlanTermsRow): number {
     plan.quota_bytes === null || plan.quota_bytes === undefined ? "-" : String(Number(plan.quota_bytes)),
     plan.endpoint_tier ?? "free-labs",
     nightOptions,
-  ].join("|");
+  ];
+  // Ajouté seulement pour l'offre sur mesure : la révision des forfaits
+  // existants ne change pas (les apps déjà installées la comparent).
+  const custom = customRevisionMaterial(customTermsFromJson(plan.custom_terms));
+  if (custom) material.push(custom);
+  const joined = material.join("|");
   let hash = 0x811c9dc5;
-  for (let i = 0; i < material.length; i += 1) {
-    hash ^= material.charCodeAt(i);
+  for (let i = 0; i < joined.length; i += 1) {
+    hash ^= joined.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return Math.max(1, hash & 0x7fffffff);
@@ -266,6 +289,7 @@ export function toOrderDto(order: OrderRow): OrderDto {
       quota_bytes: order.plan_quota_bytes,
       endpoint_tier: order.plan_endpoint_tier,
       night_options: order.plan_night_options,
+      custom_terms: order.plan_custom_terms,
     }),
     price: { amount: order.amount_xaf, currency: "XAF" },
     status,
@@ -279,6 +303,9 @@ export function toOrderDto(order: OrderRow): OrderDto {
   const paidAt = iso(order.paid_at);
   if (paidAt) dto.paidAt = paidAt;
   if (order.night_window) dto.nightWindow = order.night_window as NightWindow;
+  if (order.plan_family === "custom" && order.quota_bytes !== null && order.order_duration_days !== null) {
+    dto.custom = { gb: Math.round(Number(order.quota_bytes) / BYTES_PER_GB), days: Number(order.order_duration_days) };
+  }
 
   // Une URL de paiement n'existe que tant que l'argent n'est pas encaissé.
   // Après `paid`, l'absence de `checkout` est ce qui empêche l'app de
@@ -309,7 +336,7 @@ export const ORDER_SELECT = /* sql */ `
   SELECT o.id, o.user_id, o.app_id, o.plan_id, o.community_id, o.amount_xaf, o.currency,
          o.status, o.provider, o.provider_ref, o.payment_url, o.commission_bps, o.commission_xaf,
          o.utm, o.failure_reason, o.created_at, o.paid_at, o.activated_at, o.expires_at,
-         o.night_window, o.quota_bytes,
+         o.night_window, o.quota_bytes, o.duration_days AS order_duration_days,
          p.code AS plan_code, p.name AS plan_name, p.duration_days, p.device_limit,
          p.price_xaf AS plan_price, p.active AS plan_active,
          ${planTermsSql("p", "plan_")}
@@ -379,15 +406,37 @@ export async function createOrder(
   if (plan.family === "limited_night" && nightWindow === null) {
     throw fail.validation({ nightWindow: "Choisissez une plage de nuit pour ce forfait." });
   }
-  if (plan.family !== "limited_night" && nightWindow !== null) {
+  // Offre sur mesure : la plage de nuit est une option facultative.
+  if (plan.family !== "limited_night" && plan.family !== "custom" && nightWindow !== null) {
     throw fail.validation({ nightWindow: "Ce forfait ne propose pas de plage de nuit." });
   }
   const option = nightWindow === null ? null : activeOptions.find((candidate) => candidate.window === nightWindow) ?? null;
   if (nightWindow !== null && option === null) {
     throw fail.validation({ nightWindow: "Plage de nuit non proposée pour ce forfait." });
   }
+  /*
+   * Offre sur mesure (D127) : le choix (Go, jours) est requis et borné par
+   * l'offre ; le prix vient de la formule serveur, jamais du client.
+   */
+  const customTerms = plan.family === "custom" ? customTermsFromJson(plan.custom_terms) : null;
+  const choice = input.custom ?? null;
+  if (plan.family === "custom") {
+    if (!customTerms) throw fail.conflict("Cette offre n'est pas payable.");
+    if (!choice) throw fail.validation({ custom: "Choisissez la data et la durée." });
+    assertChoiceAllowed(customTerms, choice);
+  } else if (choice) {
+    throw fail.validation({ custom: "Ce forfait n'est pas sur mesure." });
+  }
+  const basePrice = customTerms && choice ? customPriceXaf(customTerms, choice) : plan.price_xaf;
+  const quotaBytes =
+    customTerms && choice
+      ? choice.gb * BYTES_PER_GB
+      : plan.quota_bytes === null || plan.quota_bytes === undefined
+        ? null
+        : Number(plan.quota_bytes);
+  const durationDays = customTerms && choice ? choice.days : null;
   // Total calculé côté serveur : prix du forfait + prix de la plage.
-  const amount = plan.price_xaf + (option?.priceXaf ?? 0);
+  const amount = basePrice + (option?.priceXaf ?? 0);
 
   const orderId = newId();
   const now = new Date();
@@ -400,8 +449,8 @@ export async function createOrder(
   await db.query(
     `INSERT INTO orders (id, user_id, app_id, plan_id, community_id, amount_xaf, currency, status,
                          provider, commission_bps, commission_xaf, utm, created_at, expires_at,
-                         night_window, quota_bytes)
-     VALUES ($1, $2, $3, $4, $5, $6, 'XAF', 'pending', $7, $8, $9, $10::jsonb, $11, $12, $13, $14)`,
+                         night_window, quota_bytes, duration_days)
+     VALUES ($1, $2, $3, $4, $5, $6, 'XAF', 'pending', $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15)`,
     [
       orderId,
       user.id,
@@ -418,7 +467,8 @@ export async function createOrder(
       expiresAt,
       // Figés comme le taux : l'abonnement copie ces valeurs, pas celles du forfait.
       nightWindow,
-      plan.quota_bytes === null || plan.quota_bytes === undefined ? null : Number(plan.quota_bytes),
+      quotaBytes,
+      durationDays,
     ],
   );
 
@@ -523,7 +573,7 @@ export async function activateOrder(db: Database, orderId: string): Promise<bool
     const now = new Date();
     const startsAt = current?.ends_at ? new Date(current.ends_at as string | Date) : now;
     const from = startsAt.getTime() > now.getTime() ? startsAt : now;
-    const endsAt = addDays(from, Number(order.duration_days));
+    const endsAt = addDays(from, Number(order.order_duration_days ?? order.duration_days));
 
     // Quota et plage copiés depuis la commande (figés à l'achat, R6).
     await q.query(

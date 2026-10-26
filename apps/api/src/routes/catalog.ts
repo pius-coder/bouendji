@@ -14,7 +14,17 @@ import type { FastifyInstance } from "fastify";
 import type { Database, Row } from "../db.js";
 import { fail } from "../lib/errors.js";
 import { planRevision } from "../services/payments.js";
-import { planTermsDto, planTermsSql } from "../services/planTerms.js";
+import { activeNightOptions, planTermsDto, planTermsSql } from "../services/planTerms.js";
+import {
+  assertChoiceAllowed,
+  customChoiceSchema,
+  customPriceXaf,
+  customTermsFromJson,
+  LONG_DAYS,
+  ROUND_XAF,
+  SHORT_DAYS,
+} from "../services/customOffer.js";
+import { NIGHT_WINDOWS } from "../services/pricing.js";
 
 export function registerCatalogRoutes(app: FastifyInstance, db: Database): void {
   app.get<{ Params: { appId: string } }>("/v1/apps/:appId/plans", async (req) => {
@@ -66,9 +76,66 @@ export function registerCatalogRoutes(app: FastifyInstance, db: Database): void 
             quota_bytes: terms.quotaBytes,
             endpoint_tier: row.endpoint_tier as string | null,
             night_options: row.night_options,
+            custom_terms: row.custom_terms,
           }),
+          /**
+           * D127 : offre sur mesure. L'app place deux curseurs dans ces bornes et
+           * affiche une estimation avec la même formule ; le montant facturé est
+           * celui de `/quote` et de la commande, calculé par le serveur.
+           */
+          custom: customDto(row.custom_terms),
         };
       }),
     };
   });
+
+  /**
+   * Devis de l'offre sur mesure : même calcul que `POST /v1/orders`, sans rien
+   * écrire. Public comme le catalogue (le prix n'est pas une donnée personnelle).
+   */
+  app.get<{ Params: { appId: string; planId: string }; Querystring: Record<string, string | undefined> }>(
+    "/v1/apps/:appId/plans/:planId/quote",
+    async (req) => {
+      const row = await db.one<Row>(
+        `SELECT p.id, p.app_id, p.active, p.family, ${planTermsSql("p")}
+           FROM plans p WHERE p.id = $1 AND p.app_id = $2`,
+        [req.params.planId, req.params.appId],
+      );
+      if (!row || row.active !== true || row.family !== "custom") throw fail.notFound("Offre introuvable.");
+      const terms = customTermsFromJson(row.custom_terms);
+      if (!terms) throw fail.notFound("Offre introuvable.");
+
+      const parsed = customChoiceSchema.safeParse({ gb: Number(req.query.gb), days: Number(req.query.days) });
+      if (!parsed.success) throw fail.validation({ gb: "Entier requis.", days: "Entier requis." });
+      assertChoiceAllowed(terms, parsed.data);
+
+      const rawWindow = req.query.nightWindow;
+      const window = rawWindow ? NIGHT_WINDOWS.find((w) => w === rawWindow) : undefined;
+      if (rawWindow && !window) throw fail.validation({ nightWindow: "Plage inconnue." });
+      const option = window ? activeNightOptions(row.night_options).find((o) => o.window === window) : undefined;
+      if (window && !option) throw fail.validation({ nightWindow: "Plage de nuit non proposée pour ce forfait." });
+
+      const baseXaf = customPriceXaf(terms, parsed.data);
+      const nightXaf = option?.priceXaf ?? 0;
+      return {
+        gb: parsed.data.gb,
+        days: parsed.data.days,
+        nightWindow: window ?? null,
+        baseXaf,
+        nightXaf,
+        totalXaf: baseXaf + nightXaf,
+        currency: "XAF",
+      };
+    },
+  );
+}
+
+function customDto(raw: unknown) {
+  const terms = customTermsFromJson(raw);
+  if (!terms) return null;
+  return {
+    ...terms,
+    /** Rappel de la formule pour l'estimation affichée par l'app. */
+    formula: { shortDays: SHORT_DAYS, longDays: LONG_DAYS, roundXaf: ROUND_XAF },
+  };
 }

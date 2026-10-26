@@ -1148,7 +1148,43 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     authorize(admin, "plan.manage", communityId);
     const input = parseBody(planPatchR6Schema, req.body);
 
-    const current = planTermsDto(before);
+    const currentTerms = planTermsDto(before);
+    // D127 : l'offre sur mesure se règle par `/apps/:appId/custom-offer` ; ici,
+    // seuls les champs d'affichage restent modifiables.
+    if (currentTerms.family === "custom") {
+      const termFields = ["family", "quotaBytes", "nightOptions", "priceXaf", "durationDays", "endpointTier"] as const;
+      if (termFields.some((field) => input[field] !== undefined)) {
+        throw fail.conflict("Offre sur mesure : modifiez ses prix depuis l'écran Forfait sur mesure.");
+      }
+      await db.tx(async (q) => {
+        await q.query(
+          `UPDATE plans SET name = $2, description = $3, device_limit = $4, badge = $5, featured = $6,
+                  active = $7, sort_order = $8
+            WHERE id = $1`,
+          [
+            req.params.planId,
+            input.name ?? (before.name as string),
+            input.description ?? (before.description as string),
+            input.deviceLimit ?? Number(before.device_limit),
+            input.badge !== undefined ? input.badge : ((before.badge as string | null) ?? null),
+            input.featured ?? before.featured === true,
+            input.active ?? before.active === true,
+            input.sortOrder ?? Number(before.sort_order),
+          ],
+        );
+        await appendAudit(q, admin, req, {
+          action: "plan.update",
+          targetType: "plan",
+          targetId: req.params.planId,
+          communityId,
+          before: { name: before.name, active: before.active },
+          after: { name: input.name ?? before.name, active: input.active ?? before.active },
+        });
+      });
+      const updatedCustom = await db.one<Row>(`SELECT p.*, ${planTermsSql("p")} FROM plans p WHERE p.id = $1`, [req.params.planId]);
+      return planDtoR6(updatedCustom as Row);
+    }
+    const current = { ...currentTerms, family: currentTerms.family as "limited" | "limited_night" };
     const name = input.name ?? (before.name as string);
     const description = input.description ?? (before.description as string);
     const priceXaf = input.priceXaf ?? Number(before.price_xaf);

@@ -25,6 +25,7 @@ import {
   type OrderRow,
 } from "../services/payments.js";
 import { NIGHT_WINDOWS } from "../services/pricing.js";
+import { customChoiceSchema } from "../services/customOffer.js";
 
 /* -------------------------------------------------------------- validation */
 
@@ -48,6 +49,8 @@ const createOrderSchema = z
     planRevision: z.number().int().min(1),
     /** R6 : plage de nuit, obligatoire pour la famille limité + nuit, refusée sinon. */
     nightWindow: z.enum(NIGHT_WINDOWS).optional(),
+    /** D127 : Go et jours choisis pour l'offre sur mesure ; le prix est recalculé ici. */
+    custom: customChoiceSchema.optional(),
     /** Conservé pour le suivi de campagne ; n'influence ni le prix ni la commission. */
     campaignClaimId: z.string().trim().min(1).max(190).optional(),
   })
@@ -138,6 +141,7 @@ export function registerOrderRoutes(app: FastifyInstance, db: Database): void {
       planId: input.planId,
       planRevision: input.planRevision,
       nightWindow: input.nightWindow ?? null,
+      custom: input.custom ?? null,
     });
     return reply.code(201).send(created.order);
   });

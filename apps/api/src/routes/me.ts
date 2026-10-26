@@ -264,7 +264,11 @@ export async function loadSubscriptionView(db: Database, userId: string) {
       [sub.id],
     );
     if (detail) {
-      family = detail.family === "limited_night" ? "limited_night" : "limited";
+      // Sur mesure (D127) : la plage achetée en option fait la famille.
+      family =
+        detail.family === "limited_night" || (detail.family === "custom" && detail.night_window)
+          ? "limited_night"
+          : "limited";
       quotaBytes = detail.quota_bytes === null || detail.quota_bytes === undefined ? null : Number(detail.quota_bytes);
       nightWindow = (detail.night_window as string | null) ?? null;
     }

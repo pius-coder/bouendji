@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cm.bouendji.vpn.brand.BrandTokens
 import cm.bouendji.vpn.net.ApiClient
+import cm.bouendji.vpn.ui.AppController
 import cm.bouendji.vpn.ui.CtaBar
 import cm.bouendji.vpn.ui.Screen
 import cm.bouendji.vpn.ui.ScreenColumn
@@ -122,19 +123,25 @@ fun PlansScreen(ctx: ShellContext) {
                     Segmented(TIER_ORDER.map(::tierLabel), tierIndex, { tierIndex = it })
                     GroupFooter(tierHint(TIER_ORDER[tierIndex]))
                 }
-                GroupHeader("Choisis ton billet")
+                // D127 : l'offre sur mesure passe avant les billets classiques.
+                c.plans.firstOrNull { it.isCustom }?.let { custom ->
+                    GroupHeader("Compose ton forfait")
+                    CustomBuilder(c, custom, selected = custom.id == c.selectedPlan?.id) { c.selectedPlanId = custom.id }
+                }
+                val classic = c.plans.filter { !it.isCustom && (shownTier == null || it.endpointTier == shownTier) }
+                if (classic.isNotEmpty() || c.plans.isEmpty()) GroupHeader("Choisis ton billet")
                 if (c.plans.isEmpty()) {
                     Group { T(if (c.busy) "Chargement des forfaits…" else "Aucun forfait disponible pour le moment.", color = t.label2, size = 15.sp, modifier = Modifier.padding(16.dp, 30.dp)) }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    c.plans.filter { shownTier == null || it.endpointTier == shownTier }.forEach { plan ->
+                    classic.forEach { plan ->
                         Bill(plan, selected = plan.id == c.selectedPlan?.id) { c.selectedPlanId = plan.id }
                     }
                 }
 
                 GroupHeader("Inclus dans chaque forfait")
                 Group {
-                    ListRow("Internet illimité pendant ton forfait", icon = Ic.Infinity, iconColor = t.accent)
+                    ListRow("Illimité de nuit en option", icon = Ic.Infinity, iconColor = t.accent, sub = "20 h-24 h, 24 h-4 h ou 20 h-4 h")
                     Divider(58.dp)
                     ListRow("Bascule automatique entre serveurs", icon = Ic.Bolt, iconColor = t.gold)
                     Divider(58.dp)
@@ -149,12 +156,130 @@ fun PlansScreen(ctx: ShellContext) {
         CtaBar(aboveTabs = asTab) {
             val plan = c.selectedPlan
             BlockBtn(
-                if (plan != null) "Continuer · ${fcfa(plan.priceXaf)} FCFA" else "Continuer",
+                if (plan != null) "Continuer · ${fcfa(c.estimateXaf(plan))} FCFA" else "Continuer",
                 { if (c.signedIn) c.go(Screen.ORDER) else c.go(Screen.AUTH) },
                 enabled = plan != null,
             )
         }
     }
+}
+
+/**
+ * Offre sur mesure (D127) : deux curseurs (data, durée) et le prix en direct.
+ * Le prix affiché suit la formule du serveur ; la commande le recalcule et fait foi.
+ */
+@Composable
+private fun CustomBuilder(c: AppController, plan: ApiClient.PlanDto, selected: Boolean, onSelect: () -> Unit) {
+    val t = LocalTokens.current
+    val terms = plan.custom ?: return
+    val choice = c.customChoice(plan) ?: return
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .then(if (t.dark) Modifier else Modifier.shadow(2.dp, shape))
+            .clip(shape)
+            .background(t.surface)
+            .border(if (selected) 2.dp else 0.dp, if (selected) t.accent else Color.Transparent, shape)
+            .clickable(role = Role.RadioButton, onClick = onSelect),
+    ) {
+        // Face du billet : le prix, recalculé à chaque mouvement de curseur.
+        Row(
+            Modifier.fillMaxWidth().background(noteBrush(t.noteStart, t.noteEnd)).padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                T(plan.name, color = t.noteInk, size = 17.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                T("${choice.gb} Go · ${durationLabel(choice.days)}", color = t.noteInk.copy(alpha = .75f), size = 13.sp)
+            }
+            Row(verticalAlignment = Alignment.Bottom) {
+                T(fcfa(terms.priceXaf(choice.gb, choice.days)), color = t.noteInk, size = 26.sp, weight = FontWeight.SemiBold, family = Fonts.display)
+                T(" FCFA", color = t.noteInk, size = 11.sp, family = Fonts.mono, modifier = Modifier.padding(bottom = 4.dp))
+            }
+        }
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ChoiceSlider(
+                label = "Data",
+                valueText = "${choice.gb} Go",
+                value = choice.gb,
+                min = terms.minGb,
+                max = terms.maxGb,
+                step = terms.stepGb,
+                onChange = { c.customGb = it; onSelect() },
+            )
+            ChoiceSlider(
+                label = "Validité",
+                valueText = durationLabel(choice.days),
+                value = choice.days,
+                min = terms.minDays,
+                max = terms.maxDays,
+                step = 1,
+                onChange = { c.customDays = it; onSelect() },
+            )
+            T(
+                "Prix du Go : ${fcfa(terms.priceXaf(1, choice.days))} FCFA pour ${durationLabel(choice.days)}. Plus la validité est courte, moins le Go coûte.",
+                color = t.label3,
+                size = 12.sp,
+            )
+            if (plan.deviceLimit > 1) T("Jusqu'à ${plan.deviceLimit} appareils.", color = t.label3, size = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun ChoiceSlider(label: String, valueText: String, value: Int, min: Int, max: Int, step: Int, onChange: (Int) -> Unit) {
+    val t = LocalTokens.current
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        T(label, color = t.label2, size = 14.sp)
+        T(valueText, size = 15.sp, weight = FontWeight.SemiBold)
+    }
+    if (max <= min) return
+    val positions = (max - min) / step
+    androidx.compose.material3.Slider(
+        value = value.toFloat(),
+        onValueChange = { raw -> onChange(min + Math.round((raw - min) / step) * step) },
+        valueRange = min.toFloat()..max.toFloat(),
+        // `steps` = crans intermédiaires ; au-delà de 100, le curseur reste continu et la valeur est arrondie.
+        steps = if (positions in 2..100) positions - 1 else 0,
+        colors = androidx.compose.material3.SliderDefaults.colors(
+            thumbColor = t.accent,
+            activeTrackColor = t.accent,
+            inactiveTrackColor = t.fill,
+            activeTickColor = Color.Transparent,
+            inactiveTickColor = Color.Transparent,
+        ),
+    )
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        T("$min", color = t.label3, size = 11.sp, family = Fonts.mono)
+        T("$max", color = t.label3, size = 11.sp, family = Fonts.mono)
+    }
+}
+
+/** Plage de nuit facultative (ou obligatoire pour `limited_night`), avec son prix. */
+@Composable
+private fun NightPicker(c: AppController, plan: ApiClient.PlanDto) {
+    if (plan.nightOptions.isEmpty()) return
+    val required = plan.family == "limited_night"
+    val options = (if (required) emptyList() else listOf<ApiClient.NightOptionDto?>(null)) + plan.nightOptions
+    val current = options.indexOfFirst { it?.window == c.nightWindow }.takeIf { it >= 0 } ?: 0
+    // Forfait qui exige une plage : la première est retenue tant que rien n'est choisi.
+    androidx.compose.runtime.LaunchedEffect(plan.id, current) {
+        if (options[current]?.window != c.nightWindow) c.nightWindow = options[current]?.window
+    }
+    GroupHeader(if (required) "Plage de nuit" else "Illimité de nuit (option)")
+    Segmented(options.map { it?.let { o -> nightLabel(o.window) } ?: "Sans" }, current, { c.nightWindow = options[it]?.window })
+    val picked = options[current]
+    GroupFooter(
+        if (picked == null) "Ajoute une plage pour surfer sans compter la nuit."
+        else "Data illimitée ${nightLabel(picked.window)} (heure de Douala) : +${fcfa(picked.priceXaf)} FCFA.",
+    )
+}
+
+fun nightLabel(window: String): String = when (window) {
+    "20-24" -> "20 h-24 h"
+    "24-04" -> "24 h-4 h"
+    "20-04" -> "20 h-4 h"
+    else -> window
 }
 
 private fun serialOf(userId: String?): String {
@@ -269,13 +394,22 @@ fun OrderScreen(ctx: ShellContext) {
                     ) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             T(plan.name, color = t.noteInk, size = 17.sp, weight = FontWeight.SemiBold)
-                            T(planSummary(plan), color = t.noteInk.copy(alpha = .75f), size = 13.sp)
+                            val choice = c.customChoice(plan)
+                            T(
+                                if (choice != null) "${choice.gb} Go · ${durationLabel(choice.days)}" else planSummary(plan),
+                                color = t.noteInk.copy(alpha = .75f),
+                                size = 13.sp,
+                            )
+                            c.nightWindow?.takeIf { w -> plan.nightOptions.any { it.window == w } }?.let {
+                                T("+ illimité ${nightLabel(it)}", color = t.noteInk.copy(alpha = .75f), size = 13.sp)
+                            }
                         }
                         Row(verticalAlignment = Alignment.Bottom) {
-                            T(fcfa(plan.priceXaf), color = t.noteInk, size = 26.sp, weight = FontWeight.SemiBold, family = Fonts.display)
+                            T(fcfa(c.estimateXaf(plan)), color = t.noteInk, size = 26.sp, weight = FontWeight.SemiBold, family = Fonts.display)
                             T(" FCFA", color = t.noteInk, size = 11.sp, family = Fonts.mono, modifier = Modifier.padding(bottom = 4.dp))
                         }
                     }
+                    NightPicker(c, plan)
                 }
 
                 GroupHeader("Ton compte")
@@ -300,7 +434,7 @@ fun OrderScreen(ctx: ShellContext) {
         }
         CtaBar {
             BlockBtn(
-                if (plan != null) "Payer ${fcfa(plan.priceXaf)} FCFA" else "Payer",
+                if (plan != null) "Payer ${fcfa(c.estimateXaf(plan))} FCFA" else "Payer",
                 c::startOrder,
                 icon = Ic.Card,
                 enabled = plan != null,

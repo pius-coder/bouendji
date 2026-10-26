@@ -132,6 +132,8 @@ class AppController(
     var plans by mutableStateOf<List<ApiClient.PlanDto>>(emptyList()); private set
     var selectedPlanId by mutableStateOf<String?>(null)
     var order by mutableStateOf<ApiClient.OrderDto?>(null); private set
+    /** Droits avec quota (consommé, restant, état) : `GET /v1/me/subscription`. */
+    var quota by mutableStateOf<ApiClient.EntitlementDto?>(null); private set
     var hasConfiguration by mutableStateOf(false); private set
 
     var busy by mutableStateOf(false); private set
@@ -155,6 +157,27 @@ class AppController(
     var directTesting by mutableStateOf(false); private set
 
     val selectedPlan: ApiClient.PlanDto? get() = plans.firstOrNull { it.id == selectedPlanId } ?: plans.firstOrNull()
+
+    /* D127 : choix de l'offre sur mesure (curseurs) et plage de nuit facultative. */
+    var customGb by mutableStateOf(0)
+    var customDays by mutableStateOf(0)
+    var nightWindow by mutableStateOf<String?>(null)
+
+    /** Choix sur mesure ramené dans les bornes de l'offre (0 = pas encore réglé). */
+    fun customChoice(plan: ApiClient.PlanDto): ApiClient.CustomChoiceDto? {
+        val terms = plan.custom ?: return null
+        val gb = customGb.coerceIn(terms.minGb, terms.maxGb)
+        val steps = (gb - terms.minGb) / terms.stepGb
+        return ApiClient.CustomChoiceDto(gb = terms.minGb + steps * terms.stepGb, days = customDays.coerceIn(terms.minDays, terms.maxDays))
+    }
+
+    /** Montant affiché avant la commande ; le serveur refait le calcul et fait foi. */
+    fun estimateXaf(plan: ApiClient.PlanDto): Int {
+        val night = plan.nightOptions.firstOrNull { it.window == nightWindow }?.priceXaf ?: 0
+        val choice = customChoice(plan)
+        val base = if (choice != null) plan.custom!!.priceXaf(choice.gb, choice.days) else plan.priceXaf
+        return base + night
+    }
 
     /** Accès actif = forfait payé et en cours ; sinon l'interrupteur mène aux forfaits. */
     val accessActive: Boolean get() = me?.entitlement?.active == true
@@ -241,6 +264,8 @@ class AppController(
         reportConsumedBundles()
         me = api.me()
         devices = api.devices().items
+        // Quota du forfait (R6/D127) ; une API plus ancienne n'a pas ces champs.
+        quota = runCatching { api.subscription().entitlement }.getOrNull()
         if (me?.entitlement?.active == true) {
             when (val bundle = api.fetchBundle()) {
                 is BundleFetch.Fresh -> {
@@ -341,7 +366,10 @@ class AppController(
         if (!signedIn) { go(Screen.AUTH); return }
         scope.launch {
             busy = true; error = null
-            runCatching { withContext(Dispatchers.IO) { container.api.createOrder(plan.id, plan.revision) } }
+            // Une plage n'est envoyée que si ce forfait la propose (sinon 400 côté serveur).
+            val window = nightWindow?.takeIf { w -> plan.nightOptions.any { it.window == w } }
+            val choice = customChoice(plan)
+            runCatching { withContext(Dispatchers.IO) { container.api.createOrder(plan.id, plan.revision, window, choice) } }
                 .onSuccess { created ->
                     order = created
                     go(Screen.ORDER_DONE)
