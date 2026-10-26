@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
 import { call, closeAll, db } from "./support.js";
-import { issueAdminToken } from "../src/lib/auth.js";
+import { openAdminSession } from "../src/lib/auth.js";
 import { payments } from "../src/lib/fapshi.js";
 
 after(async () => {
@@ -31,8 +31,8 @@ await db.query(
   [COM, "Communauté revue", "communaute-revue", 2000, "+237 670 11 22 33", "Bénéficiaire revue"],
 );
 await db.query(
-  `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
-   VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $3, 'platform', 'owner', true)`,
+  `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active, must_change_password)
+   VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $3, 'platform', 'owner', true, false)`,
   [OWNER, "review-owner@example.com", "Compte revue"],
 );
 // Un versement déjà payé, qui détient la référence que le fournisseur renverra.
@@ -42,7 +42,9 @@ await db.query(
   [COM, OWNER, TAKEN_REF],
 );
 
-const { token } = await issueAdminToken({ adminId: OWNER, role: "platform", communityId: null });
+// R1 : un jeton admin ouvre une session révocable ; le drapeau de mot de passe
+// à changer est posé explicitement pour ne pas tomber sur la garde R1.
+const { token } = await openAdminSession(db, { adminId: OWNER });
 
 async function adminCall(method: string, url: string, payload?: unknown) {
   const res = await call(method, `/v1/admin${url}`, {

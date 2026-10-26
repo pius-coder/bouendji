@@ -32,7 +32,11 @@ test("la base de référence et la migration 001 sont tracées, et la relance ne
   const db = await createDb("memory://");
   try {
     const ids = (await db.query<{ id: string }>("SELECT id FROM schema_migrations ORDER BY id")).map((r) => r.id);
-    assert.deepEqual(ids, ["000_baseline", "001_constraints_once"]);
+    // Les lots ajoutent leurs migrations (R1 : 010-012, etc.) : on compare à la
+    // liste réellement présente dans le dossier du code, pas à une liste figée.
+    const shipped = (await listMigrations(MIGRATIONS_DIR)).map((m) => m.id);
+    assert.deepEqual(ids, shipped);
+    assert.equal(ids[0], "000_baseline", "la base de référence porte le plus petit numéro");
 
     assert.deepEqual(await runMigrations(db), [], "rien à appliquer une seconde fois");
 
@@ -51,10 +55,9 @@ test("la base de référence et la migration 001 sont tracées, et la relance ne
 
 test("la liste des migrations est triée par nom et les doublons sont refusés", async () => {
   const shipped = await listMigrations(MIGRATIONS_DIR);
-  assert.deepEqual(
-    shipped.map((m) => m.id),
-    ["000_baseline", "001_constraints_once"],
-  );
+  const ids = shipped.map((m) => m.id);
+  assert.deepEqual(ids, [...ids].sort(), "les migrations sont triées par nom");
+  assert.equal(ids.length, new Set(ids).size, "aucun doublon dans le dossier du lot");
 
   const dir = await fixtureDir({
     "010_b.ts": "export const id = '010_b';",
