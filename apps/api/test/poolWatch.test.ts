@@ -18,6 +18,7 @@ const { checkPoolExpiry, newPoolWatchState } = await import("../src/services/poo
 const { scrub } = await import("../src/services/telegram.js");
 
 const db = await createDb();
+await (await import("./r6schema.js")).applyR6Migrations(db);
 
 after(async () => {
   await db.close();

@@ -232,6 +232,70 @@ export async function loadEntitlement(db: Queryable, userId: string): Promise<En
   };
 }
 
+export type SubscriptionState = "active" | "exhausted" | "expired";
+
+/**
+ * Vue « abonnement » enrichie (R6) : famille, quota, consommation de la période,
+ * plage de nuit et état.
+ *
+ * La consommation somme `usage_daily` des appareils du compte, source `node`
+ * seulement (le client ne peut pas la gonfler, cf. telemetry.ts), sur les jours
+ * UTC couverts par la période. Cette lecture ne coupe rien : la coupure à
+ * l'épuisement appartient au travailleur de consommation (R7).
+ *
+ * `state` : `expired` sans abonnement actif ; `exhausted` quand le quota est
+ * atteint ; sinon `active`. Un forfait sans quota (offre legacy) reste `active`.
+ */
+export async function loadSubscriptionView(db: Database, userId: string) {
+  const base = await loadEntitlement(db, userId);
+  const sub = base.subscription;
+
+  let family: "limited" | "limited_night" | null = null;
+  let quotaBytes: number | null = null;
+  let nightWindow: string | null = null;
+  let usedBytes = 0;
+
+  if (sub) {
+    const detail = await db.one<Row>(
+      `SELECT s.quota_bytes, s.night_window, p.family
+         FROM subscriptions s
+         JOIN plans p ON p.id = s.plan_id
+        WHERE s.id = $1`,
+      [sub.id],
+    );
+    if (detail) {
+      family = detail.family === "limited_night" ? "limited_night" : "limited";
+      quotaBytes = detail.quota_bytes === null || detail.quota_bytes === undefined ? null : Number(detail.quota_bytes);
+      nightWindow = (detail.night_window as string | null) ?? null;
+    }
+    usedBytes = Number(
+      await db.scalar(
+        `SELECT COALESCE(SUM(u.bytes_up + u.bytes_down), 0)::bigint
+           FROM usage_daily u
+           JOIN devices d ON d.id = u.device_id
+           JOIN subscriptions s ON s.id = $2
+          WHERE d.user_id = $1
+            AND u.source = 'node'
+            AND u.day >= (s.starts_at AT TIME ZONE 'UTC')::date
+            AND u.day <= (s.ends_at AT TIME ZONE 'UTC')::date`,
+        [userId, sub.id],
+      ),
+    );
+  }
+
+  const remainingBytes = quotaBytes === null ? null : Math.max(0, quotaBytes - usedBytes);
+  const state: SubscriptionState = !sub
+    ? "expired"
+    : quotaBytes !== null && usedBytes >= quotaBytes
+      ? "exhausted"
+      : "active";
+
+  return {
+    entitlement: { ...base.entitlement, family, quotaBytes, usedBytes, remainingBytes, nightWindow, state },
+    subscription: sub,
+  };
+}
+
 /**
  * Applique le quota d'appareils et promeut l'appareil courant en `active` s'il
  * reste une place.
@@ -337,7 +401,6 @@ export function registerMeRoutes(app: FastifyInstance, db: Database): void {
    */
   app.get("/v1/me/subscription", async (req: FastifyRequest) => {
     const auth = await requireSession(db, req);
-    const { entitlement, subscription } = await loadEntitlement(db, auth.userId);
-    return { entitlement, subscription };
+    return loadSubscriptionView(db, auth.userId);
   });
 }

@@ -29,6 +29,7 @@ const auth = { authorization: TOKEN };
 const url = (path: string) => `/v1/internal/endpoints/${path}`;
 
 const db = await createDb();
+await (await import("./r6schema.js")).applyR6Migrations(db);
 const app = await buildApp({ db });
 
 // Test-only probe: proves the custom JSON parser kept the exact bytes.

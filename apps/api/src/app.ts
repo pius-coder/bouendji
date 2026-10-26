@@ -24,6 +24,7 @@ import { registerOfflineRoutes } from "./routes/offline.js";
 import { registerOrderRoutes } from "./routes/orders.js";
 import { registerPaymentRoutes } from "./routes/payments.js";
 import { registerTelemetryRoutes } from "./routes/telemetry.js";
+import { registerPricingRoutes } from "./routes/pricing.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -303,6 +304,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerAccountRoutes(app, db);
   registerTelemetryRoutes(app, db);
   registerOrderRoutes(app, db);
+  registerPricingRoutes(app, db);
   registerPaymentRoutes(app, db);
   registerAdminRoutes(app, db);
   registerAdminAuthRoutes(app, db);

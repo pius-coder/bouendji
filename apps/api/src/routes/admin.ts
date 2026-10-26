@@ -41,6 +41,8 @@ import { payments as payoutProvider } from "../lib/fapshi.js";
 import { bumpPoolRevision, poolRevision } from "../services/endpoints.js";
 import { issueOfflineBundle } from "../services/offlineBundles.js";
 import { MAX_COMMISSION_BPS, planRevision } from "../services/payments.js";
+import { checkTerms, planTermsDto, planTermsSchema, planTermsSql, replaceNightOptions, resolveTerms } from "../services/planTerms.js";
+import { assertAboveFloor, loadPricingSettings } from "../services/pricing.js";
 
 const PREFIX = "/v1/admin";
 
@@ -944,16 +946,92 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
 
   /* --------------------------------------------------------- forfaits (prix) */
 
+  /*
+   * R6 (D115, D121, D125) : famille, quota, options de nuit et plancher de prix.
+   * Le plancher n'est contrôlé qu'une fois les coûts saisis (PUT /v1/admin/pricing).
+   * Les forfaits déjà vendus ne sont jamais recalculés : seule la modification est contrôlée.
+   */
+  const planCodeR6 = z
+    .string()
+    .trim()
+    .min(2)
+    .max(40)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Minuscules, chiffres et tirets uniquement.");
+
+  const planCreateR6Schema = z
+    .object({
+      code: planCodeR6,
+      name: z.string().trim().min(2).max(80),
+      description: z.string().trim().max(500).optional(),
+      priceXaf: z.number().int().min(1).max(10_000_000),
+      durationDays: z.number().int().min(1).max(3650),
+      deviceLimit: z.number().int().min(1).max(10).optional(),
+      badge: z.string().trim().max(40).nullable().optional(),
+      featured: z.boolean().optional(),
+      active: z.boolean().optional(),
+      sortOrder: z.number().int().min(0).max(1000).optional(),
+      /** D45 : type de serveurs que le forfait achète (illimité = free-labs, limité = paid-gcp). */
+      endpointTier: z.enum(["free-labs", "paid-gcp"]).optional(),
+      ...planTermsSchema,
+    })
+    .strict();
+
+  /** `code` est immuable : il fait partie de la révision que l'app compare. */
+  const planPatchR6Schema = planCreateR6Schema
+    .omit({ code: true })
+    .partial()
+    .strict()
+    .refine((value) => Object.keys(value).length > 0, "Aucun champ à modifier.");
+
+  /** DTO d'une offre : champs historiques, plus famille, quota et options (R6). */
+  const planDtoR6 = (row: Row) => {
+    const terms = planTermsDto(row);
+    const revision = planRevision({
+      code: row.code as string,
+      price_xaf: row.price_xaf as number,
+      duration_days: row.duration_days as number,
+      device_limit: row.device_limit as number,
+      active: row.active === true,
+      family: terms.family,
+      quota_bytes: terms.quotaBytes,
+      endpoint_tier: (row.endpoint_tier as string | null) ?? "free-labs",
+      night_options: row.night_options,
+    });
+    return {
+      id: row.id as string,
+      appId: row.app_id as string,
+      code: row.code as string,
+      name: row.name as string,
+      description: row.description as string,
+      priceXaf: Number(row.price_xaf),
+      durationDays: Number(row.duration_days),
+      deviceLimit: Number(row.device_limit),
+      badge: (row.badge as string | null) ?? null,
+      featured: row.featured === true,
+      active: row.active === true,
+      sortOrder: Number(row.sort_order),
+      endpointTier: row.endpoint_tier === "paid-gcp" ? "paid-gcp" : "free-labs",
+      family: terms.family,
+      quotaBytes: terms.quotaBytes,
+      nightOptions: terms.nightOptions,
+      /** Même valeur que le `409 CONFLICT` renvoyé par la création de commande. */
+      revision,
+    };
+  };
+
   app.get<{ Params: { appId: string } }>(`${PREFIX}/apps/:appId/plans`, async (req) => {
     const admin = await requireAdmin(db, req);
     const appRow = await mustApp(db, req.params.appId);
     const communityId = scopedCommunity(admin, String(appRow.community_id)) as string;
     authorize(admin, "community.read", communityId);
     const rows = await db.query<Row>(
-      "SELECT * FROM plans WHERE app_id = $1 ORDER BY sort_order ASC, price_xaf ASC",
+      `SELECT p.*, ${planTermsSql("p")}
+         FROM plans p
+        WHERE p.app_id = $1
+        ORDER BY p.sort_order ASC, p.price_xaf ASC`,
       [req.params.appId],
     );
-    return { items: rows.map(planDto) };
+    return { items: rows.map(planDtoR6) };
   });
 
   app.post<{ Params: { appId: string } }>(`${PREFIX}/apps/:appId/plans`, async (req, reply) => {
@@ -961,15 +1039,23 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     const appRow = await mustApp(db, req.params.appId);
     const communityId = scopedCommunity(admin, String(appRow.community_id)) as string;
     authorize(admin, "plan.manage", communityId);
-    const input = parseBody(planCreateSchema, req.body);
+    const input = parseBody(planCreateR6Schema, req.body);
+    const terms = resolveTerms(input);
+    checkTerms(terms);
     const id = newId();
 
     try {
       await db.tx(async (q) => {
+        assertAboveFloor(await loadPricingSettings(q), {
+          quotaBytes: terms.quotaBytes,
+          priceXaf: input.priceXaf,
+          nightOptions: terms.nightOptions,
+        });
         await q.query(
           `INSERT INTO plans (id, app_id, code, name, description, price_xaf, duration_days,
-                              device_limit, badge, featured, active, sort_order, endpoint_tier)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+                              device_limit, badge, featured, active, sort_order, endpoint_tier,
+                              family, quota_bytes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
           [
             id,
             req.params.appId,
@@ -984,14 +1070,24 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
             input.active ?? true,
             input.sortOrder ?? 0,
             input.endpointTier ?? "free-labs",
+            terms.family,
+            terms.quotaBytes,
           ],
         );
+        await replaceNightOptions(q, id, terms.nightOptions);
         await appendAudit(q, admin, req, {
           action: "plan.create",
           targetType: "plan",
           targetId: id,
           communityId,
-          after: { appId: req.params.appId, code: input.code, priceXaf: input.priceXaf },
+          after: {
+            appId: req.params.appId,
+            code: input.code,
+            priceXaf: input.priceXaf,
+            family: terms.family,
+            quotaBytes: terms.quotaBytes,
+            nightOptions: terms.nightOptions,
+          },
         });
       });
     } catch (err) {
@@ -999,21 +1095,24 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       throw err;
     }
 
-    const created = await db.one<Row>("SELECT * FROM plans WHERE id = $1", [id]);
-    return reply.code(201).send(planDto(created as Row));
+    const created = await db.one<Row>(`SELECT p.*, ${planTermsSql("p")} FROM plans p WHERE p.id = $1`, [id]);
+    return reply.code(201).send(planDtoR6(created as Row));
   });
 
   app.patch<{ Params: { planId: string } }>(`${PREFIX}/plans/:planId`, async (req) => {
     const admin = await requireAdmin(db, req);
     const before = await db.one<Row>(
-      `SELECT p.*, a.community_id FROM plans p JOIN apps a ON a.id = p.app_id WHERE p.id = $1`,
+      `SELECT p.*, a.community_id, ${planTermsSql("p")}
+         FROM plans p JOIN apps a ON a.id = p.app_id
+        WHERE p.id = $1`,
       [req.params.planId],
     );
     if (!before) throw fail.notFound("Offre introuvable.");
     const communityId = scopedCommunity(admin, String(before.community_id)) as string;
     authorize(admin, "plan.manage", communityId);
-    const input = parseBody(planPatchSchema, req.body);
+    const input = parseBody(planPatchR6Schema, req.body);
 
+    const current = planTermsDto(before);
     const name = input.name ?? (before.name as string);
     const description = input.description ?? (before.description as string);
     const priceXaf = input.priceXaf ?? Number(before.price_xaf);
@@ -1025,14 +1124,54 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     const sortOrder = input.sortOrder ?? Number(before.sort_order);
     const endpointTier = input.endpointTier ?? ((before.endpoint_tier as string) || "free-labs");
 
+    // Passer en « limité » retire les options de nuit : elles n'ont pas de sens sans nuit.
+    const family = input.family ?? current.family;
+    const quotaBytes = input.quotaBytes !== undefined ? input.quotaBytes : current.quotaBytes;
+    const terms = resolveTerms({
+      family,
+      quotaBytes,
+      nightOptions: input.nightOptions ?? (family === "limited" ? [] : current.nightOptions),
+    });
+    checkTerms(terms);
+    const termsChanged =
+      input.priceXaf !== undefined ||
+      input.quotaBytes !== undefined ||
+      input.family !== undefined ||
+      input.nightOptions !== undefined;
+
     await db.tx(async (q) => {
+      if (termsChanged) {
+        assertAboveFloor(await loadPricingSettings(q), {
+          quotaBytes: terms.quotaBytes,
+          priceXaf,
+          nightOptions: terms.nightOptions,
+        });
+      }
       await q.query(
         `UPDATE plans
             SET name = $2, description = $3, price_xaf = $4, duration_days = $5,
-                device_limit = $6, badge = $7, featured = $8, active = $9, sort_order = $10, endpoint_tier = $11
+                device_limit = $6, badge = $7, featured = $8, active = $9, sort_order = $10,
+                endpoint_tier = $11, family = $12, quota_bytes = $13
           WHERE id = $1`,
-        [req.params.planId, name, description, priceXaf, durationDays, deviceLimit, badge, featured, active, sortOrder, endpointTier],
+        [
+          req.params.planId,
+          name,
+          description,
+          priceXaf,
+          durationDays,
+          deviceLimit,
+          badge,
+          featured,
+          active,
+          sortOrder,
+          endpointTier,
+          terms.family,
+          terms.quotaBytes,
+        ],
       );
+      if (input.nightOptions !== undefined || family !== current.family) {
+        await replaceNightOptions(q, req.params.planId, terms.nightOptions);
+      }
       await appendAudit(q, admin, req, {
         action: "plan.update",
         targetType: "plan",
@@ -1043,13 +1182,24 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
           priceXaf: Number(before.price_xaf),
           durationDays: Number(before.duration_days),
           active: before.active,
+          family: current.family,
+          quotaBytes: current.quotaBytes,
+          nightOptions: current.nightOptions,
         },
-        after: { name, priceXaf, durationDays, active },
+        after: {
+          name,
+          priceXaf,
+          durationDays,
+          active,
+          family: terms.family,
+          quotaBytes: terms.quotaBytes,
+          nightOptions: terms.nightOptions,
+        },
       });
     });
 
-    const updated = await db.one<Row>("SELECT * FROM plans WHERE id = $1", [req.params.planId]);
-    return planDto(updated as Row);
+    const updated = await db.one<Row>(`SELECT p.*, ${planTermsSql("p")} FROM plans p WHERE p.id = $1`, [req.params.planId]);
+    return planDtoR6(updated as Row);
   });
 
   /* ----------------------------------------------------- personnel (staff) */

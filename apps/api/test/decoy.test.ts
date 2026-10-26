@@ -16,6 +16,7 @@ const { createDb } = await import("../src/db.js");
 const { buildApp } = await import("../src/app.js");
 
 const db = await createDb();
+await (await import("./r6schema.js")).applyR6Migrations(db);
 const app = await buildApp({ db });
 
 after(async () => {
