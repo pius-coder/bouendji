@@ -215,6 +215,15 @@ jobs:
           echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
           echo "sha256=$SHA"
 
+      # Copie de l'APK signé dans les artefacts du run : récupérable même si R2
+      # n'est pas encore configuré (test sur appareil avant distribution).
+      - name: Artefact du run
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.spec.outputs.artifact }}
+          path: ${{ runner.temp }}/${{ steps.spec.outputs.artifact }}
+          retention-days: 14
+
       - name: Déposer dans R2
         id: r2
         env:
