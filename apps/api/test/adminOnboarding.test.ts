@@ -2,7 +2,8 @@
  * Onboarding en libre-service (R4) : routes, contraintes et règles pures.
  *
  * Vrai `buildApp`, vraie base PGlite. Les migrations 040-044 sont appliquées
- * explicitement (le lanceur de migrations R0 n'est pas dans cette copie).
+ * par l'exécuteur R0 (dans `createDb`), puis rejouées ici une seconde fois :
+ * c'est le banc d'idempotence.
  */
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
@@ -19,7 +20,7 @@ process.env.JWT_SECRET = "test-secret-onboarding-test-secret";
 
 const { createDb } = await import("../src/db.js");
 const { buildApp } = await import("../src/app.js");
-const { issueAdminToken } = await import("../src/lib/auth.js");
+const { openAdminSession } = await import("../src/lib/auth.js");
 const { verifyPassword } = await import("../src/lib/crypto.js");
 const { normalizeWhatsappNumber, packageNameForCommunity, slugFromName, generateTemporaryPassword, validateLogo, waMeLink } =
   await import("../src/lib/onboarding.js");
@@ -70,8 +71,8 @@ for (const [id, email, platformRole, legacyRole] of [
   [CREATED, "created-ob@example.com", "none", "partner"],
 ] as const) {
   await db.query(
-    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
-     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $3, $4, $5, true)`,
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active, must_change_password)
+     VALUES ($1, $2, 'scrypt$16384$8$1$x$y', $3, $4, $5, true, false)`,
     [id, email, id.replace("adm_ob_", "Admin "), legacyRole, platformRole],
   );
 }
@@ -84,7 +85,10 @@ await db.query(
 
 const tokens: Record<string, string> = {};
 for (const id of [OWNER, NEW_ADMIN, CA_A, SUPPORT_A, CREATED]) {
-  const { token } = await issueAdminToken({ adminId: id, role: id === OWNER ? "platform" : "partner", communityId: null });
+  // R1 : un jeton admin ouvre une session révocable ; le drapeau « mot de
+  // passe à changer » est posé à false dans la graine pour ne pas tomber sur
+  // la garde R1.
+  const { token } = await openAdminSession(db, { adminId: id });
   tokens[id] = token;
 }
 
@@ -154,7 +158,30 @@ test("logo : PNG et SVG acceptés, contenu contrôlé, 1 Mo au plus", () => {
 /* ------------------------------------------------ contraintes SQL */
 
 test("migration 041 refuse une base où une communauté a deux applications", async () => {
-  const other = await createDb();
+  // Base brute : schéma de baseline seul, sans l'exécuteur de migrations —
+  // `createDb` appliquerait déjà 041 (index unique), et le doublon refuserait
+  // à l'insertion au lieu d'être refusé par la migration elle-même.
+  const { PGlite } = await import("@electric-sql/pglite");
+  const { SCHEMA_SQL } = await import("../src/schema.js");
+  const raw = new PGlite("memory://");
+  await raw.waitReady;
+  // `exec` (protocole simple) : SCHEMA_SQL est multi-instructions.
+  await raw.exec(SCHEMA_SQL);
+  const run = async (sql: string, params?: unknown[]) => {
+    const res = await raw.query(sql, params as never[] | undefined);
+    return res.rows as unknown as Record<string, unknown>[];
+  };
+  const other = {
+    query: async <T = Record<string, unknown>>(sql: string, params?: unknown[]) => (await run(sql, params)) as unknown as T[],
+    one: async <T = Record<string, unknown>>(sql: string, params?: unknown[]) => ((await run(sql, params))[0] ?? null) as T | null,
+    scalar: async <T = unknown>(sql: string, params?: unknown[]) => {
+      const row = (await run(sql, params))[0];
+      return (row ? (Object.values(row)[0] ?? null) : null) as T;
+    },
+    close: async () => {
+      await raw.close();
+    },
+  };
   try {
     await other.query(`INSERT INTO communities (id, name, slug, commission_bps) VALUES ('c_dup', 'Dup', 'dup', 2000)`);
     for (const id of ["a_dup_1", "a_dup_2"]) {

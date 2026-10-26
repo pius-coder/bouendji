@@ -32,6 +32,8 @@ after(async () => {
 
 const COM = "com_money";
 const OTHER = "com_other";
+/** 041 : une communauté ne porte qu'une app ; la marque manifeste a la sienne. */
+const MANIFEST = "com_manifest";
 
 const OWNER = "adm_money_owner";
 const FINANCE = "adm_money_finance";
@@ -50,6 +52,12 @@ await db.query(`INSERT INTO communities (id, name, slug, commission_bps) VALUES 
   "Communauté voisine",
   "communaute-voisine",
   1500,
+]);
+await db.query(`INSERT INTO communities (id, name, slug, commission_bps) VALUES ($1, $2, $3, $4)`, [
+  MANIFEST,
+  "Communauté manifeste",
+  "communaute-manifeste",
+  2000,
 ]);
 
 for (const [id, email, platformRole] of [
@@ -99,7 +107,7 @@ await db.query(
   `INSERT INTO apps (id, community_id, slug, name, package_name, theme, brand)
    VALUES ('app_brand', $1, 'app-brand', 'Marque Manifeste', 'cm.manifeste.vpn', 'mono', $2::jsonb)`,
   [
-    COM,
+    MANIFEST,
     JSON.stringify({
       supportUrl: "https://manifeste.example.com/aide",
       versionName: "1.2.0",
