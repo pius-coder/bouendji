@@ -118,3 +118,33 @@ peut renvoyer l'entrée.
   tsc, lint, tests 135/135. Non vu dans le navigateur.
 - Activation prévue après un « Tester » réussi :
   `UPDATE plans SET active = true WHERE family = 'custom';`
+
+## Huit identités uniques (même soir, suite)
+
+- Demande utilisateur : « les 8 doivent être toutes différentes et belles ».
+  Constat : un thème ne changeait que les couleurs (`ui/theme/Billet.kt`).
+- `ui/theme/Style.kt` : polices, formes, décor des cartes, fond graphique,
+  bouton de connexion, textes d'accueil par identité ; `ui/kit/Themed.kt`,
+  `ui/kit/ThemeArt.kt`. 3 identités ajoutées : **sahel** (terre cuite, kente,
+  bouton losange), **nebula** (violet, étoiles, arche), **glacier** (cristal,
+  facettes, hexagone). `inject-brand.mjs` les accepte.
+- Une identité par app (manifestes + `apps.theme` en prod) : Bouendji billet,
+  Teste halo, GoatVpn vector, James Pro mono, Gregor44 vpn otaku, dalas npv
+  sahel, Saitrix nebula, NevVPN glacier.
+- `tools/make-logo.mjs` : logo + illustration SVG par marque (identité,
+  initiales, variation du nom) ; le workflow les rend en PNG (`rsvg-convert`)
+  puis `make-icons.py`, quand la marque n'a pas d'`icon.png`. 8 logos vérifiés
+  côte à côte dans le navigateur : tous distincts.
+- Run `40385489510` : échec de compilation (imports manquants de `Home.kt`).
+  Run `40386713188` (commit `d1ffc8f`) : **8 APK compilées et signées**, R2 en
+  échec seulement. Écrans non encore vus sur le téléphone.
+- Le prototype de référence `Atelier-identites-VPN-v2.html` n'existe plus sur
+  ce PC ; `preview/identites.html` (4 identités) reste dans le dépôt.
+
+## Dashboard en prod : ancien build incompatible
+
+- Erreur Vercel `BAD_RESPONSE { adminId: Required }` : le dashboard déployé
+  date d'avant R1 et lit `adminId` dans `/me` ; l'API renvoie `id`.
+- Décision utilisateur : **pas de compatibilité legacy**, déployer le nouveau
+  dashboard. `next build` local réussi. Bloqué : aucune session Vercel sur ce
+  PC (`npx vercel login` à faire par l'utilisateur), projet `freeteam5/vpn-dashboard` (D109).
