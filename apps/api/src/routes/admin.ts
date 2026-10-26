@@ -1450,6 +1450,52 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     return { items: rows.map(adminDirectoryDto) };
   });
 
+  /* ------------------------------------------- pagination par curseur (R3) */
+
+  // Listes users, devices, commissions, payouts, audit-log : même patron que
+  // les commandes. `nextCursor` n'apparaît que s'il reste une page, donc les
+  // réponses existantes ne changent pas pour une liste courte.
+  const pageQuerySchema = z.object({
+    cursor: z.string().max(512).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  });
+  const payoutPageQuerySchema = payoutQueueQuerySchema.extend({ cursor: z.string().max(512).optional() });
+  const auditPageQuerySchema = auditQuerySchema.extend({ cursor: z.string().max(512).optional() });
+
+  /** Clause « strictement après le curseur » pour un tri `created_at DESC, id DESC`. */
+  const keysetDesc = (raw: string | undefined, params: unknown[], createdCol: string, idCol: string): string | null => {
+    if (!raw) return null;
+    const cursor = decodeCursor(raw);
+    params.push(cursor.createdAt, cursor.id);
+    const at = params.length - 1;
+    const id = params.length;
+    return `(${createdCol} < $${at}::timestamptz OR (${createdCol} = $${at}::timestamptz AND ${idCol} < $${id}))`;
+  };
+
+  /** Coupe la page `limit + 1` lignes lues et produit le curseur de la suivante. */
+  const pageEnd = <T extends Row>(rows: T[], limit: number, cursorOf: (row: T) => string) => {
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page[page.length - 1];
+    return { page, more: hasMore && last ? { nextCursor: cursorOf(last) } : {} };
+  };
+
+  /**
+   * Curseur de la file des versements : le rang de statut (`needs_review` en
+   * tête) fait partie de la clé, sinon une page suivante sauterait des lignes.
+   */
+  const PAYOUT_RANK = `CASE p.status WHEN 'needs_review' THEN 0 WHEN 'pending' THEN 1 WHEN 'approved' THEN 2 WHEN 'processing' THEN 3 ELSE 4 END`;
+  const encodePayoutCursor = (row: Row): string =>
+    Buffer.from(`${Number(row.queue_rank)}|${iso(row.created_at)}|${String(row.id)}`, "utf8").toString("base64url");
+  const decodePayoutCursor = (raw: string): { rank: number; createdAt: string; id: string } => {
+    const parts = Buffer.from(raw, "base64url").toString("utf8").split("|");
+    const [rank, createdAt, id] = parts;
+    if (parts.length !== 3 || !/^[0-4]$/.test(rank ?? "") || Number.isNaN(Date.parse(createdAt ?? "")) || !id) {
+      throw fail.validation({ cursor: "Curseur invalide." });
+    }
+    return { rank: Number(rank), createdAt: createdAt as string, id };
+  };
+
   /* ------------------------------------------------------------- abonnés */
 
   app.get<{ Params: { communityId: string } }>(`${PREFIX}/communities/:communityId/users`, async (req) => {
@@ -1457,13 +1503,21 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     const communityId = scopedCommunity(admin, req.params.communityId) as string;
     authorize(admin, "member.read", communityId);
     await mustCommunity(db, communityId);
+    const query = parseQuery(pageQuerySchema, req.query);
+    const limit = query.limit ?? 100;
+    const params: unknown[] = [communityId];
+    let where = "WHERE community_id = $1";
+    const keyset = keysetDesc(query.cursor, params, "created_at", "id");
+    if (keyset) where += ` AND ${keyset}`;
+    params.push(limit + 1);
     const rows = await db.query<Row>(
       `SELECT id, email, name, locale, email_verified_at, deleted_at, created_at
-         FROM users WHERE community_id = $1 ORDER BY created_at DESC LIMIT 100`,
-      [communityId],
+         FROM users ${where} ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
+      params,
     );
+    const { page, more } = pageEnd(rows, limit, encodeCursor);
     return {
-      items: rows.map((row) => ({
+      items: page.map((row) => ({
         id: row.id as string,
         email: row.email as string,
         name: row.name as string,
@@ -1472,6 +1526,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
         deleted: row.deleted_at !== null,
         createdAt: iso(row.created_at),
       })),
+      ...more,
     };
   });
 
@@ -1482,16 +1537,24 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     const communityId = scopedCommunity(admin, req.params.communityId) as string;
     authorize(admin, "member.read", communityId);
     await mustCommunity(db, communityId);
+    const query = parseQuery(pageQuerySchema, req.query);
+    const limit = query.limit ?? 100;
+    const params: unknown[] = [communityId];
+    let where = "WHERE u.community_id = $1";
+    const keyset = keysetDesc(query.cursor, params, "d.created_at", "d.id");
+    if (keyset) where += ` AND ${keyset}`;
+    params.push(limit + 1);
     const rows = await db.query<Row>(
       `SELECT d.id, d.user_id, d.name, d.platform, d.status, d.last_seen_at, d.revoked_at, d.created_at
          FROM devices d
          JOIN users u ON u.id = d.user_id
-        WHERE u.community_id = $1
-        ORDER BY d.created_at DESC LIMIT 100`,
-      [communityId],
+         ${where}
+        ORDER BY d.created_at DESC, d.id DESC LIMIT $${params.length}`,
+      params,
     );
+    const { page, more } = pageEnd(rows, limit, encodeCursor);
     return {
-      items: rows.map((row) => ({
+      items: page.map((row) => ({
         deviceId: row.id as string,
         userId: row.user_id as string,
         name: row.name as string,
@@ -1501,6 +1564,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
         revokedAt: iso(row.revoked_at),
         createdAt: iso(row.created_at),
       })),
+      ...more,
     };
   });
 
@@ -1640,14 +1704,17 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       params.push(query.status);
       where += ` AND status = $${params.length}`;
     }
-    params.push(limit);
+    const keyset = keysetDesc(query.cursor, params, "created_at", "id");
+    if (keyset) where += ` AND ${keyset}`;
+    params.push(limit + 1);
     const rows = await db.query<Row>(
       `SELECT id, order_id, bps, amount_xaf, status, payout_id, created_at, available_at
          FROM commissions ${where}
-        ORDER BY created_at DESC LIMIT $${params.length}`,
+        ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
       params,
     );
-    return { items: rows.map(commissionDto) };
+    const { page, more } = pageEnd(rows, limit, encodeCursor);
+    return { items: page.map(commissionDto), ...more };
   });
 
   /* ------------------------------------------------------------- versements */
@@ -2015,7 +2082,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
    */
   app.get(`${PREFIX}/payouts`, async (req) => {
     const admin = await requireAdmin(db, req);
-    const query = parseQuery(payoutQueueQuerySchema, req.query);
+    const query = parseQuery(payoutPageQuerySchema, req.query);
     // `finance` encaisse pour toutes les marques (D57) : sans filtre explicite,
     // elle voit toute la file. Les autres restent dans leur périmètre.
     const seesAllMoney =
@@ -2038,25 +2105,30 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       params.push(query.status);
       where += `${where.length > 0 ? " AND" : " WHERE"} p.status = $${params.length}`;
     }
-    params.push(query.limit ?? 50);
+    if (query.cursor) {
+      const cursor = decodePayoutCursor(query.cursor);
+      params.push(cursor.rank, cursor.createdAt, cursor.id);
+      const r = params.length - 2;
+      const c = params.length - 1;
+      const i = params.length;
+      where += `${where.length > 0 ? " AND" : " WHERE"} (${PAYOUT_RANK} > $${r}
+        OR (${PAYOUT_RANK} = $${r} AND (p.created_at > $${c}::timestamptz
+            OR (p.created_at = $${c}::timestamptz AND p.id > $${i}))))`;
+    }
+    const limit = query.limit ?? 50;
+    params.push(limit + 1);
 
     const rows = await db.query<Row>(
-      `SELECT p.*, c.name AS community_name
+      `SELECT p.*, c.name AS community_name, ${PAYOUT_RANK} AS queue_rank
          FROM payouts p
          JOIN communities c ON c.id = p.community_id
          ${where}
-        ORDER BY CASE p.status
-                   WHEN 'needs_review' THEN 0
-                   WHEN 'pending'      THEN 1
-                   WHEN 'approved'     THEN 2
-                   WHEN 'processing'   THEN 3
-                   ELSE 4
-                 END,
-                 p.created_at ASC
+        ORDER BY ${PAYOUT_RANK}, p.created_at ASC, p.id ASC
         LIMIT $${params.length}`,
       params,
     );
-    return { items: rows.map(payoutDto) };
+    const { page, more } = pageEnd(rows, limit, encodePayoutCursor);
+    return { items: page.map(payoutDto), ...more };
   });
 
   /* ------------------------------------------------------------------ pool */
@@ -2202,7 +2274,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
 
   app.get(`${PREFIX}/audit-log`, async (req) => {
     const admin = await requireAdmin(db, req);
-    const query = parseQuery(auditQuerySchema, req.query);
+    const query = parseQuery(auditPageQuerySchema, req.query);
     const requested = query.community_id ?? query.communityId ?? null;
     const communityId = scopedCommunity(admin, requested);
     authorize(admin, "audit.read", communityId);
@@ -2214,15 +2286,18 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       params.push(communityId);
       where = "WHERE community_id = $1";
     }
-    params.push(limit);
+    const keyset = keysetDesc(query.cursor, params, "created_at", "id");
+    if (keyset) where += `${where.length > 0 ? " AND" : "WHERE"} ${keyset}`;
+    params.push(limit + 1);
     const rows = await db.query<Row>(
       `SELECT id, action, actor_id, actor_role, target_type, target_id, community_id, ip,
               before_state, after_state, created_at
          FROM audit_log ${where}
-        ORDER BY created_at DESC LIMIT $${params.length}`,
+        ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
       params,
     );
-    return { items: rows.map(auditDto) };
+    const { page, more } = pageEnd(rows, limit, encodeCursor);
+    return { items: page.map(auditDto), ...more };
   });
 }
 
