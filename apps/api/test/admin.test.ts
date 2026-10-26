@@ -31,6 +31,7 @@ const { issueAdminToken } = await import("../src/lib/auth.js");
 const { encryptSecret } = await import("../src/lib/crypto.js");
 
 const db = await createDb();
+await (await import("./xuiSchema.js")).applyXuiTestSchema(db); // colonnes R6/R8 de test, voir xuiSchema.ts
 // app.ts est maintenant câblé par l'orchestrateur (registerAdminRoutes y figure) :
 // le test passe par la vraie application, sans greffe locale.
 const app = await buildApp({ db });

@@ -30,6 +30,8 @@ const { buildApp } = await import("../src/app.js");
 const { canonicalProof } = await import("../src/lib/crypto.js");
 
 export const db = await createDb();
+// Lot R7 : migrations 070-073 et colonnes R6/R8 de test (voir test/xuiSchema.ts).
+await (await import("./xuiSchema.js")).applyXuiTestSchema(db);
 export const app = await buildApp({ db });
 
 export async function closeAll(): Promise<void> {

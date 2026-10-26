@@ -35,6 +35,7 @@ const { env } = await import("../src/config.js");
 type Json = Record<string, any>;
 
 const db = await createDb();
+await (await import("./xuiSchema.js")).applyXuiTestSchema(db); // colonnes R6/R8 de test, voir xuiSchema.ts
 const app = await buildApp({ db });
 
 after(async () => {

@@ -26,6 +26,7 @@ const { setMockPaymentStatus, getMockPaymentStatus } = await import("../src/serv
 const { planRevision, refundOrder, commissionFor, toOrderDto } = await import("../src/services/payments.js");
 
 const db = await createDb();
+await (await import("./xuiSchema.js")).applyXuiTestSchema(db); // colonnes R6/R8 de test, voir xuiSchema.ts
 const app = await buildApp({ db });
 
 after(async () => {

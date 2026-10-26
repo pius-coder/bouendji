@@ -10,6 +10,7 @@ import { ApiFailure } from "./lib/errors.js";
 import { registerOpenApi, registerOpenApiReference } from "./openapi.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminAuthRoutes } from "./routes/adminAuth.js";
+import { registerAdminXuiRoutes } from "./routes/adminXui.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerBuildRoutes } from "./routes/builds.js";
 import { registerBundleRoutes } from "./routes/bundle.js";
@@ -291,6 +292,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerPaymentRoutes(app, db);
   registerAdminRoutes(app, db);
   registerAdminAuthRoutes(app, db);
+  registerAdminXuiRoutes(app, db);
   registerBuildRoutes(app, db);
   registerOfflineRoutes(app, db);
   await registerOpenApiReference(app);

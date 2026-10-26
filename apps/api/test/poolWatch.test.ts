@@ -18,6 +18,7 @@ const { checkPoolExpiry, newPoolWatchState } = await import("../src/services/poo
 const { scrub } = await import("../src/services/telegram.js");
 
 const db = await createDb();
+await (await import("./xuiSchema.js")).applyXuiTestSchema(db); // colonnes R6/R8 de test, voir xuiSchema.ts
 
 after(async () => {
   await db.close();

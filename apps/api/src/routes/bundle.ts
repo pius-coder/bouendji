@@ -30,6 +30,13 @@ import { newId, sealForDevice, sha256Hex, type SealedEnvelope } from "../lib/cry
 import { rateLimitError } from "../lib/attempts.js";
 import { fail } from "../lib/errors.js";
 import { endpointToConfig, poolRevision, servedEndpoints, type EndpointRow } from "../services/endpoints.js";
+import {
+  latestLimitedSubscription,
+  loadLimitedSubscription,
+  nightRowsFor,
+  xuiLeadConfig,
+  type LimitedSubscription,
+} from "../services/xui.js";
 import { ensureDeviceSlot, loadEntitlement, requireSession } from "./me.js";
 
 export const BUNDLE_PATH = "/v1/configuration-bundles/current";
@@ -38,6 +45,11 @@ export const BUNDLE_PATH = "/v1/configuration-bundles/current";
 export interface BundleConfig extends VlessConfig {
   /** Durée maximale d'une session sur ce nœud, en secondes (D25). */
   maxSessionSeconds: number;
+  /**
+   * Début de la plage de nuit servie par ce nœud (ISO 8601). Présent seulement
+   * sur les nœuds de nuit d'un forfait `limited_night` ; absent partout ailleurs.
+   */
+  startsAt?: string;
 }
 
 export interface BundlePlaintext {
@@ -87,12 +99,15 @@ export function etagMatches(header: string | undefined, etag: string): boolean {
  * une liste morte. Les octets du chiffré, eux, changent à chaque scellement
  * (IV), donc ils ne peuvent pas entrer dans l'ETag.
  */
-export function bundleEtag(deviceId: string, revision: number, rows: EndpointRow[] = []): string {
+export function bundleEtag(deviceId: string, revision: number, rows: EndpointRow[] = [], fingerprint = ""): string {
   const served = rows
     .map((row) => `${row.id}@${new Date(row.expires_at).getTime()}`)
     .sort()
     .join(",");
-  return `"b${revision}-${sha256Hex(`${deviceId}:${revision}:${served}`).slice(0, 16)}"`;
+  // L'empreinte couvre ce que la révision ne voit pas (client 3x-ui confirmé ou
+  // épuisé). Vide pour les forfaits historiques : leur ETag ne change pas.
+  const suffix = fingerprint ? `:${fingerprint}` : "";
+  return `"b${revision}-${sha256Hex(`${deviceId}:${revision}:${served}${suffix}`).slice(0, 16)}"`;
 }
 
 /**
@@ -102,9 +117,18 @@ export function bundleEtag(deviceId: string, revision: number, rows: EndpointRow
  * expiré — une liste vide signée est un retrait valide, pas une panne
  * silencieuse, et un bundle né expiré n'est jamais servi en 304.
  */
-export function bundleExpiry(input: { issuedAt: Date; subscriptionEndsAt: string | null; rows: EndpointRow[] }): Date {
+export function bundleExpiry(input: {
+  issuedAt: Date;
+  subscriptionEndsAt: string | null;
+  rows: EndpointRow[];
+  /** Échéances des configurations hors pool (client 3x-ui dédié). */
+  extraExpiresAt?: Date[];
+}): Date {
   const rightsEndsAt = input.subscriptionEndsAt ? new Date(input.subscriptionEndsAt).getTime() : Number.POSITIVE_INFINITY;
-  const configs = input.rows.map((row) => new Date(row.expires_at).getTime());
+  const configs = [
+    ...input.rows.map((row) => new Date(row.expires_at).getTime()),
+    ...(input.extraExpiresAt ?? []).map((date) => date.getTime()),
+  ];
   const lastConfigExpiry = configs.length > 0 ? Math.max(...configs) : input.issuedAt.getTime();
   return new Date(Math.min(rightsEndsAt, lastConfigExpiry));
 }
@@ -187,10 +211,17 @@ export async function buildBundle(
     agreementKey: string;
     rows: EndpointRow[];
     subscriptionEndsAt: string | null;
+    /** Configurations hors pool, déjà complètes (client 3x-ui dédié). */
+    leadConfigs?: BundleConfig[];
+    /** Début de créneau par identifiant de nœud de nuit. */
+    nightStartsAt?: Map<string, string>;
+    /** Empreinte de l'état servi, reprise dans l'ETag. */
+    fingerprint?: string;
   },
 ): Promise<{ body: BundleResponse; plaintext: BundlePlaintext; etag: string }> {
   const revision = await poolRevision(db);
   const maxSessionSeconds = env.ingest.reconnectAfterSeconds;
+  const leadConfigs = input.leadConfigs ?? [];
 
   /*
    * Une identité par appareil n'est écrite dans le bundle que si le nœud servi
@@ -198,7 +229,8 @@ export async function buildBundle(
    * le comportement ne change pas : le credential du nœud, déchiffré, part à
    * l'intérieur de l'enveloppe scellée.
    */
-  const configs: BundleConfig[] = [];
+  // La durée de session vient du serveur (D25), y compris pour le client 3x-ui dédié.
+  const configs: BundleConfig[] = leadConfigs.map((config) => ({ ...config, maxSessionSeconds }));
   for (const row of input.rows) {
     const identity =
       row.identity_mode === "per_device"
@@ -209,11 +241,17 @@ export async function buildBundle(
             subscriptionEndsAt: input.subscriptionEndsAt,
           })
         : null;
-    configs.push({ ...endpointToConfig(row, identity), maxSessionSeconds });
+    const startsAt = input.nightStartsAt?.get(row.id);
+    configs.push({ ...endpointToConfig(row, identity), maxSessionSeconds, ...(startsAt ? { startsAt } : {}) });
   }
 
   const issuedAt = new Date();
-  const expiresAt = bundleExpiry({ issuedAt, subscriptionEndsAt: input.subscriptionEndsAt, rows: input.rows });
+  const expiresAt = bundleExpiry({
+    issuedAt,
+    subscriptionEndsAt: input.subscriptionEndsAt,
+    rows: input.rows,
+    extraExpiresAt: leadConfigs.map((config) => new Date(config.expiresAt)),
+  });
 
   const plaintext: BundlePlaintext = {
     revision,
@@ -247,7 +285,7 @@ export async function buildBundle(
     [newId(), input.userId, input.deviceId, revision, configs.length, JSON.stringify(body), expiresAt],
   );
 
-  return { body, plaintext, etag: bundleEtag(input.deviceId, revision, input.rows) };
+  return { body, plaintext, etag: bundleEtag(input.deviceId, revision, input.rows, input.fingerprint) };
 }
 
 /**
@@ -268,6 +306,47 @@ async function cachedBundle(
   const payload = parseJsonObject(row.payload);
   if (!payload || typeof payload.envelope !== "object") return null;
   return payload as unknown as BundleResponse;
+}
+
+/** Ce qu'un appareil reçoit à cet instant, avant scellement. */
+interface ServedPlan {
+  rows: EndpointRow[];
+  leads: BundleConfig[];
+  nightStartsAt: Map<string, string>;
+  endsAt: string | null;
+  /** Décrit l'état servi là où la révision ne suffit pas (ETag). */
+  fingerprint: string;
+}
+
+/**
+ * Plan d'un forfait limité. Un client absent du panneau (pas encore confirmé)
+ * donne un bundle sans lead : il n'existe alors aucun repli. Épuisé ou expiré :
+ * rien à servir, le bundle naît expiré.
+ */
+async function limitedPlan(db: Database, sub: LimitedSubscription, active: boolean): Promise<ServedPlan> {
+  const endsAt = sub.endsAt.toISOString();
+  if (!active || sub.exhausted) {
+    return {
+      rows: [],
+      leads: [],
+      nightStartsAt: new Map(),
+      endsAt,
+      fingerprint: sub.exhausted ? "off:exhausted" : "off:expired",
+    };
+  }
+  const lead = await xuiLeadConfig(db, sub);
+  const night =
+    sub.family === "limited_night" && sub.nightWindow
+      ? await nightRowsFor(db, sub.nightWindow, env.ingest.drainLeadSeconds)
+      : { rows: [] as EndpointRow[], startsAt: new Map<string, string>() };
+  const leadPart = lead ? `${lead.id}:${sha256Hex(lead.uri).slice(0, 12)}` : "pending";
+  return {
+    rows: night.rows,
+    leads: lead ? [lead] : [],
+    nightStartsAt: night.startsAt,
+    endsAt,
+    fingerprint: `${sub.family}:${leadPart}:${sub.nightWindow ?? "-"}`,
+  };
 }
 
 export function registerBundleRoutes(app: FastifyInstance, db: Database): void {
@@ -301,15 +380,26 @@ export function registerBundleRoutes(app: FastifyInstance, db: Database): void {
     const auth = await requireSession(db, req);
     if (auth.device.status === "revoked") throw fail.deviceRevoked();
 
-    const { entitlement } = await loadEntitlement(db, auth.userId);
-    if (!entitlement.active) throw fail.subscriptionRequired();
+    const { subscription, entitlement } = await loadEntitlement(db, auth.userId);
 
-    // Le contrat exige un appareil `active` pour consommer une place. La
-    // promotion est tentée ici : après révocation d'un ancien appareil, la
-    // place libérée est reprise sans route supplémentaire.
-    const slot = await ensureDeviceSlot(db, auth.userId, auth.deviceId);
-    if (slot.status !== "active") {
-      throw fail.forbidden("Cet appareil n'est pas actif : révoquez un appareil pour libérer une place.");
+    /*
+     * Forfait limité (D113-D115) : le client 3x-ui dédié de l'abonné, jamais un
+     * repli sur le pool partagé. Abonnement limité épuisé ou expiré : bundle vide,
+     * qui retire les configurations déjà données (l'app propose alors un forfait).
+     */
+    const limited = entitlement.active && subscription
+      ? await loadLimitedSubscription(db, subscription.id)
+      : await latestLimitedSubscription(db, auth.userId);
+    if (!entitlement.active && !limited) throw fail.subscriptionRequired();
+
+    if (entitlement.active) {
+      // Le contrat exige un appareil `active` pour consommer une place. La
+      // promotion est tentée ici : après révocation d'un ancien appareil, la
+      // place libérée est reprise sans route supplémentaire.
+      const slot = await ensureDeviceSlot(db, auth.userId, auth.deviceId);
+      if (slot.status !== "active") {
+        throw fail.forbidden("Cet appareil n'est pas actif : révoquez un appareil pour libérer une place.");
+      }
     }
 
     const agreementKey = String(auth.device.agreement_key ?? "");
@@ -318,16 +408,26 @@ export function registerBundleRoutes(app: FastifyInstance, db: Database): void {
     /*
      * D45 : un bundle ne contient qu'un tier, celui que le forfait actif
      * achète. `servedEndpoints` retire déjà les nœuds `down` (D47) et ceux qui
-     * meurent dans la fenêtre de drain.
+     * meurent dans la fenêtre de drain. Un forfait limité ne passe jamais par là.
      */
-    const rows = await servedEndpoints(db, entitlement.endpointTier);
+    const plan: ServedPlan = limited
+      ? await limitedPlan(db, limited, entitlement.active)
+      : {
+          rows: await servedEndpoints(db, entitlement.endpointTier),
+          leads: [],
+          nightStartsAt: new Map(),
+          endsAt: entitlement.endsAt,
+          fingerprint: "",
+        };
+    const { rows } = plan;
     const revision = await poolRevision(db);
     const expectedExpiresAt = bundleExpiry({
       issuedAt: new Date(),
-      subscriptionEndsAt: entitlement.endsAt,
+      subscriptionEndsAt: plan.endsAt,
       rows,
+      extraExpiresAt: plan.leads.map((lead) => new Date(lead.expiresAt)),
     });
-    const etag = bundleEtag(auth.deviceId, revision, rows);
+    const etag = bundleEtag(auth.deviceId, revision, rows, plan.fingerprint);
 
     /*
      * D48/D49 : un 304 n'est valable que si l'enveloppe que l'appareil garde
@@ -347,7 +447,10 @@ export function registerBundleRoutes(app: FastifyInstance, db: Database): void {
         deviceId: auth.deviceId,
         agreementKey,
         rows,
-        subscriptionEndsAt: entitlement.endsAt,
+        subscriptionEndsAt: plan.endsAt,
+        leadConfigs: plan.leads,
+        nightStartsAt: plan.nightStartsAt,
+        fingerprint: plan.fingerprint,
       });
       body = built.body;
     }
