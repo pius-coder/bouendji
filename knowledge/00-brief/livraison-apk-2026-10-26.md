@@ -69,3 +69,20 @@ l'utilisateur) : clé Fapshi, `JWT_SECRET` (déconnecte tout le monde),
 chiffrent/signent des données existantes : rotation à planifier, pas à chaud.
 Leçon : ne jamais faire transiter une config par une commande dont l'erreur
 peut renvoyer l'entrée.
+
+## Build et installation (suite, même soir)
+
+- Run `android-brand` `40367067857` : compilation, signature, artefact
+  `com.bouendji.vpn-1.0.0-beta.3-3.apk` (84 Mo) **réussis** ; seule l'étape R2
+  échoue (secrets R2 absents). Le code Android modifié aujourd'hui compile donc.
+- Téléchargement de l'artefact : `gh run download` meurt sans rien écrire sur
+  ce réseau ; `curl -C -` en boucle (URL de redirection redemandée à chaque
+  essai) termine en 10 essais. `fetch-segmented.ps1` refusé (ExecutionPolicy Bypass).
+- Pixel 8 en **ADB Wi-Fi** : appairage `adb pair <ip>:<port-pairing> <code>`
+  puis `adb connect <ip>:<port-connect>` (ports lus par `adb mdns services`).
+- La beta.2 du téléphone avait une **autre signature** (build debug) :
+  désinstallée avec l'accord de l'utilisateur, beta.3 installée, lancement sans
+  plantage (écran d'accueil vu). Tout utilisateur d'une ancienne APK devra
+  désinstaller une fois.
+- Non testé : connexion au compte, écran Forfaits avec curseurs (aucune offre
+  sur mesure en prod : prix à fournir, D125), paiement Fapshi réel, tunnel.
