@@ -33,8 +33,16 @@ export const HEALTH_WINDOW_MINUTES = 10;
 /** Chemin 1 (§1.3) : trois appareils **distincts** en échec. */
 export const DOWN_QUORUM = 3;
 
-/** Retour : trois appareils distincts en succès. Un nœud `down` revient par probation, pas par ce chemin. */
+/** Retour : trois appareils distincts en succès. */
 export const HEALTHY_QUORUM = 3;
+
+/**
+ * Probation d'un nœud `down` (audit R8, §6.3) : trois succès ne suffisent pas à
+ * le remettre `healthy` directement. Il faut que `down_since` ait trente minutes,
+ * le nœud passe alors `unknown` (de nouveau servi), et seul un quorum de succès
+ * ultérieur le rend `healthy`. Même durée que `app.ts` (`down_since < now - 30 min`).
+ */
+export const PROBATION_MINUTES = 30;
 
 /**
  * Chemin 2 (D63) : deux échecs sur ce nœud **et** un succès sur un autre nœud
@@ -42,6 +50,40 @@ export const HEALTHY_QUORUM = 3;
  * le succès ailleurs est ce qui distingue un nœud mort d'un téléphone cassé.
  */
 export const WITNESS_FAILURES = 2;
+
+/** Entrée pure de la décision, séparée de la base pour être testée seule. */
+export interface HealthInput {
+  successes: number;
+  doubters: number;
+  differential: boolean;
+  current: EndpointHealth;
+  downSince: Date | null;
+  now: Date;
+}
+
+/**
+ * Décide le verdict, sans rien écrire. `null` = pas de verdict.
+ *
+ * Règle nouvelle : un nœud `down` ne passe jamais directement à `healthy`.
+ * Pendant la probation il reste `down` (`null`) ; une fois la probation écoulée
+ * et le quorum de succès atteint, il passe `unknown` (reason `probation`), puis
+ * le prochain quorum le rend `healthy`.
+ */
+export function decideHealth(input: HealthInput): { health: EndpointHealth; reason: string } | null {
+  if (input.successes >= HEALTHY_QUORUM) {
+    if (input.current === "down") {
+      const since = input.downSince ? new Date(input.downSince).getTime() : null;
+      const probationOver = since !== null && input.now.getTime() - since >= PROBATION_MINUTES * 60_000;
+      return probationOver ? { health: "unknown", reason: "probation" } : null;
+    }
+    return { health: "healthy", reason: "reports" };
+  }
+  if (input.differential || input.doubters >= DOWN_QUORUM) {
+    const reason = input.differential ? "witness" : `reports:${input.doubters}`;
+    return { health: "down", reason };
+  }
+  return null;
+}
 
 export interface HealthVerdict {
   configId: string;
@@ -104,8 +146,8 @@ export async function setHealth(
  * témoin). La fenêtre est donc celle des dix minutes, tous nœuds confondus.
  *
  * Ordre des règles, il compte :
- * 1. `successes >= 3` → `healthy` (`reports`) : trois appareils qui passent
- *    valent mieux qu'un témoin isolé ;
+ * 1. `successes >= 3` → `healthy` (`reports`), sauf pour un nœud `down` : il
+ *    passe d'abord `unknown` (probation, §6.3) une fois ses 30 min écoulées ;
  * 2. sinon `differential || doubters >= 3` → `down` (`witness` ou
  *    `reports:<n>`) ;
  * 3. sinon rien : un appareil seul qui échoue ne condamne pas un nœud, c'est
@@ -123,6 +165,8 @@ export async function reconcileHealth(
     successes: string | number;
     doubters: string | number;
     differential: boolean | string | number | null;
+    current_health: EndpointHealth | null;
+    down_since: Date | string | null;
   }>(
     `WITH recent AS (
        SELECT device_id, config_id, ok
@@ -139,7 +183,9 @@ export async function reconcileHealth(
      )
      SELECT (SELECT count(DISTINCT device_id) FROM mine WHERE ok)     AS successes,
             (SELECT count(DISTINCT device_id) FROM mine WHERE NOT ok) AS doubters,
-            (SELECT count(*) FROM witness) > 0                        AS differential`,
+            (SELECT count(*) FROM witness) > 0                        AS differential,
+            (SELECT health FROM endpoints WHERE id = $1)              AS current_health,
+            (SELECT down_since FROM endpoints WHERE id = $1)          AS down_since`,
     [configId, windowMinutes, WITNESS_FAILURES],
   );
 
@@ -149,14 +195,21 @@ export async function reconcileHealth(
   // `'t'` ou `1`. Normaliser évite un verdict qui dépend du driver.
   const differential = row?.differential === true || row?.differential === "t" || row?.differential === 1;
 
-  if (successes >= HEALTHY_QUORUM) {
-    return { configId, health: "healthy", reason: "reports", changed: await setHealth(db, configId, "healthy", "reports") };
-  }
-  if (differential || doubters >= DOWN_QUORUM) {
-    const reason = differential ? "witness" : `reports:${doubters}`;
-    return { configId, health: "down", reason, changed: await setHealth(db, configId, "down", reason) };
-  }
-  return null;
+  const decision = decideHealth({
+    successes,
+    doubters,
+    differential,
+    current: (row?.current_health as EndpointHealth | null) ?? "unknown",
+    downSince: row?.down_since ? new Date(row.down_since) : null,
+    now: new Date(),
+  });
+  if (!decision) return null;
+  return {
+    configId,
+    health: decision.health,
+    reason: decision.reason,
+    changed: await setHealth(db, configId, decision.health, decision.reason),
+  };
 }
 
 /**

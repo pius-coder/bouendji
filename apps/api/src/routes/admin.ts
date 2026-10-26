@@ -31,7 +31,9 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { isUniqueViolation, type Database, type Queryable, type Row } from "../db.js";
 import { requireAdmin, roleInCommunity, scopedCommunity, type AdminContext, type StaffRole } from "../lib/auth.js";
-import { encryptSecret, hashPassword, newId } from "../lib/crypto.js";
+import { encryptSecret, hashPassword, newId, sha256Hex } from "../lib/crypto.js";
+import { nodeNameFor } from "../lib/names.js";
+import { parseNodeVless } from "../lib/vless.js";
 import { fail } from "../lib/errors.js";
 // `services/payments.ts` n'expose aucun décaissement (il orchestre
 // commande -> paiement -> activation). Le fournisseur de versement est donc
@@ -1748,10 +1750,56 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
    * ce qui fait bouger l'ETag du bundle — sans lui, le client garde le nœud mort
    * en cache (D48).
    */
+  /*
+   * Forme nouvelle (R8) : une URI VLESS collée. L'API la lit elle-même ; l'admin
+   * ne choisit que jour ou nuit. Le nom est généré, le groupe est une empreinte
+   * de l'hôte, du chemin et du SNI (jamais de l'UUID). L'ancienne forme reste
+   * acceptée telle quelle.
+   */
+  const manualVlessSchema = z
+    .object({
+      vlessUri: z.string().trim().min(10).max(2048),
+      kind: z.enum(["jour", "nuit"]),
+      ttlHours: z.number().int().min(1).max(720).optional(),
+    })
+    .strict();
+
+  type ManualInput = z.infer<typeof manualEndpointSchema>;
+
+  const manualFromVless = (body: unknown): ManualInput => {
+    const form = parseBody(manualVlessSchema, body);
+    let node: ReturnType<typeof parseNodeVless>;
+    try {
+      node = parseNodeVless(form.vlessUri);
+    } catch {
+      // Le message ne reprend ni l'URI ni son UUID : rien de sensible ne sort.
+      throw fail.validation({
+        vlessUri: "URI VLESS invalide : attendu vless://UUID@hôte:port?type=ws&security=tls&path=/chemin&sni=domaine.",
+      });
+    }
+    const sni = node.sni ?? node.host;
+    const group = `v-${sha256Hex(`${node.host}|${node.port}|${node.wsPath}|${sni}`).slice(0, 16)}`;
+    return {
+      group,
+      label: nodeNameFor(group),
+      region: "auto",
+      address: node.host,
+      port: node.port,
+      snis: [sni],
+      hostHeader: node.hostHeader,
+      wsPath: node.wsPath,
+      uuid: node.uuid,
+      ttlHours: form.ttlHours ?? 4,
+      // jour = nœud limité (paid-gcp, 3x-ui) ; nuit = nœud illimité de nuit (free-labs, D123).
+      tier: form.kind === "jour" ? "paid-gcp" : "free-labs",
+    };
+  };
+
   app.post(`${PREFIX}/endpoints/manual`, async (req, reply) => {
     const admin = await requireAdmin(db, req);
     authorize(admin, "endpoint.write", null);
-    const input = parseBody(manualEndpointSchema, req.body);
+    const fromVless = typeof req.body === "object" && req.body !== null && "vlessUri" in req.body;
+    const input: ManualInput = fromVless ? manualFromVless(req.body) : parseBody(manualEndpointSchema, req.body);
     const expiresAt = new Date(Date.now() + input.ttlHours * 3_600_000);
     const keys = input.snis.map((_, index) => `manual:${input.group}:${index + 1}`);
 
@@ -1803,7 +1851,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       });
     });
 
-    return reply.code(201).send({ group: input.group, count: ids.length, ids, expiresAt: expiresAt.toISOString(), poolRevision: revision });
+    return reply
+      .code(201)
+      .send({ group: input.group, label: input.label, count: ids.length, ids, expiresAt: expiresAt.toISOString(), poolRevision: revision });
   });
 
   app.post<{ Params: { endpointId: string } }>(`${PREFIX}/endpoints/:endpointId/health`, async (req) => {

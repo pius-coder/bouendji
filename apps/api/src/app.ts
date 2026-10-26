@@ -9,6 +9,7 @@ import { registerDecoyGuard } from "./lib/decoy.js";
 import { ApiFailure } from "./lib/errors.js";
 import { registerOpenApi, registerOpenApiReference } from "./openapi.js";
 import { registerAdminRoutes } from "./routes/admin.js";
+import { registerAdminNightRoutes } from "./routes/adminNight.js";
 import { registerAdminAuthRoutes } from "./routes/adminAuth.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerBuildRoutes } from "./routes/builds.js";
@@ -290,6 +291,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerOrderRoutes(app, db);
   registerPaymentRoutes(app, db);
   registerAdminRoutes(app, db);
+  registerAdminNightRoutes(app, db);
   registerAdminAuthRoutes(app, db);
   registerBuildRoutes(app, db);
   registerOfflineRoutes(app, db);
