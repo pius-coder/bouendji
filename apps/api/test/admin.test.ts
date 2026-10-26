@@ -31,6 +31,11 @@ const { issueAdminToken } = await import("../src/lib/auth.js");
 const { encryptSecret } = await import("../src/lib/crypto.js");
 
 const db = await createDb();
+// R4 : `POST /admins` écrit `whatsapp_number` et `must_change_password` (044), et
+// `PATCH /communities` écrit `whatsapp_group_url` et `contact_whatsapp` (040).
+// schema.ts est gelé : sans ces migrations, les écritures échouent en 500.
+await (await import("../src/migrations/040_communities_whatsapp.js")).up(db);
+await (await import("../src/migrations/044_admin_users_onboarding.js")).up(db);
 // app.ts est maintenant câblé par l'orchestrateur (registerAdminRoutes y figure) :
 // le test passe par la vraie application, sans greffe locale.
 const app = await buildApp({ db });
@@ -353,7 +358,6 @@ test("owner : création, rôle, suspension, révocation, pool, audit", async () 
   const admin = await call("POST", "/admins", OWNER, {
     email: "nouveau@example.com",
     name: "Nouveau Staff",
-    password: "mot-de-passe-solide-2026",
     platformRole: "none",
   });
   assert.equal(admin.status, 201);

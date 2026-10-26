@@ -38,6 +38,7 @@ import { fail } from "../lib/errors.js";
 // l'instance exportée par `lib/fapshi.ts`, déjà sélectionnée par
 // `env.paymentProvider` (mock | fapshi) : aucun fichier hors périmètre modifié.
 import { payments as payoutProvider } from "../lib/fapshi.js";
+import { generateTemporaryPassword, isWhatsappGroupUrl, normalizeWhatsappNumber, waMeLink } from "../lib/onboarding.js";
 import { bumpPoolRevision, poolRevision } from "../services/endpoints.js";
 import { issueOfflineBundle } from "../services/offlineBundles.js";
 import { MAX_COMMISSION_BPS, planRevision } from "../services/payments.js";
@@ -81,6 +82,20 @@ const communityPatchSchema = z
     name: z.string().trim().min(2).max(120).optional(),
     commissionBps: z.number().int().min(0).max(3000).optional(),
     status: z.enum(["active", "suspended"]).optional(),
+    /** R4 : lien d'invitation `https://chat.whatsapp.com/...`, ou `null` pour l'effacer. */
+    whatsappGroupUrl: z
+      .string()
+      .trim()
+      .refine(isWhatsappGroupUrl, "Lien de groupe attendu : https://chat.whatsapp.com/...")
+      .nullable()
+      .optional(),
+    /** R4 : 9 chiffres, `+237` facultatif, ou `null` pour l'effacer. Stocké sur 9 chiffres. */
+    contactWhatsapp: z
+      .string()
+      .trim()
+      .refine((value) => normalizeWhatsappNumber(value) !== null, "9 chiffres attendus, +237 facultatif.")
+      .nullable()
+      .optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, "Aucun champ à modifier.");
@@ -102,14 +117,23 @@ const membershipPatchSchema = z
   .strict()
   .refine((value) => value.role !== undefined || value.status !== undefined, "Aucun champ à modifier.");
 
+/**
+ * R4 : pas de mot de passe dans le corps, il est généré côté serveur. L'email
+ * est facultatif si un numéro WhatsApp est donné (identifiant de connexion).
+ */
 const adminCreateSchema = z
   .object({
-    email: z.string().trim().toLowerCase().email().max(190),
+    email: z.string().trim().toLowerCase().email().max(190).optional(),
     name: z.string().trim().min(2).max(120),
-    password: z.string().min(12).max(256),
+    whatsappNumber: z
+      .string()
+      .trim()
+      .refine((value) => normalizeWhatsappNumber(value) !== null, "9 chiffres attendus, +237 facultatif.")
+      .optional(),
     platformRole: z.enum(["none", "owner"]).optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => value.email !== undefined || value.whatsappNumber !== undefined, "Un email ou un numéro WhatsApp est requis.");
 
 const payoutCreateSchema = z
   .object({
@@ -479,6 +503,8 @@ function communityDto(row: Row) {
     slug: row.slug as string,
     status: row.status as string,
     commissionBps: Number(row.commission_bps),
+    whatsappGroupUrl: (row.whatsapp_group_url as string | null) ?? null,
+    contactWhatsapp: (row.contact_whatsapp as string | null) ?? null,
     createdAt: iso(row.created_at),
     suspended: row.status !== "active",
   };
@@ -784,21 +810,29 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     const commissionBps = input.commissionBps ?? Number(before.commission_bps);
     const status = input.status ?? (before.status as string);
     const suspended = before.status !== "suspended" && status === "suspended";
+    // R4 : `undefined` = inchangé, `null` = effacé, sinon forme normalisée.
+    const whatsappGroupUrl =
+      input.whatsappGroupUrl === undefined ? (before.whatsapp_group_url as string | null) : input.whatsappGroupUrl;
+    const contactWhatsapp =
+      input.contactWhatsapp === undefined
+        ? (before.contact_whatsapp as string | null)
+        : input.contactWhatsapp === null
+          ? null
+          : normalizeWhatsappNumber(input.contactWhatsapp);
 
     await db.tx(async (q) => {
-      await q.query(`UPDATE communities SET name = $2, commission_bps = $3, status = $4 WHERE id = $1`, [
-        communityId,
-        name,
-        commissionBps,
-        status,
-      ]);
+      await q.query(
+        `UPDATE communities SET name = $2, commission_bps = $3, status = $4, whatsapp_group_url = $5, contact_whatsapp = $6
+          WHERE id = $1`,
+        [communityId, name, commissionBps, status, whatsappGroupUrl, contactWhatsapp],
+      );
       await appendAudit(q, admin, req, {
         action: suspended ? "community.suspend" : status !== before.status ? "community.resume" : "community.update",
         targetType: "community",
         targetId: communityId,
         communityId,
         before: { name: before.name, commissionBps: Number(before.commission_bps), status: before.status },
-        after: { name, commissionBps, status },
+        after: { name, commissionBps, status, whatsappGroupUrl, contactWhatsapp },
       });
     });
 
@@ -1070,34 +1104,74 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     return membershipDto(row as Row);
   });
 
-  /** Provisionnement d'un compte d'administration (owner uniquement). */
+  /**
+   * Provisionnement d'un compte d'administration (owner uniquement).
+   *
+   * Le mot de passe temporaire est généré ici, hashé en base, et renvoyé **une
+   * seule fois** dans cette réponse. Il n'existe nulle part ailleurs en clair.
+   * Si un numéro WhatsApp est donné, la réponse contient aussi un lien `wa.me`
+   * prêt à envoyer. Le mot de passe figure alors dans ce lien : il est exposé à
+   * qui ouvre le lien (et aux journaux du navigateur). Choix demandé par le plan.
+   */
   app.post(`${PREFIX}/admins`, async (req, reply) => {
     const admin = await requireAdmin(db, req);
     authorize(admin, "community.manage", null);
     const input = parseBody(adminCreateSchema, req.body);
     const id = newId();
     const platformRole = input.platformRole ?? "none";
+    const whatsapp = input.whatsappNumber ? normalizeWhatsappNumber(input.whatsappNumber) : null;
+    const temporaryPassword = generateTemporaryPassword();
+    const identifier = whatsapp ? `+237 ${whatsapp}` : (input.email as string);
+    const whatsappLink = whatsapp
+      ? waMeLink(
+          whatsapp,
+          `Bonjour ${input.name}, votre accès à l'espace VPN : identifiant ${identifier}, mot de passe provisoire ${temporaryPassword}. Connectez-vous puis choisissez votre mot de passe.`,
+        )
+      : null;
     try {
       await db.tx(async (q) => {
         // La colonne héritée `role` reste synchronisée : voir schema.ts, la
         // migration ne doit jamais pouvoir re-promouvoir un compte rétrogradé.
         await q.query(
-          `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
-           VALUES ($1, $2, $3, $4, $5, $6, true)`,
-          [id, input.email, hashPassword(input.password), input.name, platformRole === "owner" ? "platform" : "partner", platformRole],
+          `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active, whatsapp_number, must_change_password)
+           VALUES ($1, $2, $3, $4, $5, $6, true, $7, true)`,
+          [
+            id,
+            input.email ?? null,
+            hashPassword(temporaryPassword),
+            input.name,
+            platformRole === "owner" ? "platform" : "partner",
+            platformRole,
+            whatsapp,
+          ],
         );
         await appendAudit(q, admin, req, {
           action: "admin.create",
           targetType: "admin_user",
           targetId: id,
-          after: { email: input.email, platformRole },
+          after: { email: input.email ?? null, whatsappNumber: whatsapp, platformRole, mustChangePassword: true },
         });
       });
     } catch (err) {
-      if (isUniqueViolation(err)) throw fail.conflict("Cette adresse email est déjà utilisée.");
+      if (isUniqueViolation(err)) {
+        throw fail.conflict(
+          whatsapp && String(err).includes("whatsapp")
+            ? "Ce numéro WhatsApp est déjà utilisé."
+            : "Cette adresse email est déjà utilisée.",
+        );
+      }
       throw err;
     }
-    return reply.code(201).send({ adminId: id, email: input.email, name: input.name, platformRole });
+    return reply.code(201).send({
+      adminId: id,
+      email: input.email ?? null,
+      name: input.name,
+      whatsappNumber: whatsapp,
+      platformRole,
+      mustChangePassword: true,
+      temporaryPassword,
+      whatsappLink,
+    });
   });
 
   /**
