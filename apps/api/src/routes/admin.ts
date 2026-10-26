@@ -30,7 +30,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { isUniqueViolation, type Database, type Queryable, type Row } from "../db.js";
-import { requireAdmin, roleInCommunity, scopedCommunity, type AdminContext, type StaffRole } from "../lib/auth.js";
+import { hasPlatformRole, requireAdmin, roleInCommunity, scopedCommunity, type AdminContext, type StaffRole } from "../lib/auth.js";
 import { encryptSecret, hashPassword, newId } from "../lib/crypto.js";
 import { fail } from "../lib/errors.js";
 // `services/payments.ts` n'expose aucun décaissement (il orchestre
@@ -252,7 +252,17 @@ type Capability =
   | "endpoint.write"
   | "device.revoke"
   | "offline_bundle.issue"
-  | "audit.read";
+  | "audit.read"
+  | "account.self"
+  | "admin.invite"
+  | "onboarding.self"
+  | "build.request"
+  | "build.approve"
+  | "pricing.read"
+  | "pricing.manage"
+  | "xui.manage"
+  | "night_slot.manage"
+  | "presence.read";
 
 /**
  * Matrice appliquée, rôle par rôle (knowledge/40-money/roles-and-commissions.md,
@@ -277,13 +287,50 @@ type Capability =
  * | device.revoke         | oui   | sa communauté   | sa comm.| non     |
  * | offline_bundle.issue  | oui   | sa communauté   | sa comm.| non     |
  * | audit.read            | oui   | sa communauté   | non     | non     |
+ * | account.self          | oui   | oui             | oui     | oui     |
+ * | admin.invite          | oui   | non             | non     | non     |
+ * | onboarding.self       | oui   | sa communauté   | non     | non     |
+ * | build.request         | oui   | sa communauté   | non     | non     |
+ * | build.approve         | oui   | non             | non     | non     |
+ * | pricing.read          | oui   | sa communauté   | non     | non     |
+ * | pricing.manage        | oui   | non             | non     | non     |
+ * | xui.manage            | oui   | non             | non     | non     |
+ * | presence.read         | oui   | non             | non     | non     |
+ *
+ * Rôle plateforme `reseau` (D120, cumulable avec `owner`) : endpoint.read,
+ * endpoint.write, night_slot.manage, et rien d'autre. Son rôle ne donne aucune
+ * capacité d'argent ni de communauté.
+ *
+ * Le court-circuit « tout permis » n'existe que pour `owner`.
  */
-function permitted(admin: AdminContext, capability: Capability, communityId: string | null): boolean {
-  if (admin.platformRole === "owner") return true;
+export function permitted(admin: AdminContext, capability: Capability, communityId: string | null): boolean {
+  if (hasPlatformRole(admin, "owner")) return true;
   const local: StaffRole | null = communityId ? roleInCommunity(admin, communityId) : null;
   const anyRole = (roles: readonly StaffRole[]) => admin.memberships.some((m) => roles.includes(m.role));
+  const reseau = hasPlatformRole(admin, "reseau");
+  // « Admin de la communauté » : sur une communauté précise, ou sur n'importe
+  // laquelle quand la requête n'en désigne aucune.
+  const communityAdmin = communityId ? local === "community_admin" : anyRole(["community_admin"]);
 
   switch (capability) {
+    case "account.self":
+      // Tout administrateur authentifié gère son propre compte.
+      return true;
+    case "onboarding.self":
+      // Un compte sans communauté peut démarrer son onboarding ; un admin de
+      // communauté ne l'achève que pour la sienne.
+      return admin.memberships.length === 0 || communityAdmin;
+    case "build.request":
+    case "pricing.read":
+      return communityAdmin;
+    case "admin.invite":
+    case "build.approve":
+    case "pricing.manage":
+    case "xui.manage":
+    case "presence.read":
+      return false;
+    case "night_slot.manage":
+      return reseau;
     case "community.read":
       // Une communauté précise exige une appartenance ; la liste, au moins une.
       return communityId ? local !== null : admin.memberships.length > 0;
@@ -324,10 +371,11 @@ function permitted(admin: AdminContext, capability: Capability, communityId: str
       // caisse : `finance` et `support` n'y touchent pas.
       return local === "community_admin";
     case "endpoint.read":
-      return anyRole(["community_admin", "support"]);
+      return reseau || anyRole(["community_admin", "support"]);
     case "endpoint.write":
-      // Forcer un nœud `down` est un acte d'exploitation global (exigence 3).
-      return false;
+      // Forcer un nœud `down` est un acte d'exploitation global (exigence 3) :
+      // réservé au réseau, pas à une communauté.
+      return reseau;
     case "device.revoke":
     case "offline_bundle.issue":
       return local === "community_admin" || local === "support";
@@ -346,7 +394,7 @@ function authorize(admin: AdminContext, capability: Capability, communityId: str
 
 /** Qui voit les montants : owner, community_admin (ses ventes), finance. */
 function seesMoney(admin: AdminContext, communityId: string | null): boolean {
-  if (admin.platformRole === "owner") return true;
+  if (hasPlatformRole(admin, "owner")) return true;
   const local = communityId ? roleInCommunity(admin, communityId) : null;
   return local === "community_admin" || local === "finance";
 }
@@ -649,6 +697,25 @@ function appDto(row: Row) {
   };
 }
 
+/**
+ * Contexte du compte connecté (GET /me, réponse de connexion, retour de PATCH).
+ * `onboarding` reste nul ici : son état est porté par le lot onboarding (R4).
+ */
+export function adminMeView(admin: AdminContext) {
+  return {
+    id: admin.adminId,
+    email: String(admin.admin.email),
+    name: String(admin.admin.name),
+    whatsappNumber: (admin.admin.whatsapp_number as string | null) ?? null,
+    telegramChatId: (admin.admin.telegram_chat_id as string | null) ?? null,
+    platformRoles: [...admin.platformRoles],
+    platformRole: admin.platformRole,
+    mustChangePassword: admin.mustChangePassword,
+    memberships: admin.memberships.map((m) => ({ communityId: m.communityId, role: m.role })),
+    onboarding: null,
+  };
+}
+
 function adminDirectoryDto(row: Row) {
   return {
     id: row.id as string,
@@ -709,13 +776,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
 
   app.get(`${PREFIX}/me`, async (req) => {
     const admin = await requireAdmin(db, req);
-    return {
-      adminId: admin.adminId,
-      email: admin.admin.email as string,
-      name: admin.admin.name as string,
-      platformRole: admin.platformRole,
-      memberships: admin.memberships.map((m) => ({ communityId: m.communityId, role: m.role })),
-    };
+    return adminMeView(admin);
   });
 
   /* ---------------------------------------------------------- communautés */
