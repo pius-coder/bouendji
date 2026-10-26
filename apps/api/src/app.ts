@@ -19,6 +19,7 @@ import { registerInternalRoutes } from "./routes/internal.js";
 import { registerMeRoutes } from "./routes/me.js";
 import { registerAccountRoutes } from "./routes/account.js";
 import { registerOfflineRoutes } from "./routes/offline.js";
+import { registerAdminDetailRoutes } from "./routes/adminDetails.js";
 import { registerOrderRoutes } from "./routes/orders.js";
 import { registerPaymentRoutes } from "./routes/payments.js";
 import { registerTelemetryRoutes } from "./routes/telemetry.js";
@@ -293,6 +294,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerAdminAuthRoutes(app, db);
   registerBuildRoutes(app, db);
   registerOfflineRoutes(app, db);
+  registerAdminDetailRoutes(app, db);
   await registerOpenApiReference(app);
 
   return app;
