@@ -18,7 +18,7 @@ process.env.PUBLIC_BASE_URL = "http://localhost:8080";
 
 const { createDb } = await import("../src/db.js");
 const { buildApp } = await import("../src/app.js");
-const { issueAccessToken, issueAdminToken } = await import("../src/lib/auth.js");
+const { issueAccessToken, openAdminSession } = await import("../src/lib/auth.js");
 const {
   activateOrder,
   createOrder,
@@ -75,8 +75,8 @@ for (const [id, email, platformRole] of [
   [SUPPORT, "support@r6.test", "none"],
 ] as const) {
   await db.query(
-    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active)
-     VALUES ($1, $2, $3, $4, 'partner', $5, true)`,
+    `INSERT INTO admin_users (id, email, password_hash, name, role, platform_role, active, must_change_password)
+     VALUES ($1, $2, $3, $4, 'partner', $5, true, false)`,
     [id, email, PASSWORD_HASH, id, platformRole],
   );
 }
@@ -86,9 +86,12 @@ await db.query(
   [COMMUNITY_ADMIN, COMMUNITY, SUPPORT],
 );
 
-const ownerToken = (await issueAdminToken({ adminId: OWNER, role: "partner", communityId: null })).token;
-const caToken = (await issueAdminToken({ adminId: COMMUNITY_ADMIN, role: "partner", communityId: null })).token;
-const supportToken = (await issueAdminToken({ adminId: SUPPORT, role: "partner", communityId: null })).token;
+// R1 : un jeton admin ouvre une session révocable (`admin_sessions`) ; le drapeau
+// « mot de passe à changer » est posé à false dans la graine ci-dessus pour ne
+// pas tomber sur la garde R1.
+const ownerToken = (await openAdminSession(db, { adminId: OWNER })).token;
+const caToken = (await openAdminSession(db, { adminId: COMMUNITY_ADMIN })).token;
+const supportToken = (await openAdminSession(db, { adminId: SUPPORT })).token;
 
 // Offres semées directement : les règles de prix sont testées ensuite par les routes.
 await db.query(
@@ -212,7 +215,33 @@ test("les migrations R6 se rejouent sans effet", async () => {
 });
 
 test("064 refuse les doublons, nomme la commande, ne supprime rien", async () => {
-  const scratch = await createDb("memory://");
+  // Base brute : schéma de baseline seul, sans l'exécuteur de migrations — le
+  // banc rejoue 064 lui-même, comme sur une base de production qui portait déjà
+  // ses doublons avant le déploiement de R6 (`createDb`, lui, applique tout).
+  const { PGlite } = await import("@electric-sql/pglite");
+  const { SCHEMA_SQL } = await import("../src/schema.js");
+  const raw = new PGlite("memory://");
+  await raw.waitReady;
+  // `exec` (protocole simple) : SCHEMA_SQL est multi-instructions ; `query`
+  // l'entêterait en protocole étendu (42601). C'est ce que fait `createDb`.
+  await raw.exec(SCHEMA_SQL);
+  const run = async (sql: string, params?: unknown[]) => {
+    const res = await raw.query(sql, params as never[] | undefined);
+    return res.rows as unknown as Record<string, unknown>[];
+  };
+  const scratch = {
+    query: async <T = Record<string, unknown>>(sql: string, params?: unknown[]) =>
+      (await run(sql, params)) as unknown as T[],
+    one: async <T = Record<string, unknown>>(sql: string, params?: unknown[]) =>
+      ((await run(sql, params))[0] ?? null) as T | null,
+    scalar: async <T = unknown>(sql: string, params?: unknown[]) => {
+      const row = (await run(sql, params))[0];
+      return (row ? (Object.values(row)[0] ?? null) : null) as T;
+    },
+    close: async () => {
+      await raw.close();
+    },
+  };
   try {
     await scratch.query("INSERT INTO communities (id, name, slug) VALUES ('c1', 'C', 'c1')");
     await scratch.query(
