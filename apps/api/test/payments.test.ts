@@ -151,6 +151,20 @@ test("webhook : secret fournisseur exigé dès qu'il est configuré", async () =
       payload: { transId: "mock_unknown" },
     });
     assert.equal(authorized.statusCode, 404, authorized.body);
+
+    // Fapshi n'envoie pas d'en-tête : le secret peut venir de l'URL déclarée.
+    const byQuery = await app.inject({
+      method: "POST",
+      url: "/v1/payments/webhook/mock?key=mock-webhook-secret",
+      payload: { transId: "mock_unknown" },
+    });
+    assert.equal(byQuery.statusCode, 404, byQuery.body);
+    const wrongQuery = await app.inject({
+      method: "POST",
+      url: "/v1/payments/webhook/mock?key=wrong-secret",
+      payload: { transId: "mock_unknown" },
+    });
+    assert.equal(wrongQuery.statusCode, 401);
   } finally {
     env.fapshi.webhookSecret = previous;
   }

@@ -150,10 +150,13 @@ export function registerPaymentRoutes(app: FastifyInstance, db: Database): void 
 
       // Un secret partagé, quand il est configuré, filtre le bruit avant même
       // la lecture du corps. Il ne remplace pas la revérification.
+      // Fapshi n'envoie pas d'en-tête personnalisé : le secret peut aussi venir
+      // de l'URL déclarée chez le fournisseur (`…/webhook/fapshi?key=<secret>`).
       const expectedSecret = env.fapshi.webhookSecret;
       if (expectedSecret.length > 0) {
         const header = req.headers["x-webhook-secret"];
-        const provided = typeof header === "string" ? header : "";
+        const query = (req.query ?? {}) as Record<string, unknown>;
+        const provided = typeof header === "string" ? header : typeof query.key === "string" ? query.key : "";
         if (!provided || !sameSecret(provided, expectedSecret)) {
           throw new ApiFailure(401, "UNAUTHENTICATED", "Webhook non authentifié.");
         }
