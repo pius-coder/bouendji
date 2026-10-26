@@ -119,3 +119,28 @@ R7 tranché, R6 confirmé :
   (script sh) échoue alors en 127. Appeler l'exécutable directement :
   `C:\Users\lenovo\AppData\Roaming\npm\node_modules\bun\bin\bun.exe`
   (ou `bun.cmd` via `cmd /c`).
+
+## Fusion terminée (2026-10-26, soir)
+
+Les 10 lots sont fusionnés dans `api/prod-hardening` (r7, r8, r1-dash, r2-dash
+ajoutés ce soir). **Vérifié** : API `tsc --noEmit` sans sortie, suite complète
+`node --test --import tsx test/*.test.ts` → **343 pass, 0 fail** ; dashboard
+`npm test` → **135 pass, 0 fail** (tsc : seules erreurs dans `.next/types`,
+artefact ignoré par git). Pas de `next build`, pas de navigateur, pas de
+Postgres réel.
+
+Coutures faites :
+- r7 : `test/xuiSchema.ts` supprimé, l'exécuteur R0 applique 070-073.
+- r8 : `builds.ts` passe à `notifyRecipients(db, …)` (`notify` n'existe plus).
+- Tests builds/manualVless/nightSlots/xui : sessions R1 (`openAdminSession`,
+  `must_change_password=false`).
+- **Décision de code à confirmer** : la migration 060 donne `family='limited'`
+  aux anciens forfaits ; `toLimited` (`services/xui.ts`) ne traite comme limité
+  qu'un abonnement avec `quota_bytes` ou `night_window`. Sinon les anciens
+  forfaits par tier auraient un bundle vide.
+
+Reste (non fait) : `canRead` (R3) et contrôles de rôle locaux → `permitted()` ;
+`PASSWORD_CHANGE_REQUIRED` dans `packages/contract` ; retirer
+`|| anyRole(["finance"])` (admin.ts ~374-396, décision de matrice) ;
+`runAction` redirige déjà ? (non vérifié) ; migrations 080/081 vérifiées via
+l'exécuteur (suite verte) ; exécuteur R0 obligatoire en prod.
