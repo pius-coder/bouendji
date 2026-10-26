@@ -18,11 +18,13 @@ import { fail } from "../lib/errors.js";
 import {
   createOrder,
   loadOrder,
+  ORDER_SELECT,
   reconcilePayment,
   toOrderDto,
   type OrderDto,
   type OrderRow,
 } from "../services/payments.js";
+import { NIGHT_WINDOWS } from "../services/pricing.js";
 
 /* -------------------------------------------------------------- validation */
 
@@ -44,6 +46,8 @@ const createOrderSchema = z
   .object({
     planId: z.string().trim().min(1).max(190),
     planRevision: z.number().int().min(1),
+    /** R6 : plage de nuit, obligatoire pour la famille limité + nuit, refusée sinon. */
+    nightWindow: z.enum(NIGHT_WINDOWS).optional(),
     /** Conservé pour le suivi de campagne ; n'influence ni le prix ni la commission. */
     campaignClaimId: z.string().trim().min(1).max(190).optional(),
   })
@@ -88,15 +92,7 @@ function decodeCursor(raw: string): Cursor {
 
 type ListRow = OrderRow;
 
-const LIST_SELECT = /* sql */ `
-  SELECT o.id, o.user_id, o.app_id, o.plan_id, o.community_id, o.amount_xaf, o.currency,
-         o.status, o.provider, o.provider_ref, o.payment_url, o.commission_bps, o.commission_xaf,
-         o.utm, o.failure_reason, o.created_at, o.paid_at, o.activated_at, o.expires_at,
-         p.code AS plan_code, p.name AS plan_name, p.duration_days, p.device_limit,
-         p.price_xaf AS plan_price, p.active AS plan_active
-    FROM orders o
-    JOIN plans p ON p.id = o.plan_id`;
-
+const LIST_SELECT = ORDER_SELECT;
 async function listOrders(
   db: Queryable,
   userId: string,
@@ -141,6 +137,7 @@ export function registerOrderRoutes(app: FastifyInstance, db: Database): void {
       userId: auth.userId,
       planId: input.planId,
       planRevision: input.planRevision,
+      nightWindow: input.nightWindow ?? null,
     });
     return reply.code(201).send(created.order);
   });

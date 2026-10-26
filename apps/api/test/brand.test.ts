@@ -35,6 +35,7 @@ const { env } = await import("../src/config.js");
 type Json = Record<string, any>;
 
 const db = await createDb();
+await (await import("./r6schema.js")).applyR6Migrations(db);
 const app = await buildApp({ db });
 
 after(async () => {

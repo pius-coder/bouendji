@@ -975,5 +975,168 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
  * `@fastify/swagger`, donc à la génération du document uniquement.
  */
 export function docFor(method: string, url: string): RouteDoc | undefined {
-  return ROUTE_DOCS[`${method.toUpperCase()} ${url}`];
+  const key = `${method.toUpperCase()} ${url}`;
+  return R6_ROUTE_DOCS[key] ?? ROUTE_DOCS[key];
 }
+
+/* ------------------------------------------------------- lot R6 (paiement) */
+
+/**
+ * Contrats du lot R6 : forfaits à deux familles, réglages tarifaires, commande,
+ * abonnement. Ces entrées l'emportent sur `ROUTE_DOCS` pour les mêmes clés
+ * (`docFor` lit d'abord ce bloc). Les champs décrits ici sont ceux que l'app
+ * Android lit.
+ */
+const R6_ROUTE_DOCS: Record<string, RouteDoc> = {
+  "GET /v1/apps/:appId/plans": {
+    summary: "Lister les offres d'une marque",
+    description:
+      "Offres actives. `family` : `limited` (quota fixe, client 3x-ui dédié) ou `limited_night` (même quota le jour, " +
+      "plus de l'illimité sur la plage choisie). `nightOptions` : plages proposées, actives seulement ; leur `priceXaf` " +
+      "s'ajoute au prix du forfait. `quotaBytes` : `null` pour une offre sans quota. `revision` à renvoyer à la commande. Route publique.",
+    tags: ["catalogue"],
+    security: [],
+    params: PARAM_APP_ID,
+    response: withErrors({
+      200: jsonResponse("Catalogue de la marque.", {
+        properties: {
+          app: shape({ id: str("Marque."), name: str("Nom.") }),
+          items: arrayOf(
+            shape({
+              id: str("Forfait."),
+              code: str("Code stable."),
+              name: str("Nom."),
+              priceXaf: int("Prix du forfait, hors plage de nuit."),
+              durationDays: int("Durée."),
+              deviceLimit: int("Appareils."),
+              endpointTier: str("`free-labs` (illimité) ou `paid-gcp` (limité)."),
+              family: str("`limited` ou `limited_night`."),
+              quotaBytes: { type: ["integer", "null"], description: "Octets. `null` : sans quota." },
+              nightOptions: arrayOf(
+                shape({ window: str("`20-24`, `24-04` ou `20-04`."), priceXaf: int("Supplément en XAF.") }, ["window", "priceXaf"]),
+                "Plages de nuit proposées.",
+              ),
+              revision: int("Révision à renvoyer à la commande."),
+            }),
+            "Offres.",
+          ),
+        },
+      }),
+    }),
+  },
+
+  "POST /v1/orders": {
+    summary: "Créer une commande",
+    description:
+      "Le prix et la commission sont lus en base, jamais dans le corps. Le total vaut le prix du forfait plus le prix de la " +
+      "plage choisie. `nightWindow` est requis pour la famille `limited_night` et refusé pour `limited`. Une révision périmée " +
+      "(prix, quota, options, nature de nœud) renvoie 409 sans rien créer. La réponse porte l'URL de paiement du fournisseur.",
+    tags: ["commandes"],
+    security: DEVICE_SECURITY,
+    body: {
+      type: "object",
+      additionalProperties: false,
+      required: ["planId", "planRevision"],
+      properties: {
+        planId: str("Forfait choisi."),
+        planRevision: int("Révision lue dans le catalogue."),
+        nightWindow: { type: "string", enum: ["20-24", "24-04", "20-04"], description: "Plage de nuit (limité + nuit uniquement)." },
+      },
+    },
+    response: withErrors({
+      201: jsonResponse("Commande créée.", {
+        properties: {
+          orderId: str("Commande."),
+          status: str("`created` ou `pending`."),
+          price: shape({ amount: int("Total en XAF."), currency: str("`XAF`.") }),
+          nightWindow: str("Plage choisie, absente pour `limited`."),
+          checkout: shape({ url: str("URL de paiement."), expiresAt: str("Fin.") }),
+        },
+      }),
+      409: errorResponse("`PLAN_CHANGED` : la révision a changé, relire le catalogue."),
+    }),
+  },
+
+  "GET /v1/me/subscription": {
+    summary: "Lire son abonnement, son quota et sa plage",
+    description:
+      "Droits et abonnement. Dans `entitlement` : `family`, `quotaBytes` (octets, `null` sans quota), `usedBytes` (somme " +
+      "de la consommation côté serveur sur la période, source `node` seulement), `remainingBytes`, `nightWindow` (`null` " +
+      "hors limité + nuit) et `state` : `active`, `exhausted` (quota atteint) ou `expired` (aucun abonnement actif). " +
+      "Cette route ne coupe rien : la coupure à l'épuisement est faite côté 3x-ui.",
+    tags: ["abonnement"],
+    security: DEVICE_SECURITY,
+    response: withErrors({
+      200: jsonResponse("Droits, quota et abonnement.", {
+        properties: {
+          entitlement: shape({
+            active: { type: "boolean" },
+            family: str("`limited`, `limited_night`, ou `null` sans abonnement."),
+            quotaBytes: { type: ["integer", "null"], description: "Quota de l'abonnement, octets." },
+            usedBytes: int("Consommation de la période, octets."),
+            remainingBytes: { type: ["integer", "null"], description: "Quota restant, octets. `null` sans quota." },
+            nightWindow: { type: ["string", "null"], description: "Plage choisie, `null` si absente." },
+            state: { type: "string", enum: ["active", "exhausted", "expired"] },
+          }),
+          subscription: shape({}),
+        },
+      }),
+    }),
+  },
+
+  "GET /v1/admin/pricing": {
+    summary: "Lire les réglages tarifaires",
+    description:
+      "Coût du Go, coût par plage de nuit, marge plateforme, plafond de commission. Aucune valeur n'est fournie par défaut : " +
+      "`null` = non réglé. `floorConfigured` indique si le plancher peut être calculé. Lecture : owner et community_admin.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    response: withErrors({
+      200: jsonResponse("Réglages.", {
+        properties: {
+          costPerGbXaf: { type: ["integer", "null"] },
+          nightWindowCostXaf: shape({ "20-24": { type: ["integer", "null"] }, "24-04": { type: ["integer", "null"] }, "20-04": { type: ["integer", "null"] } }),
+          platformMarginBps: { type: ["integer", "null"] },
+          maxCommissionBps: { type: ["integer", "null"], description: "Plafond réglé. `null` : repli de 30 %." },
+          effectiveMaxCommissionBps: int("Plafond réellement appliqué."),
+          floorConfigured: { type: "boolean" },
+          updatedAt: { type: ["string", "null"], format: "date-time" },
+          updatedBy: { type: ["string", "null"] },
+        },
+      }),
+    }),
+  },
+
+  "PUT /v1/admin/pricing": {
+    summary: "Régler les tarifs",
+    description:
+      "Remplacement complet : tous les champs sont requis, `null` = non réglé. Owner seul. Les forfaits déjà vendus ne sont " +
+      "pas recalculés ; les modifications de forfait suivantes sont contrôlées contre le plancher.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    body: {
+      type: "object",
+      additionalProperties: false,
+      required: ["costPerGbXaf", "nightWindowCostXaf", "platformMarginBps", "maxCommissionBps"],
+      properties: {
+        costPerGbXaf: { type: ["integer", "null"] },
+        nightWindowCostXaf: {
+          type: "object",
+          additionalProperties: false,
+          required: ["20-24", "24-04", "20-04"],
+          properties: {
+            "20-24": { type: ["integer", "null"] },
+            "24-04": { type: ["integer", "null"] },
+            "20-04": { type: ["integer", "null"] },
+          },
+        },
+        platformMarginBps: { type: ["integer", "null"], description: "0 à 10 000." },
+        maxCommissionBps: { type: ["integer", "null"], description: "0 à 10 000. Remplace le 30 % de D35." },
+      },
+    },
+    response: withErrors({
+      200: jsonResponse("Réglages enregistrés.", { properties: { costPerGbXaf: { type: ["integer", "null"] } } }),
+      403: errorResponse("Réservé au propriétaire."),
+    }),
+  },
+};

@@ -31,6 +31,7 @@ const { issueAdminToken } = await import("../src/lib/auth.js");
 const { encryptSecret } = await import("../src/lib/crypto.js");
 
 const db = await createDb();
+await (await import("./r6schema.js")).applyR6Migrations(db);
 // app.ts est maintenant câblé par l'orchestrateur (registerAdminRoutes y figure) :
 // le test passe par la vraie application, sans greffe locale.
 const app = await buildApp({ db });

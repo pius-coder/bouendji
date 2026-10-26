@@ -27,6 +27,8 @@ import { env } from "../config.js";
 import { addDays, addMinutes, newId, sha256Hex } from "../lib/crypto.js";
 import { ApiFailure, fail } from "../lib/errors.js";
 import { payments as defaultProvider, type PaymentProvider, type ProviderPaymentStatus } from "../lib/fapshi.js";
+import { commissionCapBps, loadPricingSettings, type NightWindow } from "./pricing.js";
+import { activeNightOptions, planTermsSql } from "./planTerms.js";
 
 /** Fenêtre de paiement d'une commande. Même valeur que l'exemple du contrat. */
 export const ORDER_TTL_MINUTES = 24 * 60;
@@ -52,6 +54,10 @@ export interface PlanRow {
   active: boolean;
   community_id: string;
   commission_bps: number;
+  family: string;
+  quota_bytes: number | string | null;
+  endpoint_tier: string | null;
+  night_options: unknown;
 }
 
 export interface OrderRow {
@@ -81,6 +87,13 @@ export interface OrderRow {
   device_limit: number;
   plan_price: number;
   plan_active: boolean;
+  plan_family: string;
+  plan_quota_bytes: number | string | null;
+  plan_endpoint_tier: string | null;
+  plan_night_options: unknown;
+  /* R6 : plage choisie et quota figé à l'achat */
+  night_window: string | null;
+  quota_bytes: number | string | null;
 }
 
 export interface OrderDto {
@@ -95,6 +108,7 @@ export interface OrderDto {
   paidAt?: string;
   checkout?: { url: string; expiresAt: string };
   failureCode?: string;
+  nightWindow?: NightWindow;
   pollAfterSeconds: number;
 }
 
@@ -102,6 +116,8 @@ export interface CreateOrderInput {
   userId: string;
   planId: string;
   planRevision: number;
+  /** Requise pour la famille limité + nuit, interdite sinon. */
+  nightWindow?: NightWindow | null;
   utm?: Record<string, string> | null;
 }
 
@@ -151,25 +167,43 @@ export interface WebhookResult {
 /* ---------------------------------------------------------------- montants */
 
 /**
- * Révision de prix dérivée de l'offre. `plans` n'a pas de colonne `revision`
- * (schema.ts est hors périmètre) : on dérive donc un entier stable depuis les
- * termes commerciaux. Changer un prix, une durée, une limite d'appareils ou
- * l'activation de l'offre change la révision, ce qui produit le `409`
- * attendu par le contrat au lieu d'un achat à l'ancien prix.
+ * Termes d'une offre tels que lus en base (plans + options de nuit).
+ * Les champs R6 sont optionnels : une ligne sans eux garde les valeurs par
+ * défaut du schéma (famille limitée, sans quota, nœud illimité).
  */
-export function planRevision(plan: {
+export interface PlanTermsRow {
   code: string;
-  price_xaf: number;
-  duration_days: number;
-  device_limit: number;
+  price_xaf: number | string;
+  duration_days: number | string;
+  device_limit: number | string;
   active: boolean;
-}): number {
+  family?: string | null;
+  quota_bytes?: number | string | null;
+  endpoint_tier?: string | null;
+  night_options?: unknown;
+}
+
+/**
+ * Révision de prix dérivée de l'offre. `plans` n'a pas de colonne `revision` :
+ * on dérive donc un entier stable depuis les termes commerciaux. Changer un
+ * prix, une durée, une limite d'appareils, l'activation, la famille, le quota,
+ * la nature de nœud ou une option de nuit active change la révision, ce qui
+ * produit le `409` attendu par le contrat au lieu d'un achat à l'ancien prix.
+ */
+export function planRevision(plan: PlanTermsRow): number {
+  const nightOptions = activeNightOptions(plan.night_options)
+    .map((option) => `${option.window}:${option.priceXaf}`)
+    .join(",");
   const material = [
     plan.code,
-    String(plan.price_xaf),
-    String(plan.duration_days),
-    String(plan.device_limit),
+    String(Number(plan.price_xaf)),
+    String(Number(plan.duration_days)),
+    String(Number(plan.device_limit)),
     plan.active ? "1" : "0",
+    plan.family ?? "limited",
+    plan.quota_bytes === null || plan.quota_bytes === undefined ? "-" : String(Number(plan.quota_bytes)),
+    plan.endpoint_tier ?? "free-labs",
+    nightOptions,
   ].join("|");
   let hash = 0x811c9dc5;
   for (let i = 0; i < material.length; i += 1) {
@@ -189,9 +223,15 @@ export function planRevision(plan: {
  */
 export const MAX_COMMISSION_BPS = 3000;
 
-export function commissionFor(amountXaf: number, bps: number): number {
+/**
+ * `capBps` vient des réglages tarifaires (`commissionCapBps`, D125) ; sans
+ * réglage, le repli est le 30 % de D35. L'activation passe 10 000 : le taux
+ * figé sur la commande est déjà plafonné à la création, le relire ne doit pas
+ * le rabaisser si le plafond a changé entre-temps.
+ */
+export function commissionFor(amountXaf: number, bps: number, capBps: number = MAX_COMMISSION_BPS): number {
   if (amountXaf <= 0 || bps <= 0) return 0;
-  return Math.floor((amountXaf * Math.min(bps, MAX_COMMISSION_BPS)) / 10_000);
+  return Math.floor((amountXaf * Math.min(bps, capBps)) / 10_000);
 }
 
 const iso = (value: Date | string | null): string | undefined =>
@@ -222,6 +262,10 @@ export function toOrderDto(order: OrderRow): OrderDto {
       duration_days: order.duration_days,
       device_limit: order.device_limit,
       active: order.plan_active,
+      family: order.plan_family,
+      quota_bytes: order.plan_quota_bytes,
+      endpoint_tier: order.plan_endpoint_tier,
+      night_options: order.plan_night_options,
     }),
     price: { amount: order.amount_xaf, currency: "XAF" },
     status,
@@ -234,6 +278,7 @@ export function toOrderDto(order: OrderRow): OrderDto {
   if (expiresAt) dto.expiresAt = expiresAt;
   const paidAt = iso(order.paid_at);
   if (paidAt) dto.paidAt = paidAt;
+  if (order.night_window) dto.nightWindow = order.night_window as NightWindow;
 
   // Une URL de paiement n'existe que tant que l'argent n'est pas encaissé.
   // Après `paid`, l'absence de `checkout` est ce qui empêche l'app de
@@ -259,12 +304,15 @@ function failureCodeOf(reason: string): string {
 
 /* ------------------------------------------------------------------ lecture */
 
-const ORDER_SELECT = /* sql */ `
+/** Projection commune des commandes (liste, détail, verrou d'activation). */
+export const ORDER_SELECT = /* sql */ `
   SELECT o.id, o.user_id, o.app_id, o.plan_id, o.community_id, o.amount_xaf, o.currency,
          o.status, o.provider, o.provider_ref, o.payment_url, o.commission_bps, o.commission_xaf,
          o.utm, o.failure_reason, o.created_at, o.paid_at, o.activated_at, o.expires_at,
+         o.night_window, o.quota_bytes,
          p.code AS plan_code, p.name AS plan_name, p.duration_days, p.device_limit,
-         p.price_xaf AS plan_price, p.active AS plan_active
+         p.price_xaf AS plan_price, p.active AS plan_active,
+         ${planTermsSql("p", "plan_")}
     FROM orders o
     JOIN plans p ON p.id = o.plan_id`;
 
@@ -298,7 +346,8 @@ export async function createOrder(
 
   const plan = await db.one<PlanRow>(
     `SELECT p.id, p.app_id, p.code, p.name, p.description, p.price_xaf, p.duration_days,
-            p.device_limit, p.active, a.community_id, c.commission_bps
+            p.device_limit, p.active, a.community_id, c.commission_bps,
+            ${planTermsSql("p")}
        FROM plans p
        JOIN apps a ON a.id = p.app_id
        JOIN communities c ON c.id = a.community_id
@@ -320,29 +369,56 @@ export async function createOrder(
     throw fail.conflict("Cette offre n'est pas payable.");
   }
 
+  /*
+   * Plage de nuit (R6) : requise pour la famille limité + nuit, interdite
+   * ailleurs. Le prix de la plage vient de `plan_night_options`, jamais du
+   * client. Une option inactive ou absente est refusée comme inexistante.
+   */
+  const activeOptions = activeNightOptions(plan.night_options);
+  const nightWindow = input.nightWindow ?? null;
+  if (plan.family === "limited_night" && nightWindow === null) {
+    throw fail.validation({ nightWindow: "Choisissez une plage de nuit pour ce forfait." });
+  }
+  if (plan.family !== "limited_night" && nightWindow !== null) {
+    throw fail.validation({ nightWindow: "Ce forfait ne propose pas de plage de nuit." });
+  }
+  const option = nightWindow === null ? null : activeOptions.find((candidate) => candidate.window === nightWindow) ?? null;
+  if (nightWindow !== null && option === null) {
+    throw fail.validation({ nightWindow: "Plage de nuit non proposée pour ce forfait." });
+  }
+  // Total calculé côté serveur : prix du forfait + prix de la plage.
+  const amount = plan.price_xaf + (option?.priceXaf ?? 0);
+
   const orderId = newId();
   const now = new Date();
   const expiresAt = addMinutes(now, ORDER_TTL_MINUTES);
-  const bps = Math.max(0, Math.min(Number(plan.commission_bps) || 0, MAX_COMMISSION_BPS));
+  // D125 : le plafond de commission est un réglage owner ; sans réglage, 30 % (D35).
+  const settings = await loadPricingSettings(db);
+  const capBps = commissionCapBps(settings);
+  const bps = Math.max(0, Math.min(Number(plan.commission_bps) || 0, capBps));
 
   await db.query(
     `INSERT INTO orders (id, user_id, app_id, plan_id, community_id, amount_xaf, currency, status,
-                         provider, commission_bps, commission_xaf, utm, created_at, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, 'XAF', 'pending', $7, $8, $9, $10::jsonb, $11, $12)`,
+                         provider, commission_bps, commission_xaf, utm, created_at, expires_at,
+                         night_window, quota_bytes)
+     VALUES ($1, $2, $3, $4, $5, $6, 'XAF', 'pending', $7, $8, $9, $10::jsonb, $11, $12, $13, $14)`,
     [
       orderId,
       user.id,
       plan.app_id,
       plan.id,
       plan.community_id,
-      plan.price_xaf,
+      amount,
       provider.name,
       bps,
       // Figé ici : un changement de taux ultérieur ne réécrit pas l'historique.
-      commissionFor(plan.price_xaf, bps),
+      commissionFor(amount, bps, capBps),
       input.utm ? JSON.stringify(input.utm) : null,
       now,
       expiresAt,
+      // Figés comme le taux : l'abonnement copie ces valeurs, pas celles du forfait.
+      nightWindow,
+      plan.quota_bytes === null || plan.quota_bytes === undefined ? null : Number(plan.quota_bytes),
     ],
   );
 
@@ -350,7 +426,7 @@ export async function createOrder(
   try {
     created = await provider.createPayment({
       orderId,
-      amountXaf: plan.price_xaf,
+      amountXaf: amount,
       email: String(user.email),
       userId: String(user.id),
       appName: String(user.name ?? ""),
@@ -420,7 +496,10 @@ async function markFailed(db: Queryable, orderId: string, reason: string): Promi
  */
 export async function activateOrder(db: Database, orderId: string): Promise<boolean> {
   return db.tx(async (q) => {
-    const order = await q.one<OrderRow>(`${ORDER_SELECT} WHERE o.id = $1`, [orderId]);
+    // Verrou de ligne sur la commande (R6 / B3) : deux activations simultanées
+    // (webhook et `?refresh=1`) se suivent au lieu de lire « pas d'abonnement »
+    // en même temps. `OF o` : le verrou ne porte pas sur `plans`.
+    const order = await q.one<OrderRow>(`${ORDER_SELECT} WHERE o.id = $1 FOR UPDATE OF o`, [orderId]);
     if (!order) throw fail.notFound("Commande introuvable.");
     if (order.status !== "paid") return false;
 
@@ -446,16 +525,26 @@ export async function activateOrder(db: Database, orderId: string): Promise<bool
     const from = startsAt.getTime() > now.getTime() ? startsAt : now;
     const endsAt = addDays(from, Number(order.duration_days));
 
+    // Quota et plage copiés depuis la commande (figés à l'achat, R6).
     await q.query(
-      `INSERT INTO subscriptions (id, user_id, plan_id, order_id, status, starts_at, ends_at)
-       VALUES ($1, $2, $3, $4, 'active', $5, $6)`,
-      [newId(), order.user_id, order.plan_id, orderId, from, endsAt],
+      `INSERT INTO subscriptions (id, user_id, plan_id, order_id, status, starts_at, ends_at, quota_bytes, night_window)
+       VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8)`,
+      [
+        newId(),
+        order.user_id,
+        order.plan_id,
+        orderId,
+        from,
+        endsAt,
+        order.quota_bytes === null || order.quota_bytes === undefined ? null : Number(order.quota_bytes),
+        order.night_window,
+      ],
     );
     await q.query("UPDATE orders SET activated_at = now() WHERE id = $1 AND activated_at IS NULL", [orderId]);
 
-    // Commission calculée depuis la commande (taux figé à l'achat), jamais
-    // depuis une valeur transmise.
-    const amount = commissionFor(Number(order.amount_xaf), Number(order.commission_bps));
+    // Commission calculée depuis la commande (taux figé à l'achat et déjà
+    // plafonné), jamais depuis une valeur transmise.
+    const amount = commissionFor(Number(order.amount_xaf), Number(order.commission_bps), 10_000);
     if (amount > 0) {
       await q.query(
         `INSERT INTO commissions (id, community_id, order_id, bps, amount_xaf, status, available_at)
@@ -566,10 +655,14 @@ export async function handleWebhookEvent(db: Database, input: WebhookInput): Pro
     WEBHOOK_RETENTION_DAYS,
   ]);
 
+  // R6 / B1 : `pending` n'est pas un état final. Une ligne restée `pending` est
+  // reprise par le renvoi suivant ; seuls les états terminaux bloquent un rejeu.
   const inserted = await db.query(
     `INSERT INTO webhook_events (id, provider, event_id, payload_hash, status)
      VALUES ($1, $2, $3, $4, 'received')
-     ON CONFLICT (provider, event_id) DO NOTHING
+     ON CONFLICT (provider, event_id) DO UPDATE
+        SET status = 'received', processed_at = NULL
+      WHERE webhook_events.status = 'pending'
      RETURNING id`,
     [newId(), provider.name, input.eventId, input.payloadHash],
   );

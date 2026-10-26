@@ -30,6 +30,7 @@ const { buildApp } = await import("../src/app.js");
 const { canonicalProof } = await import("../src/lib/crypto.js");
 
 export const db = await createDb();
+await (await import("./r6schema.js")).applyR6Migrations(db);
 export const app = await buildApp({ db });
 
 export async function closeAll(): Promise<void> {
