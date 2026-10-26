@@ -11,6 +11,7 @@ import { passwordChangeExempt, passwordChangeRequired, requireAdmin } from "./li
 import { registerOpenApi, registerOpenApiReference } from "./openapi.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminAccountRoutes } from "./routes/adminAccount.js";
+import { registerAdminNightRoutes } from "./routes/adminNight.js";
 import { registerAdminAuthRoutes } from "./routes/adminAuth.js";
 import { registerAdminOnboardingRoutes } from "./routes/adminOnboarding.js";
 import { registerAdminXuiRoutes } from "./routes/adminXui.js";
@@ -310,6 +311,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerPricingRoutes(app, db);
   registerPaymentRoutes(app, db);
   registerAdminRoutes(app, db);
+  registerAdminNightRoutes(app, db);
   registerAdminAuthRoutes(app, db);
   registerAdminAccountRoutes(app, db);
   registerAdminOnboardingRoutes(app, db);

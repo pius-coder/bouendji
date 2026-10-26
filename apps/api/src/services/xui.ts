@@ -169,6 +169,9 @@ function toLimited(row: Row): LimitedSubscription | null {
   const family = typeof row.family === "string" ? row.family : null;
   if (!family || !LIMITED_FAMILIES.includes(family)) return null;
   const window = typeof row.night_window === "string" ? row.night_window : null;
+  // La migration 060 donne `family = 'limited'` aux anciens forfaits, sans quota ni
+  // fenêtre : ils restent sur le pool partagé (par tier). Limité = quota ou fenêtre.
+  if ((row.quota_bytes === null || row.quota_bytes === undefined) && window === null) return null;
   return {
     subscriptionId: String(row.id),
     family: family as LimitedSubscription["family"],

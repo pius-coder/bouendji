@@ -27,7 +27,7 @@ process.env.OFFLINE_BUNDLE_TTL_MINUTES = "60";
 const { call, closeAll, db, deviceClient, enrollDevice, publishEndpoint, seedApp, signProof } = await import("./support.js");
 
 const { decryptSecret, encryptSecret, openEnvelope } = await import("../src/lib/crypto.js");
-const { issueAdminToken } = await import("../src/lib/auth.js");
+const { openAdminSession } = await import("../src/lib/auth.js");
 const { runXuiTick } = await import("../src/services/xuiWorker.js");
 const { issueOfflineBundle } = await import("../src/services/offlineBundles.js");
 
@@ -114,7 +114,8 @@ async function makeAdmin(label: string, platformRole: "owner" | "none"): Promise
      VALUES ($1, $2, 'scrypt$16384$8$1$x$y', 'Admin test', 'partner', $3, true)`,
     [id, `${id}@test.local`, platformRole],
   );
-  const { token } = await issueAdminToken({ adminId: id, role: "platform", communityId: null });
+  await db.query("UPDATE admin_users SET must_change_password = false WHERE id = $1", [id]);
+  const { token } = await openAdminSession(db, { adminId: id });
   return token;
 }
 

@@ -24,7 +24,7 @@ process.env.MOCK_BUILDS = "true";
 const { createDb } = await import("../src/db.js");
 const { buildApp } = await import("../src/app.js");
 const { env } = await import("../src/config.js");
-const { issueAdminToken } = await import("../src/lib/auth.js");
+const { openAdminSession } = await import("../src/lib/auth.js");
 const { buildBrandSpec, validateBrandSpec } = await import("../src/lib/brand.js");
 const { ApiFailure } = await import("../src/lib/errors.js");
 const migration = await import("../src/migrations/050_build_requests.js");
@@ -111,11 +111,8 @@ for (const [id, communityId, role] of [
 
 const tokens: Record<string, string> = {};
 for (const [id, , platformRole] of ADMINS) {
-  const { token } = await issueAdminToken({
-    adminId: id,
-    role: platformRole === "owner" ? "platform" : "partner",
-    communityId: null,
-  });
+  await db.query("UPDATE admin_users SET must_change_password = false WHERE id = $1", [id]);
+  const { token } = await openAdminSession(db, { adminId: id });
   tokens[id] = token;
 }
 

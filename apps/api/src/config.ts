@@ -145,9 +145,15 @@ export const env = {
   telegram: {
     enabled: bool(process.env.TELEGRAM_ENABLED, false),
     botToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
+    /**
+     * Ancien destinataire unique, gardé en repli. Les destinataires réels sont
+     * les `telegram_chat_id` des comptes owner et reseau (services/telegram.ts).
+     */
     chatId: process.env.TELEGRAM_CHAT_ID ?? "",
-    /** Warn this long before the youngest endpoint dies, so a new one can ship. */
-    deployWarnMinutes: int(process.env.DEPLOY_WARN_MINUTES, 30),
+    /** Premier rappel, en minutes avant le début d'un créneau de nuit (D119). */
+    deployWarnMinutes: int(process.env.DEPLOY_WARN_MINUTES, 15),
+    /** Relance, en minutes, tant qu'aucun nœud n'est actif pour le créneau. */
+    repeatMinutes: int(process.env.DEPLOY_REMIND_EVERY_MINUTES, 5),
   },
   /**
    * Offline bundle signing. The private key never leaves the server; the public
@@ -175,6 +181,12 @@ export const env = {
      * so the client rotates its tunnel well before the cap.
      */
     defaultTtlSeconds: int(process.env.ENDPOINT_DEFAULT_TTL, 16_200),
+    /**
+     * Durée de vie d'un nœud de nuit, enregistré avec une clé de créneau (D124).
+     * 4 h exactement, comme un créneau : sans cela un nœud de 20 h vivrait
+     * jusqu'à 00 h 30 et chevaucherait le créneau de minuit.
+     */
+    nightTtlSeconds: int(process.env.NIGHT_NODE_TTL_SECONDS, 14_400),
     /** Stop advertising this long before the endpoint dies, in seconds. */
     drainLeadSeconds: int(process.env.ENDPOINT_DRAIN_LEAD, 900),
     /** How long a client keeps one tunnel before rotating it (55 min < 60 min cap). */

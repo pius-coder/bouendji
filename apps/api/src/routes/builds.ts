@@ -39,7 +39,7 @@ import { requireAdmin, roleInCommunity, type AdminContext } from "../lib/auth.js
 import { apiOrigin, buildBrandSpec, MAX_VERSION_CODE, type BrandManifest } from "../lib/brand.js";
 import { newId } from "../lib/crypto.js";
 import { ApiFailure, fail } from "../lib/errors.js";
-import { escapeHtml, notify } from "../services/telegram.js";
+import { escapeHtml, notifyRecipients } from "../services/telegram.js";
 
 const PREFIX = "/v1/admin";
 
@@ -337,7 +337,7 @@ export function registerBuildRoutes(app: FastifyInstance, db: Database): void {
     });
 
     // Alerte à l'owner : sans contenu sensible (le nom de la marque et la version).
-    void notify(
+    void notifyRecipients(db,
       `<b>Demande de build</b> : marque « ${escapeHtml(String(appRow.name))} », version ${escapeHtml(versionName)}. ` +
         "Validation attendue dans le dashboard.",
     );

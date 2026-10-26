@@ -6,6 +6,8 @@ import type { Database } from "../db.js";
 import { ApiFailure, fail } from "../lib/errors.js";
 import type { EndpointRow, EndpointTier } from "../services/endpoints.js";
 import { bumpPoolRevision, CLIENT_POOL_SIZE, heartbeat, listPool, markReady, poolRevision, registerEndpoint, syncFrontSiblings } from "../services/endpoints.js";
+import { attachNodeToSlot, bindNightSlot, nightSlotForKey } from "../services/poolWatch.js";
+import { nodeNameFor } from "../lib/names.js";
 
 /**
  * Ingestion surface. Only endpoint containers call these routes; they are never
@@ -41,15 +43,72 @@ function sameSecret(provided: string, expected: string): boolean {
  * The secret is read at request time, not at boot, so an empty value turns the
  * ingestion off rather than leaving it open.
  */
-async function requireIngestSecret(req: FastifyRequest): Promise<void> {
-  const expected = env.ingest.secret;
-  if (expected.length === 0) {
-    throw new ApiFailure(503, "INTERNAL", "Ingestion des endpoints non configurée (ENDPOINT_INGEST_SECRET).");
+/**
+ * Créneau de nuit dont la clé a authentifié la requête (D124). `null` : le
+ * secret global a servi (nœuds jour, tests, opérations).
+ */
+export interface IngestSlot {
+  id: string;
+  bound_deployment_key: string | null;
+}
+
+declare module "fastify" {
+  interface FastifyRequest {
+    ingestSlot?: IngestSlot | null;
   }
-  const header = req.headers.authorization;
-  const provided = header?.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  if (!provided) throw fail.unauthenticated("Jeton d'ingestion manquant.");
-  if (!sameSecret(provided, expected)) throw fail.unauthenticated("Jeton d'ingestion invalide.");
+}
+
+/**
+ * Deux façons de s'authentifier, sur le même en-tête Bearer :
+ *  1. une clé de créneau de nuit, à usage unique (D124), valable jusqu'à la fin
+ *     du créneau. Le membre Réseau ne voit jamais le secret global ;
+ *  2. le secret global `ENDPOINT_INGEST_SECRET`, toujours accepté.
+ *
+ * `globalOnly` ferme la première voie (lecture du pool). Le secret global vide
+ * éteint la seconde, comme avant : 503, jamais une porte ouverte.
+ *
+ * MUST stay async: Fastify continues the lifecycle only when the hook returns a
+ * promise (a sync hook returning void parks the request forever).
+ */
+function ingestAuth(db: Database, options: { globalOnly?: boolean } = {}) {
+  return async (req: FastifyRequest): Promise<void> => {
+    const header = req.headers.authorization;
+    const provided = header?.startsWith("Bearer ") ? header.slice(7).trim() : "";
+
+    if (!options.globalOnly && provided) {
+      let slot: IngestSlot | null = null;
+      try {
+        slot = await nightSlotForKey(db, provided, new Date());
+      } catch (err) {
+        // Base sans la migration 080 (ex. jeux de tests du socle) : pas de créneaux,
+        // donc seul le secret global peut authentifier. Toute autre erreur remonte.
+        if (!(typeof err === "object" && err !== null && (err as { code?: string }).code === "42P01")) throw err;
+      }
+      if (slot) {
+        req.ingestSlot = slot;
+        return;
+      }
+    }
+
+    const expected = env.ingest.secret;
+    if (expected.length === 0) {
+      throw new ApiFailure(503, "INTERNAL", "Ingestion des endpoints non configurée (ENDPOINT_INGEST_SECRET).");
+    }
+    if (!provided) throw fail.unauthenticated("Jeton d'ingestion manquant.");
+    if (!sameSecret(provided, expected)) throw fail.unauthenticated("Jeton d'ingestion invalide.");
+    req.ingestSlot = null;
+  };
+}
+
+/**
+ * Une clé de créneau n'authentifie que le déploiement qui l'a liée. Un nœud
+ * qui présente une autre `deployment_key` est refusé sur `ready` et `heartbeat`.
+ */
+function assertSlotBinding(req: FastifyRequest, deploymentKey: string): void {
+  const slot = req.ingestSlot;
+  if (slot && slot.bound_deployment_key !== deploymentKey) {
+    throw fail.unauthenticated("Clé de créneau non liée à ce déploiement.");
+  }
 }
 
 /* -------------------------------------------------------------- validation */
@@ -222,21 +281,33 @@ async function recordNodeUsage(
 const TIERS: readonly EndpointTier[] = ["free-labs", "paid-gcp"];
 
 export function registerInternalRoutes(app: FastifyInstance, db: Database): void {
-  app.post(`${PREFIX}/endpoints/register`, { preHandler: requireIngestSecret }, async (req) => {
+  const auth = ingestAuth(db);
+  const globalAuth = ingestAuth(db, { globalOnly: true });
+
+  app.post(`${PREFIX}/endpoints/register`, { preHandler: auth }, async (req) => {
     const input = parseBody(registerSchema, req.body);
+    const slot = req.ingestSlot ?? null;
+    const now = new Date();
+    if (slot) {
+      // Clé de créneau : une seule liaison par déploiement (usage unique, D124).
+      await bindNightSlot(db, slot.id, input.deployment_key, now);
+    }
     const endpoint = await registerEndpoint(db, {
       deploymentKey: input.deployment_key,
-      label: input.label ?? input.public_host,
+      // Pas de libellé fourni : un nom générique stable, dérivé de la clé de déploiement.
+      label: input.label ?? nodeNameFor(input.deployment_key),
       host: input.public_host,
       port: input.port,
       sni: input.sni ?? input.public_host,
       region: input.region,
       capacity: input.capacity,
-      ttlSeconds: input.ttl_seconds,
+      // Un nœud de nuit vit exactement un créneau (4 h), quel que soit le TTL demandé.
+      ttlSeconds: slot ? env.ingest.nightTtlSeconds : input.ttl_seconds,
       agentVersion: input.agent_version ?? null,
       tier: input.tier,
       identityMode: input.identity_mode,
     });
+    if (slot) await attachNodeToSlot(db, slot.id, endpoint.id);
     const fronts = await syncFrontSiblings(db, input.deployment_key, input.front ?? null);
     const revision = fronts > 0 ? await bumpPoolRevision(db) : endpoint.poolRevision;
 
@@ -257,16 +328,18 @@ export function registerInternalRoutes(app: FastifyInstance, db: Database): void
     };
   });
 
-  app.post(`${PREFIX}/endpoints/ready`, { preHandler: requireIngestSecret }, async (req) => {
+  app.post(`${PREFIX}/endpoints/ready`, { preHandler: auth }, async (req) => {
     // `tier` est parsé mais volontairement pas propagé : un `ready` ne retière
     // pas un nœud (D68), il ne fait que constater que le conteneur est prêt.
     const input = parseBody(keySchema, req.body);
+    assertSlotBinding(req, input.deployment_key);
     const result = await markReady(db, input.deployment_key);
     return { status: result.status, pool_revision: result.poolRevision };
   });
 
-  app.post(`${PREFIX}/endpoints/heartbeat`, { preHandler: requireIngestSecret }, async (req) => {
+  app.post(`${PREFIX}/endpoints/heartbeat`, { preHandler: auth }, async (req) => {
     const input = parseBody(heartbeatSchema, req.body);
+    assertSlotBinding(req, input.deployment_key);
     const result = await heartbeat(db, input.deployment_key, {
       latencyMs: input.latency_ms ?? null,
       // D47 : `healthy:true` ne lève pas un `down` (voir services/endpoints.ts).
@@ -284,7 +357,7 @@ export function registerInternalRoutes(app: FastifyInstance, db: Database): void
     };
   });
 
-  app.get(`${PREFIX}/pool`, { preHandler: requireIngestSecret }, async () => {
+  app.get(`${PREFIX}/pool`, { preHandler: globalAuth }, async () => {
     const rows = await listPool(db);
     return {
       pool_revision: await poolRevision(db),
