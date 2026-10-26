@@ -13,7 +13,8 @@ La passation du matin, sur la restauration du PC, est dans
 `passation-2026-10-26-restauration`.
 
 **État** : tous les agents sont **arrêtés**. Rien n'est fusionné et rien n'est
-poussé. 9 lots sont commités sur leur branche. **R7 n'est pas commité.**
+poussé. **10 lots** commités sur leur branche, dont R7 (`77fa8de`, commite
+l'après-midi dans OpenCode).
 
 ## À lire pour reprendre (dans cet ordre)
 
@@ -47,20 +48,15 @@ poussé. 9 lots sont commités sur leur branche. **R7 n'est pas commité.**
 | R4 onboarding | `w1/r4` | `1b2f616` | tsc OK, 21/21 |
 | R5 builds validés | `w1/r5` | `cbf12e6`, `b2b130a` | tsc OK, 35/35 |
 | R8 nuit, Telegram | `w1/r8` | `8708cdf` | tsc OK (orchestrateur) ; suite 217/217 selon l'agent |
+| R6 forfaits (API) | `w1/r6` | `de90dd8` | suite complète relancée par l'orchestrateur, dans OpenCode le 2026-10-26 : **191/191** |
+| R7 3x-ui, bundle | `w1/r7` | `77fa8de` | tsc OK ; suite complète **184/184** (orchestrateur, OpenCode, 2026-10-26 ; les deux avant de commiter) |
 
 ## Fait mais non vérifié
 
-- **R6** (forfaits, tarifs, paiement) : `w1/r6`, commit `de90dd8`.
-  - Typecheck OK et `r6.test.ts` 18/18, selon l'agent.
-  - **Suite complète jamais relancée avec R6.**
-- **R7** (3x-ui, bundle à deux familles) : **non commité**, arrêté en cours.
-  - 18 fichiers modifiés ou nouveaux dans `bouendji-wt\r7`, dont :
-    - `routes/adminXui.ts`, `services/xui.ts`, `services/xuiWorker.ts` ;
-    - les migrations ;
-    - `bundle.ts`, `offlineBundles.ts`, `server.ts` ;
-    - les tests `xui.test.ts` et `xuiSchema.ts`.
-  - État inconnu : faire `git status` et `git diff`, puis le typecheck, avant de décider de garder ou de jeter.
-- Aucun lot n'a été testé avec `next build`, dans un navigateur, ou contre un vrai Postgres (seulement PGlite).
+- **R8** : la suite 217/217 vient du lot (log scratch `test2.log`), elle n'a pas
+  été relancée par l'orchestrateur.
+- Aucun lot n'a été testé avec `next build`, dans un navigateur, ou contre un
+  vrai Postgres (seulement PGlite).
 
 ## Bloqué ou en attente de l'utilisateur
 
@@ -77,14 +73,10 @@ poussé. 9 lots sont commités sur leur branche. **R7 n'est pas commité.**
 
 ## Prochaines étapes
 
-1. R7 :
-   - `cd bouendji-wt\r7`, puis `git status` et `git diff --stat` ;
-   - typecheck API ;
-   - selon le résultat : commiter (« suite non relancée ») ou jeter.
-2. R6 : relancer `bun run --cwd apps/api test` dans `bouendji-wt\r6`.
-3. Fusionner dans `api/prod-hardening`, dans cet ordre : r0 → r1-api → r6 → r4 → r3 → r5 → r7 → r8 → r1-dash → r2-dash.
-4. Après chaque fusion : typecheck et tests. Conflits attendus dans `app.ts`, `http/contracts.ts`, `config.ts`, `routes/admin.ts`, `test/support.ts` et `bun.lock` (garder celui du dépôt principal).
-5. Corrections post-fusion (détail au §8 du chantier) :
+1. Fusionner dans `api/prod-hardening`, dans cet ordre :
+   r0 → r1-api → r6 → r4 → r3 → r5 → r7 (`77fa8de`) → r8 → r1-dash → r2-dash.
+2. Après chaque fusion : typecheck et tests. Conflits attendus dans `app.ts`, `http/contracts.ts`, `config.ts`, `routes/admin.ts`, `test/support.ts` et `bun.lock` (garder celui du dépôt principal).
+3. Corrections post-fusion (détail au §8 du chantier) :
    - `test/support.ts` applique toutes les migrations via l'exécuteur R0 ;
    - retirer les `applyR6Migrations` et les applications manuelles de migrations dans les tests ;
    - remplacer `canRead` (R3) et les contrôles de rôle locaux (R4, R5, R6, R8) par `permitted()`, exporté par R1 ;
@@ -94,11 +86,11 @@ poussé. 9 lots sont commités sur leur branche. **R7 n'est pas commité.**
    - vérifier que R1 (010-012) et R4 (044) donnent les mêmes défauts à `whatsapp_number` et `must_change_password` ;
    - `runAction` (dashboard) : rediriger sur 403 `PASSWORD_CHANGE_REQUIRED` ;
    - bundle à deux familles (R7) et `night_slot` (R8) à recoller.
-6. Avant tout déploiement : la prod a besoin de l'exécuteur de migrations R0, sinon les routes admin R1 cassent.
-7. Vague 2 :
+4. Avant tout déploiement : la prod a besoin de l'exécuteur de migrations R0, sinon les routes admin R1 cassent.
+5. Vague 2 :
    - pages du dashboard (Abonnés, Offres, Argent, Communauté, Plateforme, Réseau, onboarding, guide, tarifs, 3x-ui) passées sur `useAdminQuery` et `drawer-host` ;
    - SSE et présence (R9).
-8. Android (R10), dans `apps/android`, contre les contrats R6 (`/me/subscription`) et R7 (`startsAt`) : voir `audit-synthese` R10.
+6. Android (R10), dans `apps/android`, contre les contrats R6 (`/me/subscription`) et R7 (`startsAt`) : voir `audit-synthese` R10.
 
 ## Points de sécurité
 
@@ -111,3 +103,19 @@ poussé. 9 lots sont commités sur leur branche. **R7 n'est pas commité.**
 - Les admins en prod ont un mot de passe temporaire. `must_change_password` (R1) n'est **pas déployé**.
 - R4 : le lien `wa.me` d'invitation contient le mot de passe temporaire dans l'URL. Il reste dans l'historique du navigateur.
 - R8 : le verrou anti-doublon Telegram passe par `alert_state`, pas par `pg_advisory_lock`. À confirmer.
+
+## Reprise dans OpenCode (2026-10-26, après-midi)
+
+R7 tranché, R6 confirmé :
+
+- **R6** : suite complète relancée de bout en bout par l'orchestrateur :
+  `node --test --import tsx test/*.test.ts` → **191 pass, 0 fail** (137 s).
+- **R7** : typecheck `tsc -p tsconfig.json --noEmit` **sans sortie** ; suite
+  complète → **184 pass, 0 fail** (110 s ; inclut `xui.test.ts`, `bundle`,
+  `offlineBundles`). Le lot était donc fini : **commité** `w1/r7` `77fa8de`
+  (21 fichiers, +1722/−36, diff ensuite : `git show 77fa8de --stat`).
+- Piège du shell OpenCode : le PATH est restreint (pas de coreutils Git —
+  `sed`, `dirname`, `uname` introuvables). Le shim `bun` d'`AppData\Roaming\npm`
+  (script sh) échoue alors en 127. Appeler l'exécutable directement :
+  `C:\Users\lenovo\AppData\Roaming\npm\node_modules\bun\bin\bun.exe`
+  (ou `bun.cmd` via `cmd /c`).

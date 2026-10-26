@@ -14,3 +14,9 @@
 
 ## 2026-10-26T12:42:05Z · CLÔTURE
 Arrêt demandé par le coordinateur. Commit de90dd8 sur w1/r6 ; tsc vert ; test/r6.test.ts 18/18 ; suite complète non relancée. Détail : knowledge/agents/w1-api-r6-haiku/notes/reste-a-faire.md
+
+## 2026-10-26T12:55:52Z · Contrôle orchestrateur (OpenCode)
+
+- fait: Suite complete relancee par l'orchestrateur : tests 191, pass 191, fail 0 (137 s). Le lot passe. Tableaux §8 (passation 2026-10-26 et chantier-vague1) mis a jour.
+- etat: ok
+- suite: Orchestrateur : fusion w1/r6 dans api/prod-hardening a la demande de l'utilisateur (3e de l'ordre : r0, r1-api, r6...).
