@@ -35,6 +35,8 @@ const { env } = await import("../src/config.js");
 type Json = Record<string, any>;
 
 const db = await createDb();
+// La liste et le callback lisent les colonnes de la migration 050 (R5).
+await (await import("../src/migrations/050_build_requests.js")).up(db);
 const app = await buildApp({ db });
 
 after(async () => {
@@ -369,7 +371,7 @@ test("buildBrandSpec — apps.brand relu même s'il arrive sous forme de chaîne
 
 test("POST builds — 202, versionCode par marque, corps appId/apiBaseUrl ignoré", async () => {
   const first = await api("POST", `/v1/admin/apps/${APP_A}/builds`, {
-    as: "adm_builds_a",
+    as: "adm_builds_owner",
     payload: {
       versionName: "2.0.0",
       // Ces trois champs ne doivent jamais être lus :
@@ -392,7 +394,7 @@ test("POST builds — 202, versionCode par marque, corps appId/apiBaseUrl ignor�
   assert.equal(row?.status, "queued");
   assert.equal(row?.version_code, 1);
   assert.equal(row?.version_name, "2.0.0");
-  assert.equal(row?.requested_by, "adm_builds_a");
+  assert.equal(row?.requested_by, "adm_builds_owner");
   const spec = row?.spec as Json;
   assert.equal(spec.appId, APP_A);
   assert.equal(spec.apiBaseUrl, "https://api.example.test");
@@ -414,7 +416,7 @@ test("POST builds — 202, versionCode par marque, corps appId/apiBaseUrl ignor�
   assert.equal(secondRow?.version_name, "1.0.0");
 
   // Une autre marque part de son propre compteur, pas du maximum global.
-  const other = await api("POST", `/v1/admin/apps/${APP_B}/builds`, { as: "adm_builds_b" });
+  const other = await api("POST", `/v1/admin/apps/${APP_B}/builds`, { as: "adm_builds_owner" });
   assert.equal(other.status, 202, other.text);
   const otherRow = await db.one<Json>("SELECT version_code FROM builds WHERE id = $1", [String(other.body.buildId)]);
   assert.equal(otherRow?.version_code, 1);
@@ -441,7 +443,7 @@ test("POST builds — une marque non constructible est un 422 nommé et n'écrit
   await db.query("UPDATE apps SET support_url = NULL WHERE id = $1", [APP_B]);
   const before = Number(await db.scalar<number>("SELECT count(*)::int FROM builds WHERE app_id = $1", [APP_B]));
 
-  const refused = await api("POST", `/v1/admin/apps/${APP_B}/builds`, { as: "adm_builds_b" });
+  const refused = await api("POST", `/v1/admin/apps/${APP_B}/builds`, { as: "adm_builds_owner" });
   assert.equal(refused.status, 422, refused.text);
   assert.deepEqual(Object.keys((refused.body.error as Json).details as Json), ["supportUrl"]);
 
@@ -451,7 +453,7 @@ test("POST builds — une marque non constructible est un 422 nommé et n'écrit
   // Une version fournie mais invalide est aussi un 422 nommé, pas un retour
   // silencieux à 1.0.0.
   const badVersion = await api("POST", `/v1/admin/apps/${APP_A}/builds`, {
-    as: "adm_builds_a",
+    as: "adm_builds_owner",
     payload: { versionName: "v1" },
   });
   assert.equal(badVersion.status, 422, badVersion.text);
@@ -477,6 +479,7 @@ test("GET builds — liste de la marque, jamais de spec", async () => {
       "apkUrl",
       "createdAt",
       "id",
+      "rejectReason",
       "sha256",
       "status",
       "updatedAt",
@@ -514,7 +517,7 @@ test("POST builds — dispatch GitHub : 204 attendu, refus = 502 + build failed"
       return new Response(null, { status: 204 });
     }) as typeof fetch;
 
-    const ok = await api("POST", `/v1/admin/apps/${APP_A}/builds`, { as: "adm_builds_a" });
+    const ok = await api("POST", `/v1/admin/apps/${APP_A}/builds`, { as: "adm_builds_owner" });
     assert.equal(ok.status, 202, ok.text);
     assert.equal(
       capturedUrl,
@@ -531,7 +534,7 @@ test("POST builds — dispatch GitHub : 204 attendu, refus = 502 + build failed"
 
     // GitHub refuse : le build ne reste pas « queued » pour toujours.
     globalThis.fetch = (async () => new Response("nope", { status: 500 })) as typeof fetch;
-    const refused = await api("POST", `/v1/admin/apps/${APP_A}/builds`, { as: "adm_builds_a" });
+    const refused = await api("POST", `/v1/admin/apps/${APP_A}/builds`, { as: "adm_builds_owner" });
     assert.equal(refused.status, 502, refused.text);
     const failed = Number(
       await db.scalar<number>("SELECT count(*)::int FROM builds WHERE app_id = $1 AND status = 'failed'", [APP_A]),
