@@ -274,24 +274,24 @@ describe("services réels (fake fetch)", () => {
     const { d, calls } = deps(
       () =>
         json({
-          accessToken: "t",
           token: "t",
-          accessExpiresAt: "2026-10-23T20:00:00Z",
-          admin: { id: "a", email: "x@y.zz", name: "N", platformRole: "owner", memberships: [] },
+          expiresAt: "2026-10-23T20:00:00Z",
+          mustChangePassword: false,
+          admin: { id: "a", email: "x@y.zz", name: "N" },
         }),
       null,
     );
-    const res = await createServices(d).auth.login({ email: " X@Y.ZZ ", password: "pw" });
-    assert.equal(res.accessToken, "t");
+    const res = await createServices(d).auth.login({ identifier: " X@Y.ZZ ", password: "pw" });
+    assert.equal(res.token, "t");
     assert.equal(calls[0].url, "http://api.test/v1/admin/auth/login");
     assert.equal(header(calls[0], "authorization"), null);
-    assert.equal(calls[0].init.body, '{"email":"x@y.zz","password":"pw"}');
+    assert.equal(calls[0].init.body, '{"identifier":"x@y.zz","password":"pw"}');
   });
 
-  it("login : email invalide refusé localement", async () => {
+  it("login : identifiant invalide refusé localement", async () => {
     const { d, calls } = deps(() => json({}), null);
-    await assert.rejects(createServices(d).auth.login({ email: "pas-un-email", password: "pw" }), (e: ApiError) =>
-      Boolean(e.details?.email),
+    await assert.rejects(createServices(d).auth.login({ identifier: "pas-un-email", password: "pw" }), (e: ApiError) =>
+      Boolean(e.details?.identifier),
     );
     assert.equal(calls.length, 0);
   });
