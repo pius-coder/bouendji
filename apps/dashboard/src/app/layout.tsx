@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
+import { Suspense } from "react";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { ACCENT_BOOT_SCRIPT } from "@/lib/accent";
@@ -22,9 +23,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-full">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <Providers>
-            <NuqsAdapter>{children}</NuqsAdapter>
-          </Providers>
+          {/* QueryClient lit Date.now() : sans Suspense, Next refuse le prérendu. Console privée, pas de coque statique à garder. */}
+          <Suspense fallback={null}>
+            <Providers>
+              <NuqsAdapter>{children}</NuqsAdapter>
+            </Providers>
+          </Suspense>
           <Toaster position="top-center" />
         </ThemeProvider>
       </body>

@@ -365,7 +365,7 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
               priceXaf: int("Prix en XAF."),
               durationDays: int("Durée en jours."),
               deviceLimit: int("Appareils inclus."),
-              revision: str("Révision à renvoyer à la commande."),
+              revision: int("Révision à renvoyer à la commande."),
             }),
             "Offres actives.",
           ),
@@ -817,7 +817,7 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
         sortOrder: int("Ordre d'affichage."),
       },
     },
-    response: withErrors({ 201: jsonResponse("Forfait créé.", { properties: { id: str("Forfait."), revision: str("Révision.") } }), 422: errorResponse("Tier sans nœud actif.") }),
+    response: withErrors({ 201: jsonResponse("Forfait créé.", { properties: { id: str("Forfait."), revision: int("Révision.") } }), 422: errorResponse("Tier sans nœud actif.") }),
   },
 
   "PATCH /v1/admin/plans/:planId": {
@@ -827,7 +827,7 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
     security: ADMIN_SECURITY,
     params: { type: "object", required: ["planId"], properties: { planId: str("Forfait.") } },
     body: { type: "object", additionalProperties: false, properties: { name: str("Nom."), priceXaf: int("Prix."), durationDays: int("Durée."), deviceLimit: int("Appareils."), badge: str("Badge."), featured: { type: "boolean" }, active: { type: "boolean" }, sortOrder: int("Ordre.") } },
-    response: withErrors({ 200: jsonResponse("Forfait mis à jour.", { properties: { id: str("Forfait."), revision: str("Nouvelle révision.") } }) }),
+    response: withErrors({ 200: jsonResponse("Forfait mis à jour.", { properties: { id: str("Forfait."), revision: int("Nouvelle révision.") } }) }),
   },
 
   "GET /v1/admin/communities/:communityId/memberships": {

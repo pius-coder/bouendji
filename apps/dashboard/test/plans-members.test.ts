@@ -52,7 +52,7 @@ const planRow = {
   active: true,
   sortOrder: 0,
   endpointTier: "free-labs",
-  revision: "r1",
+  revision: 1,
 };
 const memberRow = {
   id: "m1",

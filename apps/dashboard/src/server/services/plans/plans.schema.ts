@@ -32,7 +32,7 @@ export const plan = z.object({
   active: z.boolean(),
   sortOrder: z.number(),
   endpointTier: endpointTier,
-  revision: z.string(),
+  revision: z.number().int(),
 });
 export type Plan = z.infer<typeof plan>;
 
