@@ -11,6 +11,7 @@ import {
   manualEndpointCreated,
   pool,
 } from "./network.schema";
+import { type XuiServerBody, xuiServerBody, xuiServerIdParams, xuiServerList, xuiServerOne, xuiTestResult } from "./xui.schema";
 
 export type SetEndpointHealthInput = { endpointId: string } & EndpointHealth;
 export type AddManualEndpointsInput = ManualEndpoint;
@@ -36,7 +37,23 @@ export class NetworkService extends BaseService {
       idempotent: true,
       refreshAfter: true,
     }),
+    // Serveurs 3x-ui du forfait limité (owner seul) : `/v1/admin/xui/servers`.
+    xuiList: endpoint({ method: "GET", path: "/xui/servers", response: xuiServerList }),
+    xuiCreate: endpoint({ method: "POST", path: "/xui/servers", body: xuiServerBody, response: xuiServerOne, refreshAfter: true }),
+    xuiTest: endpoint({ method: "POST", path: "/xui/servers/:serverId/test", params: xuiServerIdParams, response: xuiTestResult }),
   } as const;
+
+  async listXuiServers() {
+    return (await this.call(NetworkService.endpoints.xuiList)).servers;
+  }
+
+  async createXuiServer(body: XuiServerBody) {
+    return (await this.call(NetworkService.endpoints.xuiCreate, { body })).server;
+  }
+
+  testXuiServer(serverId: string) {
+    return this.call(NetworkService.endpoints.xuiTest, { params: { serverId } });
+  }
 
   constructor(deps: BaseServiceDeps) {
     super(deps, { basePath: "/v1/admin" });

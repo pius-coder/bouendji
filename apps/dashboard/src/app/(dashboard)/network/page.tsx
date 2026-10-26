@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { ManualEndpointAction } from "@/components/network/manual-endpoint-action";
 import { NETWORK_COLUMNS } from "@/components/network/network-columns";
 import { NetworkFooter, NetworkRows } from "@/components/network/network-table";
+import { XuiServersSection } from "@/components/network/xui-servers";
 import { PageContent, PageHeader } from "@/components/page/page";
 import { TableCard, TableRowsSkeleton } from "@/components/page/table";
 
@@ -33,6 +34,9 @@ export default function NetworkPage() {
           <NetworkRows />
         </Suspense>
       </TableCard>
+      <Suspense fallback={<div className="h-24 animate-pulse rounded-2xl border border-border bg-muted/40" />}>
+        <XuiServersSection />
+      </Suspense>
     </PageContent>
   );
 }
