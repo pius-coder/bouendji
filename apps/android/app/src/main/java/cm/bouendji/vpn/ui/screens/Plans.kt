@@ -173,7 +173,7 @@ private fun CustomBuilder(c: AppController, plan: ApiClient.PlanDto, selected: B
     val t = LocalTokens.current
     val terms = plan.custom ?: return
     val choice = c.customChoice(plan) ?: return
-    val shape = RoundedCornerShape(14.dp)
+    val shape = cm.bouendji.vpn.ui.kit.cardShape()
     Column(
         Modifier
             .fillMaxWidth()
@@ -322,7 +322,7 @@ private fun MemberCard(serial: String) {
 @Composable
 private fun Bill(plan: ApiClient.PlanDto, selected: Boolean, onSelect: () -> Unit) {
     val t = LocalTokens.current
-    val shape = RoundedCornerShape(14.dp)
+    val shape = cm.bouendji.vpn.ui.kit.cardShape()
     Row(
         Modifier
             .fillMaxWidth()

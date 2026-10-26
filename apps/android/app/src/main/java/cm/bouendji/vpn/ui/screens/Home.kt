@@ -278,6 +278,14 @@ private fun mbps(value: Double): String = String.format(Locale.FRANCE, "%.1f", v
 @Composable
 private fun PowerControl(state: TunnelState, reduceMotion: Boolean, onClick: () -> Unit) {
     val t = LocalTokens.current
+    val style = LocalStyle.current
+    val powerShape: Shape = when (style.power) {
+        PowerShape.CIRCLE -> CircleShape
+        PowerShape.SQUIRCLE -> RoundedCornerShape(38)
+        PowerShape.SQUARE -> RoundedCornerShape(0.dp)
+        PowerShape.OCTAGON -> CutCornerShape(30)
+        PowerShape.BLOB -> RoundedCornerShape(topStartPercent = 50, topEndPercent = 30, bottomEndPercent = 50, bottomStartPercent = 35)
+    }
     val on = state == TunnelState.CONNECTED
     val connecting = state == TunnelState.CONNECTING || state == TunnelState.RECONNECTING
     val interaction = remember { MutableInteractionSource() }
@@ -306,15 +314,19 @@ private fun PowerControl(state: TunnelState, reduceMotion: Boolean, onClick: () 
                     .size(138.dp)
                     .scale(if (pressed) .95f else 1f)
                     .drawBehind {
-                        val r = size.minDimension / 2
-                        when {
-                            on -> drawCircle(t.accentSoft, r + 10.dp.toPx())
-                            connecting -> drawCircle(t.accentSoft, r + breathe.dp.toPx())
-                            else -> drawCircle(t.separator, r + 1.dp.toPx())
+                        // Halo autour du bouton, à la forme du bouton.
+                        val grow = when {
+                            on -> 10.dp.toPx()
+                            connecting -> breathe.dp.toPx()
+                            else -> 1.dp.toPx()
                         }
+                        val outline = powerShape.createOutline(androidx.compose.ui.geometry.Size(size.width + grow * 2, size.height + grow * 2), layoutDirection, this)
+                        translate(-grow, -grow) { drawOutline(outline, if (on || connecting) t.accentSoft else t.separator) }
                     }
-                    .clip(CircleShape)
+                    .then(if (style.decor == Decor.STICKER) Modifier.hardShadow(powerShape, t.label, 6.dp) else Modifier)
+                    .clip(powerShape)
                     .background(bg)
+                    .then(if (style.decor == Decor.STICKER || style.decor == Decor.RULE) Modifier.border(style.stroke * 2, t.label, powerShape) else if (style.decor == Decor.TERMINAL) Modifier.border(2.dp, t.accent, powerShape) else Modifier)
                     .clickable(interaction, indication = null, role = Role.Switch, onClickLabel = if (on) "Couper le VPN" else "Activer le VPN", onClick = onClick),
                 contentAlignment = Alignment.Center,
             ) { Icon(Ic.Power, fg, size = 44.dp, strokeWidth = 2.1f) }

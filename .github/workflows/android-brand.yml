@@ -153,6 +153,23 @@ jobs:
           if [ -f "$ASSETS/mascot.png" ]; then ARGS="$ARGS --mascot $ASSETS/mascot.png"; fi
           python3 tools/make-icons.py $ARGS
 
+      # Sans icône fournie, la marque reçoit un logo dessiné pour elle (thème,
+      # initiales, variation tirée du nom) au lieu de la mascotte du dépôt.
+      - name: Logo généré
+        if: ${{ steps.spec.outputs.assets == '' }}
+        env:
+          SPEC_PATH: ${{ runner.temp }}/brand.json
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq > /dev/null
+          sudo apt-get install -y --no-install-recommends librsvg2-bin fonts-dejavu-core > /dev/null
+          python3 -m pip install --quiet pillow
+          OUT="$RUNNER_TEMP/logo"
+          node tools/make-logo.mjs --spec "$SPEC_PATH" --out "$OUT"
+          rsvg-convert -w 512 -h 512 "$OUT/icon.svg" -o "$OUT/icon.png"
+          rsvg-convert -w 512 -h 512 "$OUT/mascot.svg" -o "$OUT/mascot.png"
+          python3 tools/make-icons.py --src "$OUT/icon.png" --res apps/android/app/src/main/res --mascot "$OUT/mascot.png"
+
       - name: Moteur libbox (Release GitHub, D102)
         env:
           GH_TOKEN: ${{ github.token }}

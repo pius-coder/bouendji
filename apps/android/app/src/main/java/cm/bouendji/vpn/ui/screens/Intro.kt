@@ -127,15 +127,13 @@ private data class Slide(val title: String, val text: String)
 fun OnboardingScreen(c: AppController) {
     val t = LocalTokens.current
     val word = BrandTokens.memberWord.lowercase().replaceFirstChar { it.uppercase() }
-    val slides = listOf(
-        Slide("Ta connexion,\nton territoire.", "Ton trafic est chiffré dans un tunnel, sur chaque réseau."),
-        Slide("Invisible,\npartout.", "Wi-Fi public, voyage, café : ta connexion reste privée."),
-        if (word == "Nji") {
-            Slide("Navigue comme\nun Nji.", "En bamoun, Nji veut dire riche. Ici, ta richesse, c'est ta liberté.")
-        } else {
-            Slide("Toujours\nconnecté.", "Si un serveur ne répond plus, l'application en choisit un autre toute seule.")
-        },
-    )
+    // Les textes viennent du thème : chaque marque a sa voix (Style.slides).
+    val themed = cm.bouendji.vpn.ui.theme.LocalStyle.current.slides.map { (title, text) -> Slide(title, text) }
+    val slides = if (word == "Nji") {
+        themed.take(2) + Slide("Navigue comme\nun Nji.", "En bamoun, Nji veut dire riche. Ici, ta richesse, c'est ta liberté.")
+    } else {
+        themed
+    }
     val pager = rememberPagerState { slides.size }
     val scope = rememberCoroutineScope()
     Column(Modifier.fillMaxSize()) {
@@ -147,9 +145,9 @@ fun OnboardingScreen(c: AppController) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     when (page) {
                         0 -> Box(
-                            Modifier.fillMaxHeight(.92f).aspectRatio(.8f).clip(CircleShape)
+                            Modifier.fillMaxHeight(.92f).aspectRatio(.8f).clip(cm.bouendji.vpn.ui.kit.cardShape(160.dp))
                                 .background(Brush.radialGradient(listOf(t.accentSoft, Color.Transparent)))
-                                .border(1.dp, t.noteEdge, CircleShape),
+                                .border(1.dp, t.noteEdge, cm.bouendji.vpn.ui.kit.cardShape(160.dp)),
                             contentAlignment = Alignment.Center,
                         ) {
                             Guilloche(Guil.ROSETTE, t.guilloche, Modifier.fillMaxSize().padding(10.dp))

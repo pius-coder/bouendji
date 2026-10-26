@@ -70,6 +70,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cm.bouendji.vpn.ui.theme.Fonts
 import cm.bouendji.vpn.ui.theme.LocalTokens
+import cm.bouendji.vpn.ui.theme.Decor
+import cm.bouendji.vpn.ui.theme.LocalStyle
 
 /* ------------------------------------------------------------------ texte */
 
@@ -91,7 +93,7 @@ fun T(
     color = color,
     fontSize = size,
     fontWeight = weight,
-    fontFamily = family,
+    fontFamily = family ?: LocalStyle.current.body,
     textAlign = align,
     lineHeight = lineHeight,
     maxLines = maxLines,
@@ -101,27 +103,55 @@ fun T(
 
 /** `.large-title` : 34 sp, gras. */
 @Composable
-fun LargeTitle(text: String) =
-    T(text, size = 34.sp, weight = FontWeight.Bold, lineHeight = 38.sp, letterSpacing = (-.7).sp, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 14.dp))
+fun LargeTitle(text: String) {
+    val s = LocalStyle.current
+    T(
+        if (s.titleUppercase) text.uppercase() else text,
+        size = if (s.titleUppercase) 30.sp else 34.sp,
+        weight = s.displayWeight,
+        family = s.display,
+        lineHeight = 38.sp,
+        letterSpacing = s.titleSpacing.sp,
+        modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 14.dp),
+    )
+}
 
 @Composable
-fun DisplayTitle(text: String, size: TextUnit = 30.sp, align: TextAlign? = null, color: Color = LocalTokens.current.label) =
-    T(text, color = color, size = size, weight = FontWeight.SemiBold, family = Fonts.display, align = align, lineHeight = (size.value * 1.08f).sp, letterSpacing = (-.3).sp)
+fun DisplayTitle(text: String, size: TextUnit = 30.sp, align: TextAlign? = null, color: Color = LocalTokens.current.label) {
+    val s = LocalStyle.current
+    T(
+        if (s.titleUppercase) text.uppercase() else text,
+        color = color,
+        size = size,
+        weight = s.displayWeight,
+        family = s.display,
+        align = align,
+        lineHeight = (size.value * 1.08f).sp,
+        letterSpacing = s.titleSpacing.sp,
+    )
+}
 
 @Composable
 fun Lead(text: String, align: TextAlign? = null) =
     T(text, color = LocalTokens.current.label2, size = 16.sp, align = align, lineHeight = 24.sp, modifier = Modifier.widthIn(max = 340.dp))
 
 @Composable
-fun GroupHeader(text: String) =
+fun GroupHeader(text: String) {
+    val t = LocalTokens.current
+    val s = LocalStyle.current
     T(
-        text.uppercase(),
-        color = LocalTokens.current.label2,
+        s.headerPrefix + text.uppercase(),
+        color = when (s.decor) {
+            Decor.TERMINAL -> t.accentText
+            Decor.RULE, Decor.STICKER -> t.label
+            else -> t.label2
+        },
         size = 13.sp,
-        weight = FontWeight.Medium,
-        letterSpacing = .4.sp,
+        weight = if (s.decor == Decor.RULE || s.decor == Decor.STICKER) FontWeight.Black else FontWeight.Medium,
+        letterSpacing = if (s.decor == Decor.RULE) 1.6.sp else .4.sp,
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 26.dp, bottom = 7.dp),
     )
+}
 
 @Composable
 fun GroupFooter(text: String?, danger: Boolean = false) {
@@ -146,16 +176,7 @@ fun FinePrint(text: String) =
 /** `.group` : surface arrondie 14 dp, ombre légère en clair. */
 @Composable
 fun Group(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    val t = LocalTokens.current
-    val shape = RoundedCornerShape(14.dp)
-    Column(
-        modifier
-            .fillMaxWidth()
-            .then(if (t.dark) Modifier else Modifier.shadow(2.dp, shape, ambientColor = Color(0x14142018), spotColor = Color(0x14142018)))
-            .clip(shape)
-            .background(t.surface),
-        content = content,
-    )
+    Column(modifier.fillMaxWidth().themedSurface(), content = content)
 }
 
 /** Séparateur entre deux rangées ; `inset` 58 dp quand la rangée a une icône. */
@@ -284,13 +305,24 @@ fun Btn(
         BtnKind.GRAY -> t.fill to t.label
         BtnKind.PLAIN -> Color.Transparent to t.accentText
     }
+    val s = LocalStyle.current
+    val shape = s.buttonShape
     Row(
         modifier
             .scale(scale)
             .alpha(if (enabled) 1f else .45f)
             .height(height)
-            .clip(RoundedCornerShape(50))
+            .then(if (s.decor == Decor.STICKER && kind == BtnKind.FILLED) Modifier.hardShadow(shape, t.label, 3.dp) else Modifier)
+            .clip(shape)
             .background(bg)
+            .then(
+                when {
+                    s.decor == Decor.STICKER && kind != BtnKind.PLAIN -> Modifier.border(s.stroke, t.label, shape)
+                    s.decor == Decor.RULE && kind != BtnKind.FILLED && kind != BtnKind.PLAIN -> Modifier.border(s.stroke, t.label, shape)
+                    s.decor == Decor.TERMINAL && kind != BtnKind.PLAIN -> Modifier.border(1.dp, t.accent, shape)
+                    else -> Modifier
+                },
+            )
             .clickable(interaction, indication = null, enabled = enabled && !busy, role = Role.Button, onClick = onClick)
             .padding(horizontal = 24.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -303,7 +335,14 @@ fun Btn(
             Icon(icon, fg, size = 19.dp, strokeWidth = 2f)
             Spacer(Modifier.width(8.dp))
         }
-        T(text, color = fg, size = if (height < 48.dp) 15.sp else 17.sp, weight = if (kind == BtnKind.PLAIN) FontWeight.Medium else FontWeight.SemiBold, maxLines = 1)
+        T(
+            if (s.titleUppercase) text.uppercase() else text,
+            color = fg,
+            size = if (height < 48.dp) 15.sp else 17.sp,
+            weight = if (kind == BtnKind.PLAIN) FontWeight.Medium else if (s.decor == Decor.STICKER) FontWeight.Black else FontWeight.SemiBold,
+            letterSpacing = if (s.titleUppercase) 1.sp else TextUnit.Unspecified,
+            maxLines = 1,
+        )
     }
 }
 
@@ -354,7 +393,7 @@ fun PillSwitch(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean =
 fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val t = LocalTokens.current
     Row(
-        modifier.fillMaxWidth().height(34.dp).clip(RoundedCornerShape(10.dp)).background(t.fill).padding(2.dp),
+        modifier.fillMaxWidth().height(34.dp).clip(LocalStyle.current.chipShape.let { if (LocalStyle.current.decor == Decor.SHADOW || LocalStyle.current.decor == Decor.GLASS) RoundedCornerShape(10.dp) else it }).background(t.fill).padding(2.dp),
         horizontalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         options.forEachIndexed { index, label ->
@@ -363,12 +402,15 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
                 Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .then(if (on) Modifier.shadow(3.dp, RoundedCornerShape(8.dp)) else Modifier)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (on) t.surfaceElev else Color.Transparent)
+                    .then(if (on && LocalStyle.current.decor != Decor.STICKER) Modifier.shadow(3.dp, cardShape(8.dp)) else Modifier)
+                    .clip(cardShape(8.dp))
+                    .background(if (on) (if (LocalStyle.current.decor == Decor.STICKER || LocalStyle.current.decor == Decor.TERMINAL) t.accent else t.surfaceElev) else Color.Transparent)
                     .clickable(role = Role.Tab) { onSelect(index) },
                 contentAlignment = Alignment.Center,
-            ) { T(label, size = 14.sp, weight = FontWeight.SemiBold) }
+            ) {
+                val inverse = on && (LocalStyle.current.decor == Decor.STICKER || LocalStyle.current.decor == Decor.TERMINAL)
+                T(label, color = if (inverse) t.onAccent else t.label, size = 14.sp, weight = FontWeight.SemiBold, maxLines = 1)
+            }
         }
     }
 }
@@ -418,7 +460,7 @@ fun Capsule(text: String, danger: Boolean = false, onClick: (() -> Unit)? = null
     Box(
         Modifier
             .height(32.dp)
-            .clip(RoundedCornerShape(50))
+            .clip(LocalStyle.current.chipShape)
             .background(if (danger) t.dangerSoft else t.goldSoft)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 12.dp),
@@ -428,7 +470,7 @@ fun Capsule(text: String, danger: Boolean = false, onClick: (() -> Unit)? = null
 
 @Composable
 fun Tag(text: String, color: Color = LocalTokens.current.accentText, background: Color = LocalTokens.current.accentSoft) {
-    Box(Modifier.clip(RoundedCornerShape(50)).background(background).padding(horizontal = 9.dp, vertical = 4.dp)) {
+    Box(Modifier.clip(LocalStyle.current.chipShape).background(background).padding(horizontal = 9.dp, vertical = 4.dp)) {
         T(text, color = color, size = 12.sp, weight = FontWeight.SemiBold)
     }
 }
@@ -506,17 +548,19 @@ fun noteBrush(start: Color, end: Color) = Brush.linearGradient(listOf(start, end
 @Composable
 fun Banknote(modifier: Modifier = Modifier, height: Dp = 190.dp, content: @Composable BoxScope.() -> Unit) {
     val t = LocalTokens.current
-    val shape = RoundedCornerShape(18.dp)
+    val s = LocalStyle.current
+    val shape = cardShape(s.radius + 4.dp)
     Box(
         modifier
             .fillMaxWidth()
             .height(height)
+            .then(if (s.decor == Decor.STICKER) Modifier.hardShadow(shape, t.label, 5.dp) else Modifier)
             .clip(shape)
             .background(noteBrush(t.noteStart, t.noteEnd))
-            .border(1.dp, t.noteEdge, shape),
+            .border(if (s.decor == Decor.STICKER || s.decor == Decor.RULE) s.stroke else 1.dp, if (s.decor == Decor.STICKER || s.decor == Decor.RULE) t.label else t.noteEdge, shape),
     ) {
         Guilloche(Guil.WAVES, t.noteLine, Modifier.fillMaxSize())
-        Box(Modifier.fillMaxSize().padding(8.dp).border(1.dp, t.noteEdge, RoundedCornerShape(12.dp)))
+        if (s.decor == Decor.SHADOW) Box(Modifier.fillMaxSize().padding(8.dp).border(1.dp, t.noteEdge, RoundedCornerShape(12.dp)))
         content()
     }
 }
@@ -602,7 +646,7 @@ fun PermArt(icon: Ic, size: Dp = 180.dp, pop: Boolean = false) {
     Box(Modifier.size(size), contentAlignment = Alignment.Center) {
         Guilloche(Guil.SEAL, t.guilloche, Modifier.fillMaxSize(), spinSeconds = 90)
         Box(
-            Modifier.size(size * .43f).shadow(18.dp, CircleShape, ambientColor = t.accentGlow, spotColor = t.accentGlow).clip(CircleShape).background(t.accent),
+            Modifier.size(size * .43f).shadow(18.dp, dotShape(), ambientColor = t.accentGlow, spotColor = t.accentGlow).clip(dotShape()).background(t.accent),
             contentAlignment = Alignment.Center,
         ) { Icon(icon, t.onAccent, size = size * .2f, strokeWidth = 2f) }
     }
@@ -632,7 +676,7 @@ fun Meter(fraction: Float) {
 @Composable
 fun StepBadge(n: Int) {
     val t = LocalTokens.current
-    Box(Modifier.size(28.dp).clip(CircleShape).background(t.accentSoft), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(28.dp).clip(dotShape()).background(t.accentSoft), contentAlignment = Alignment.Center) {
         T(n.toString(), color = t.accentText, size = 14.sp, weight = FontWeight.Bold)
     }
 }
@@ -642,9 +686,7 @@ fun StepBadge(n: Int) {
 fun RadioDot(checked: Boolean) {
     val t = LocalTokens.current
     Box(
-        Modifier.size(24.dp).clip(CircleShape).background(if (checked) t.accent else Color.Transparent).drawBehind {
-            if (!checked) drawCircle(t.label3, radius = size.minDimension / 2 - .75.dp.toPx(), style = Stroke(1.5.dp.toPx()))
-        },
+        Modifier.size(24.dp).clip(dotShape()).background(if (checked) t.accent else Color.Transparent).border(if (checked) 0.dp else 1.5.dp, t.label3, dotShape()),
         contentAlignment = Alignment.Center,
     ) { if (checked) Icon(Ic.Check, t.onAccent, size = 14.dp, strokeWidth = 3f) }
 }

@@ -84,6 +84,12 @@ private fun shapeOf(kind: Guil): Shape = shapes.getOrPut(kind) {
  */
 @Composable
 fun Guilloche(kind: Guil, color: Color, modifier: Modifier = Modifier, spinSeconds: Int = 0) {
+    // Chaque thème a son propre fond ; le guilloché reste celui du thème « billet ».
+    val art = cm.bouendji.vpn.ui.theme.LocalStyle.current.art
+    if (art != cm.bouendji.vpn.ui.theme.Art.GUILLOCHE) {
+        ThemeArt(art, kind, color, modifier, spinSeconds)
+        return
+    }
     val shape = shapeOf(kind)
     val angle = if (spinSeconds > 0) {
         val transition = rememberInfiniteTransition(label = "guilloche")

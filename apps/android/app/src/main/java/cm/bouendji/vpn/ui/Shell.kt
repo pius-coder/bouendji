@@ -76,7 +76,9 @@ import cm.bouendji.vpn.ui.screens.SheetHost
 import cm.bouendji.vpn.ui.screens.SplashScreen
 import cm.bouendji.vpn.ui.screens.SubscriptionScreen
 import cm.bouendji.vpn.ui.screens.VpnAuthScreen
+import cm.bouendji.vpn.ui.theme.LocalStyle
 import cm.bouendji.vpn.ui.theme.LocalTokens
+import cm.bouendji.vpn.ui.theme.styleFor
 import cm.bouendji.vpn.ui.theme.tokensFor
 import cm.bouendji.vpn.vpn.ServerBus
 import cm.bouendji.vpn.vpn.TunnelState
@@ -138,6 +140,7 @@ fun VpnApp(
         Appearance.DARK -> true
     }
     val tokens = remember(dark) { tokensFor(BrandTokens.theme, dark, BrandTokens.accent) }
+    val style = remember { styleFor(BrandTokens.theme) }
     LaunchedEffect(dark) { onSystemBars(dark) }
 
     val notice by ServerBus.notice.collectAsState()
@@ -147,7 +150,7 @@ fun VpnApp(
         if (!controller.back()) (context as? android.app.Activity)?.moveTaskToBack(true)
     }
 
-    CompositionLocalProvider(LocalTokens provides tokens) {
+    CompositionLocalProvider(LocalTokens provides tokens, LocalStyle provides style) {
         MaterialTheme(colorScheme = if (dark) darkColorScheme(primary = tokens.accent) else lightColorScheme(primary = tokens.accent)) {
             Box(Modifier.fillMaxSize().background(tokens.bg)) {
                 AnimatedContent(
