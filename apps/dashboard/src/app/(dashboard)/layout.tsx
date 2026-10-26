@@ -10,6 +10,7 @@ import {
   UserMenuSection,
 } from "@/components/shell/shell-nav-section";
 import { TopBar } from "@/components/shell/top-bar";
+import { CommandPaletteSection } from "@/components/shell/shell-nav-section";
 
 /**
  * Shell (D106, D108) : architecture conservée, rendu Chariow mesuré.
@@ -65,6 +66,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </div>
         <Suspense fallback={null}>
           <BottomBarSection />
+        </Suspense>
+        <Suspense fallback={null}>
+          <CommandPaletteSection />
         </Suspense>
       </div>
     </PageChromeProvider>

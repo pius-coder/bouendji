@@ -1,4 +1,5 @@
 import { getCommunities, getMe } from "@/server/context";
+import { CommandPalette } from "./command-palette";
 import {
   MobileCommunitySwitcher,
   ShellBottomBar,
@@ -46,4 +47,10 @@ export async function MobileCommunitySection() {
 export async function UserMenuSection() {
   const me = await getMe();
   return <UserMenu name={me.name} email={me.email} />;
+}
+
+/** Palette Ctrl K : même navigation que le shell, montée une fois par page. */
+export async function CommandPaletteSection() {
+  const { me, communities } = await readNav();
+  return <CommandPalette me={me} communities={communities} />;
 }

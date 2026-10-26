@@ -1,7 +1,19 @@
-import { can } from "@/lib/roles";
-import type { AdminMe } from "@/server/services/admin-auth/admin-auth.schema";
+import { can, platformRolesOf, type RoleSource } from "@/lib/roles";
 
-export type NavIcon = "tag" | "shield" | "home" | "users" | "smartphone" | "receipt" | "wallet" | "server" | "history" | "building" | "file-download" | "download";
+export type NavIcon =
+  | "home"
+  | "users"
+  | "tag"
+  | "wallet"
+  | "building"
+  | "shield"
+  | "server"
+  | "smartphone"
+  | "receipt"
+  | "history"
+  | "file-download"
+  | "download"
+  | "more";
 
 export interface NavItem {
   href: string;
@@ -9,150 +21,138 @@ export interface NavItem {
   icon: NavIcon;
 }
 
-/** Entrées de la barre basse (5 au plus, « Plus » compris) et du reste. */
-export interface NavModel {
-  primary: NavItem[];
-  more: NavItem[];
-}
-
-const LABEL = {
-  home: "Accueil",
-  subscribers: "Abonnés",
-  devices: "Appareils",
-  orders: "Commandes",
-  payouts: "Versements",
-  network: "Réseau",
-  audit: "Journal",
-  plans: "Forfaits",
-  members: "Membres",
-  communities: "Communautés",
-  commissions: "Commissions",
-  offline: "Fichiers de secours",
-  builds: "Applications",
-  admins: "Administrateurs",
-} as const;
-
 /**
- * Navigation calculée pour la communauté ACTIVE (jamais l'union des rôles).
- * `communityId` nul : aucune communauté accessible, seules les entrées globales restent.
- * Le rôle choisit ce qui s'affiche ; l'API refuse le reste (403).
+ * Sections du shell (chantier vague 1, R2). Accueil, Abonnés, Offres et Argent vivent
+ * dans la barre basse ; Communauté, Plateforme et Réseau derrière « Plus ».
  */
-export function buildNav(me: AdminMe, communityId: string | null): NavModel {
-  const scoped = (path: string) => `/${communityId}/${path}`;
-  const primary: NavItem[] = [{ href: "/", label: LABEL.home, icon: "home" }];
-  const more: NavItem[] = [];
-
-  if (communityId && can(me, "members.read", communityId)) {
-    primary.push({ href: scoped("subscribers"), label: LABEL.subscribers, icon: "users" });
-    primary.push({ href: scoped("devices"), label: LABEL.devices, icon: "smartphone" });
-  }
-  if (communityId && can(me, "orders.read", communityId)) {
-    primary.push({ href: scoped("orders"), label: LABEL.orders, icon: "receipt" });
-  }
-  // « Versements » est une page globale (`/payouts`, sans communauté dans l'URL) : on teste le même périmètre que la page.
-  if (can(me, "payouts.read", null)) {
-    (primary.length < 4 ? primary : more).push({ href: "/payouts", label: LABEL.payouts, icon: "wallet" });
-  }
-  if (communityId && can(me, "money.read", communityId)) {
-    more.push({ href: scoped("commissions"), label: LABEL.commissions, icon: "receipt" });
-  }
-  if (me.platformRole === "owner") {
-    more.push({ href: "/communities", label: LABEL.communities, icon: "building" });
-    more.push({ href: "/admins", label: LABEL.admins, icon: "shield" });
-  }
-  if (communityId && can(me, "plans.read", communityId)) {
-    more.push({ href: scoped("plans"), label: LABEL.plans, icon: "tag" });
-  }
-  if (communityId && can(me, "devices.offline", communityId)) {
-    more.push({ href: scoped("offline"), label: LABEL.offline, icon: "file-download" });
-  }
-  if (communityId && can(me, "plans.manage", communityId)) {
-    more.push({ href: scoped("builds"), label: LABEL.builds, icon: "download" });
-  }
-  if (communityId && can(me, "staff.manage", communityId)) {
-    more.push({ href: scoped("members"), label: LABEL.members, icon: "shield" });
-  }
-  if (can(me, "network.read", communityId)) {
-    more.push({ href: "/network", label: LABEL.network, icon: "server" });
-  }
-  if (communityId && can(me, "audit.read", communityId)) {
-    more.push({ href: scoped("audit"), label: LABEL.audit, icon: "history" });
-  }
-  return { primary, more };
-}
-
-export interface NavGroup {
-  /** Titre du groupe dans la barre latérale (2e niveau au plus, HIG sidebars). */
-  label: string;
-  items: NavItem[];
-}
-
-/**
- * Barre latérale desktop : MÊMES entrées que la barre basse, rangées en deux groupes
- * (plateforme, puis communauté active). Aucune entrée n'existe d'un côté seulement.
- */
-export function sidebarGroups(nav: NavModel, communityId: string | null, communityName: string | null): NavGroup[] {
-  const all = [...nav.primary, ...nav.more];
-  const scopedPrefix = communityId ? `/${communityId}/` : null;
-  const global = all.filter((i) => !scopedPrefix || !i.href.startsWith(scopedPrefix));
-  const scoped = scopedPrefix ? all.filter((i) => i.href.startsWith(scopedPrefix)) : [];
-  const groups: NavGroup[] = [{ label: "Général", items: global }];
-  if (scoped.length > 0) groups.push({ label: communityName ?? "Communauté", items: scoped });
-  return groups;
-}
-
-export function isActivePath(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
-}
-
-/* -------------------------------------------------------------------------- */
-/* Sections du shell (structure orya : rail de sections + sous-menu).          */
-/* -------------------------------------------------------------------------- */
-
-export type SectionKey = "pilot" | "community" | "money" | "platform";
+export type SectionKey = "accueil" | "abonnes" | "offres" | "argent" | "communaute" | "plateforme" | "reseau";
 
 export interface NavSection {
   key: SectionKey;
   label: string;
   description: string;
   icon: NavIcon;
+  /** Destination de la section (premier écran accessible). */
+  href: string;
+  /** Écrans de la section, visibles selon le rôle et la communauté active. */
   items: NavItem[];
 }
 
-const SECTION_META: Record<SectionKey, { label: string; description: string; icon: NavIcon }> = {
-  pilot: { label: "Pilotage", description: "Vue d’ensemble, réseau et journal.", icon: "home" },
-  community: { label: "Communauté", description: "Abonnés, appareils, ventes et équipe de la communauté active.", icon: "users" },
-  money: { label: "Argent", description: "Commissions et versements.", icon: "wallet" },
-  platform: { label: "Plateforme", description: "Communautés et comptes d'administration.", icon: "building" },
-};
-
-function sectionOf(item: NavItem, communityId: string | null): SectionKey {
-  if (item.href === "/" || item.href === "/network" || item.href.endsWith("/audit")) return "pilot";
-  if (item.href === "/payouts" || item.href.endsWith("/commissions")) return "money";
-  if (item.href === "/communities" || item.href === "/admins") return "platform";
-  if (communityId && item.href.startsWith(`/${communityId}/`)) return "community";
-  return "pilot";
+export interface NavModel {
+  /** Barre basse : 4 sections au plus ; « Plus » est la 5e entrée, toujours présente. */
+  bar: NavSection[];
+  /** Derrière « Plus » : Communauté, Plateforme, Réseau (selon le rôle). */
+  more: NavSection[];
+  /** « Mon compte » : menu utilisateur et feuille « Plus ». */
+  account: NavItem;
 }
 
+export const MORE_LABEL = "Plus";
+export const ACCOUNT_ITEM: NavItem = { href: "/compte", label: "Mon compte", icon: "users" };
+
+/** Toutes les sections (rail desktop), dans l'ordre d'affichage. */
+export function allSections(nav: NavModel): NavSection[] {
+  return [...nav.bar, ...nav.more];
+}
+
+const META: Record<SectionKey, { label: string; description: string; icon: NavIcon }> = {
+  accueil: { label: "Accueil", description: "Chiffres du jour et ce qui attend une action.", icon: "home" },
+  abonnes: { label: "Abonnés", description: "Abonnés, appareils, commandes et fichiers de secours.", icon: "users" },
+  offres: { label: "Offres", description: "Forfaits et application de la communauté.", icon: "tag" },
+  argent: { label: "Argent", description: "Commissions et versements.", icon: "wallet" },
+  communaute: { label: "Communauté", description: "Équipe, journal et réglages de la communauté active.", icon: "building" },
+  plateforme: { label: "Plateforme", description: "Communautés et comptes d'administration.", icon: "shield" },
+  reseau: { label: "Réseau", description: "Serveurs illimités par créneau et serveurs limités.", icon: "server" },
+};
+
 /**
- * Mêmes entrées que `buildNav`, rangées par section (rail desktop) : deux niveaux
- * au plus (section → écran), HIG sidebars. Les sections vides n'apparaissent pas.
+ * Navigation calculée pour la communauté ACTIVE (jamais l'union des rôles).
+ * `communityId` nul : seules les sections globales restent (Accueil, Argent, Plateforme, Réseau).
+ * Le rôle choisit ce qui s'affiche ; l'API refuse le reste (403).
  */
-export function buildSections(nav: NavModel, communityId: string | null): NavSection[] {
-  const order: SectionKey[] = ["pilot", "community", "money", "platform"];
-  const items = [...nav.primary, ...nav.more];
-  return order
-    .map((key) => ({ key, ...SECTION_META[key], items: items.filter((i) => sectionOf(i, communityId) === key) }))
-    .filter((s) => s.items.length > 0);
+export function buildNav(me: RoleSource, communityId: string | null): NavModel {
+  const scoped = (path: string) => `/${communityId}/${path}`;
+  const platform = platformRolesOf(me);
+  const inCommunity = communityId !== null;
+
+  const section = (key: SectionKey, entries: readonly (NavItem | null)[]): NavSection => {
+    const items = entries.filter((item): item is NavItem => item !== null);
+    return { key, ...META[key], href: items[0]?.href ?? "/", items };
+  };
+
+  const accueil = section("accueil", [{ href: "/", label: "Accueil", icon: "home" }]);
+
+  const abonnes = section(
+    "abonnes",
+    [
+      inCommunity && can(me, "members.read", communityId) ? { href: scoped("subscribers"), label: "Abonnés", icon: "users" as const } : null,
+      inCommunity && can(me, "members.read", communityId) ? { href: scoped("devices"), label: "Appareils", icon: "smartphone" as const } : null,
+      inCommunity && can(me, "orders.read", communityId) ? { href: scoped("orders"), label: "Commandes", icon: "receipt" as const } : null,
+      inCommunity && can(me, "devices.offline", communityId) ? { href: scoped("offline"), label: "Fichiers de secours", icon: "file-download" as const } : null,
+    ],
+  );
+
+  const offres = section(
+    "offres",
+    [
+      inCommunity && can(me, "plans.read", communityId) ? { href: scoped("plans"), label: "Forfaits", icon: "tag" as const } : null,
+      inCommunity && can(me, "plans.manage", communityId) ? { href: scoped("builds"), label: "Application", icon: "download" as const } : null,
+    ],
+  );
+
+  // « Versements » est une page globale (`/payouts`) : même périmètre que la page.
+  const argent = section(
+    "argent",
+    [
+      can(me, "payouts.read", null) ? { href: "/payouts", label: "Versements", icon: "wallet" as const } : null,
+      inCommunity && can(me, "money.read", communityId) ? { href: scoped("commissions"), label: "Commissions", icon: "receipt" as const } : null,
+    ],
+  );
+
+  const communaute = section(
+    "communaute",
+    [
+      inCommunity && can(me, "staff.manage", communityId) ? { href: scoped("members"), label: "Équipe", icon: "shield" as const } : null,
+      inCommunity && can(me, "audit.read", communityId) ? { href: scoped("audit"), label: "Journal", icon: "history" as const } : null,
+    ],
+  );
+
+  const plateforme = section(
+    "plateforme",
+    platform.includes("owner")
+      ? [
+          { href: "/communities", label: "Communautés", icon: "building" as const },
+          { href: "/admins", label: "Administrateurs", icon: "shield" as const },
+        ]
+      : [],
+  );
+
+  const reseau = section(
+    "reseau",
+    platform.includes("owner") || platform.includes("reseau") ? [{ href: "/network", label: "Serveurs", icon: "server" as const }] : [],
+  );
+
+  const bar = [accueil, abonnes, offres, argent].filter((s) => s.items.length > 0);
+  const more = [communaute, plateforme, reseau].filter((s) => s.items.length > 0);
+  return { bar, more, account: ACCOUNT_ITEM };
+}
+
+export function isActivePath(pathname: string, href: string): boolean {
+  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
 /** Section et écran actifs d'après l'URL (le plus long préfixe gagne). */
-export function resolveSection(sections: readonly NavSection[], pathname: string): { section: NavSection | null; item: NavItem | null } {
+export function resolveSection(
+  sections: readonly NavSection[],
+  pathname: string,
+): { section: NavSection | null; item: NavItem | null } {
   let best: { section: NavSection; item: NavItem } | null = null;
   for (const section of sections) {
     for (const item of section.items) {
       if (isActivePath(pathname, item.href) && (!best || item.href.length > best.item.href.length)) best = { section, item };
     }
   }
-  return best ?? { section: sections[0] ?? null, item: null };
+  if (best) return best;
+  const fallback = sections.find((s) => isActivePath(pathname, s.href)) ?? null;
+  return { section: fallback, item: null };
 }
