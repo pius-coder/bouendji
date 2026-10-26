@@ -30,9 +30,9 @@ enum class Decor {
     STICKER,
 }
 
-enum class Art { GUILLOCHE, ORBITS, TYPE, RADAR, BURST }
+enum class Art { GUILLOCHE, ORBITS, TYPE, RADAR, BURST, KENTE, STARS, FACETS }
 
-enum class PowerShape { CIRCLE, SQUIRCLE, SQUARE, OCTAGON, BLOB }
+enum class PowerShape { CIRCLE, SQUIRCLE, SQUARE, OCTAGON, BLOB, DIAMOND, PILL, HEXAGON }
 
 data class Style(
     val display: FontFamily,
@@ -111,7 +111,47 @@ fun styleFor(theme: BrandTokens.Theme): Style = when (theme) {
             "Ta team,\nton réseau." to "Rejoins la communauté et reste connecté partout.",
         ),
     )
+    BrandTokens.Theme.SAHEL -> sahel()
+    BrandTokens.Theme.NEBULA -> nebula()
+    BrandTokens.Theme.GLACIER -> glacier()
 }
+
+private fun sahel() = Style(
+    display = FontFamily.Serif, displayWeight = FontWeight.Bold, body = FontFamily.SansSerif,
+    titleUppercase = false, titleSpacing = -.2f, radius = 22.dp,
+    buttonShape = RoundedCornerShape(topStart = 22.dp, topEnd = 6.dp, bottomEnd = 22.dp, bottomStart = 6.dp),
+    chipShape = RoundedCornerShape(topStart = 12.dp, topEnd = 3.dp, bottomEnd = 12.dp, bottomStart = 3.dp),
+    decor = Decor.SHADOW, art = Art.KENTE, power = PowerShape.DIAMOND, headerPrefix = "◆ ", stroke = 1.5.dp,
+    slides = listOf(
+        "La route est\nà toi." to "Du marché au campus, ta connexion reste chiffrée et à toi seul.",
+        "Solide comme\nla terre." to "Des serveurs relayés : si l'un faiblit, un autre prend la route.",
+        "Ta communauté,\nton réseau." to "Un forfait à ta mesure, payé en Mobile Money, actif tout de suite.",
+    ),
+)
+
+private fun nebula() = Style(
+    display = FontFamily.SansSerif, displayWeight = FontWeight.ExtraBold, body = FontFamily.SansSerif,
+    titleUppercase = false, titleSpacing = -1f, radius = 28.dp,
+    buttonShape = RoundedCornerShape(50), chipShape = RoundedCornerShape(50),
+    decor = Decor.GLASS, art = Art.STARS, power = PowerShape.PILL, headerPrefix = "✦ ", stroke = 1.dp,
+    slides = listOf(
+        "Passe en\nhyperespace." to "Un tunnel chiffré t'emmène loin des regards indiscrets.",
+        "Des étoiles\npour serveurs." to "Toujours un serveur allumé quelque part pour te relier.",
+        "Ton univers,\nsans limite." to "Ajoute la nuit illimitée et explore sans compter.",
+    ),
+)
+
+private fun glacier() = Style(
+    display = FontFamily.SansSerif, displayWeight = FontWeight.Thin, body = FontFamily.SansSerif,
+    titleUppercase = true, titleSpacing = 3f, radius = 10.dp,
+    buttonShape = CutCornerShape(topStart = 14.dp, bottomEnd = 14.dp), chipShape = CutCornerShape(topStart = 6.dp, bottomEnd = 6.dp),
+    decor = Decor.GLASS, art = Art.FACETS, power = PowerShape.HEXAGON, headerPrefix = "", stroke = 1.dp,
+    slides = listOf(
+        "Pur comme\nla glace." to "Ton trafic passe chiffré, net, sans fuite.",
+        "Froid sous\npression." to "Réseau saturé, Wi-Fi public : la connexion tient.",
+        "Clair et\nprécis." to "Tu choisis tes gigas et ta durée, au franc près.",
+    ),
+)
 
 /** Fourni par `Shell` avec `LocalTokens`. */
 val LocalStyle = staticCompositionLocalOf { styleFor(BrandTokens.Theme.BILLET) }

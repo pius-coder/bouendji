@@ -22,7 +22,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-const THEMES = new Set(["billet", "halo", "mono", "vector", "otaku"]);
+const THEMES = new Set(["billet", "halo", "mono", "vector", "otaku", "sahel", "nebula", "glacier"]);
 const JAVA_RESERVED = new Set([
   "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class", "const",
   "continue", "default", "do", "double", "else", "enum", "extends", "final", "finally", "float",

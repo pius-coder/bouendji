@@ -68,6 +68,9 @@ const PALETTES = {
   mono: { bg: "#F6F3EC", bg2: "#EDE8DC", ink: "#141210", accent: "#141210", gold: "#8A7444" },
   vector: { bg: "#04070A", bg2: "#08130F", ink: "#C9FFDA", accent: "#39FF88", gold: "#22C55E" },
   otaku: { bg: "#FF4D7D", bg2: "#E11D5A", ink: "#101014", accent: "#FFFFFF", gold: "#FACC15" },
+  sahel: { bg: "#3A1F12", bg2: "#C2541B", ink: "#FFE8D2", accent: "#F08A3E", gold: "#E8B34B", indigo: "#2F4FA8" },
+  nebula: { bg: "#0B0716", bg2: "#2A1B4F", ink: "#F2EDFF", accent: "#A78BFA", gold: "#F472B6" },
+  glacier: { bg: "#EAF8FF", bg2: "#BFEAF7", ink: "#0B2233", accent: "#0891B2", gold: "#5CE1FF" },
 };
 const p = PALETTES[theme] ?? PALETTES.billet;
 
@@ -145,6 +148,65 @@ function emblem() {
 <circle cx="256" cy="256" r="128" fill="${p.accent}" stroke="${p.ink}" stroke-width="8"/>`;
       g += `<text x="262" y="262" dy=".36em" text-anchor="middle" font-family="${FONTS.sans}" font-weight="900" font-size="${size * 0.7}" fill="${p.ink}">${ini}</text>`;
       g += `<text x="256" y="256" dy=".36em" text-anchor="middle" font-family="${FONTS.sans}" font-weight="900" font-size="${size * 0.7}" fill="${p.bg}" stroke="${p.ink}" stroke-width="5" paint-order="stroke">${ini}</text>`;
+      return g;
+    }
+    case "sahel": {
+      // Masque-bouclier : losanges imbriqués, chevrons de tissage, initiales au centre.
+      const bands = 3 + (seed % 3);
+      let g = `<defs><linearGradient id="earth" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${p.accent}"/><stop offset="1" stop-color="${p.bg2}"/></linearGradient></defs>
+<path d="M256 34 L470 256 L256 478 L42 256 Z" fill="url(#earth)" stroke="${p.gold}" stroke-width="10" stroke-linejoin="round"/>
+<path d="M256 92 L412 256 L256 420 L100 256 Z" fill="${p.bg}" stroke="${p.gold}" stroke-width="4"/>`;
+      for (let i = 0; i < bands; i++) {
+        const y = 128 + i * 22;
+        let d = "";
+        for (let x = 176 + i * 8; x < 336 - i * 8; x += 20) d += `M${x} ${y + 10} L${x + 10} ${y} L${x + 20} ${y + 10} `;
+        g += `<path d="${d}" fill="none" stroke="${p.indigo}" stroke-width="4" stroke-linecap="round"/>`;
+      }
+      for (let i = 0; i < bands; i++) {
+        const y = 384 - i * 22;
+        let d = "";
+        for (let x = 176 + i * 8; x < 336 - i * 8; x += 20) d += `M${x} ${y - 10} L${x + 10} ${y} L${x + 20} ${y - 10} `;
+        g += `<path d="${d}" fill="none" stroke="${p.indigo}" stroke-width="4" stroke-linecap="round"/>`;
+      }
+      g += `<circle cx="104" cy="256" r="10" fill="${p.gold}"/><circle cx="408" cy="256" r="10" fill="${p.gold}"/>`;
+      g += `<text x="256" y="256" dy=".36em" text-anchor="middle" font-family="${FONTS.serif}" font-weight="700" font-size="${size * 0.62}" fill="${p.ink}">${ini}</text>`;
+      return g;
+    }
+    case "nebula": {
+      // Planète à anneau dans une nébuleuse, étoiles semées à partir du nom.
+      let g = `<defs><radialGradient id="neb" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="${p.gold}" stop-opacity=".9"/><stop offset=".45" stop-color="${p.accent}" stop-opacity=".55"/><stop offset="1" stop-color="${p.bg2}" stop-opacity="0"/></radialGradient>
+<linearGradient id="planet" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${p.accent}"/><stop offset="1" stop-color="${p.bg2}"/></linearGradient></defs>
+<circle cx="256" cy="256" r="236" fill="url(#neb)"/>`;
+      for (let i = 0; i < 22; i++) {
+        const [x, y] = polar(256, 256, 60 + ((seed >>> (i % 24)) % 170), (i * 137.5 + (seed % 90)) % 360);
+        const big = i % 6 === 0;
+        g += big
+          ? `<path d="M${x} ${y - 12} Q${x} ${y} ${x + 12} ${y} Q${x} ${y} ${x} ${y + 12} Q${x} ${y} ${x - 12} ${y} Q${x} ${y} ${x} ${y - 12}Z" fill="${p.ink}"/>`
+          : `<circle cx="${x}" cy="${y}" r="${f(1.6 + (i % 3))}" fill="${p.ink}" opacity=".85"/>`;
+      }
+      const tilt = -20 - (seed % 25);
+      g += `<ellipse cx="256" cy="256" rx="190" ry="44" fill="none" stroke="${p.gold}" stroke-width="10" transform="rotate(${tilt} 256 256)" opacity=".9"/>
+<circle cx="256" cy="256" r="112" fill="url(#planet)"/>
+<path d="M66 256 A190 44 0 0 0 446 256" fill="none" stroke="${p.gold}" stroke-width="10" transform="rotate(${tilt} 256 256)"/>`;
+      g += `<text x="256" y="256" dy=".36em" text-anchor="middle" font-family="${FONTS.sans}" font-weight="800" font-size="${size * 0.62}" fill="${p.ink}" letter-spacing="-3">${ini}</text>`;
+      return g;
+    }
+    case "glacier": {
+      // Cristal hexagonal à facettes, reflets froids.
+      const outer = [], inner = [];
+      for (let i = 0; i < 6; i++) {
+        outer.push(polar(256, 256, 220, -90 + i * 60));
+        inner.push(polar(256, 256, 124, -90 + i * 60 + (seed % 2 ? 0 : 30)));
+      }
+      let g = `<defs><linearGradient id="ice" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".5" stop-color="${p.bg2}"/><stop offset="1" stop-color="${p.accent}"/></linearGradient></defs>
+<polygon points="${outer.map((q) => q.join(",")).join(" ")}" fill="url(#ice)" stroke="${p.accent}" stroke-width="6" stroke-linejoin="round"/>`;
+      for (let i = 0; i < 6; i++) {
+        const o = outer[i], n = inner[i], o2 = outer[(i + 1) % 6];
+        const shade = (i + seed) % 3 === 0 ? "#FFFFFF" : (i + seed) % 3 === 1 ? p.gold : p.bg2;
+        g += `<polygon points="${o.join(",")} ${o2.join(",")} ${inner[(i + 1) % 6].join(",")} ${n.join(",")}" fill="${shade}" fill-opacity=".45" stroke="${p.accent}" stroke-width="2"/>`;
+      }
+      g += `<polygon points="${inner.map((q) => q.join(",")).join(" ")}" fill="#FFFFFF" fill-opacity=".85" stroke="${p.accent}" stroke-width="3"/>`;
+      g += `<text x="256" y="256" dy=".36em" text-anchor="middle" font-family="${FONTS.sans}" font-weight="200" font-size="${size * 0.58}" fill="${p.ink}" letter-spacing="6">${ini}</text>`;
       return g;
     }
     default: {

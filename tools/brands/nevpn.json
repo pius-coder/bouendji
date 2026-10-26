@@ -1,6 +1,6 @@
 {
-  "_comment": "Marque de la communauté NevVPN (prod). Créée le 2026-10-26 : nom = nom de la communauté, thème tiré au hasard, pas encore de logo ni de WhatsApp.",
-  "theme": "vector",
+  "_comment": "Marque de la communauté NevVPN (prod). Identité unique : glacier (une par app, 2026-10-26). Logo dessiné par tools/make-logo.mjs.",
+  "theme": "glacier",
   "appName": "NevVPN",
   "packageName": "cm.bouendji.nevpn",
   "apiBaseUrl": "https://api.numzer0.store",

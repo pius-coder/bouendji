@@ -190,6 +190,48 @@ private fun seedFor(theme: BrandTokens.Theme, dark: Boolean): Seed = when (theme
         goldText = Color(0xFF8F5E14), danger = Color(0xFFC0283F), inkIcon = Color(0xFF2B2B33),
         noteStart = Color(0xFFFFE4EC), noteEnd = Color(0xFFFFCCDA), noteInk = Color(0xFF7A0E30),
     )
+    // Sahel : terre cuite, ocre, indigo.
+    BrandTokens.Theme.SAHEL -> if (dark) Seed(
+        bg = Color(0xFF1A0F0A), surface = Color(0xFF26170F), surfaceElev = Color(0xFF332015),
+        ink = Color(0xFFFBEBDD), accent = Color(0xFFF08A3E), accentText = Color(0xFFF6A867),
+        onAccent = Color(0xFF241005), mint = Color(0xFF5B7BD5), gold = Color(0xFFE8B34B),
+        goldText = Color(0xFFF2C76E), danger = Color(0xFFFF6B57), inkIcon = Color(0xFF5A3A28),
+        noteStart = Color(0xFF3A1F12), noteEnd = Color(0xFF22130B), noteInk = Color(0xFFFFCFA3),
+    ) else Seed(
+        bg = Color(0xFFFBF3EA), surface = Color(0xFFFFFBF6), surfaceElev = Color(0xFFFFFFFF),
+        ink = Color(0xFF2A160B), accent = Color(0xFFC2541B), accentText = Color(0xFFA44514),
+        onAccent = Color.White, mint = Color(0xFF2F4FA8), gold = Color(0xFFB7801F),
+        goldText = Color(0xFF8F6114), danger = Color(0xFFB3261E), inkIcon = Color(0xFF4A2C1B),
+        noteStart = Color(0xFFF8DFC7), noteEnd = Color(0xFFF0C9A4), noteInk = Color(0xFF6E2C0C),
+    )
+    // Nebula : violet profond, magenta, poussière d'étoiles.
+    BrandTokens.Theme.NEBULA -> if (dark) Seed(
+        bg = Color(0xFF0B0716), surface = Color(0xFF151027), surfaceElev = Color(0xFF1F1838),
+        ink = Color(0xFFF2EDFF), accent = Color(0xFFA78BFA), accentText = Color(0xFFC4B5FD),
+        onAccent = Color(0xFF14082E), mint = Color(0xFFF472B6), gold = Color(0xFFFDE68A),
+        goldText = Color(0xFFFEF3C7), danger = Color(0xFFFF6B8B), inkIcon = Color(0xFF3B2F5C),
+        noteStart = Color(0xFF2A1B4F), noteEnd = Color(0xFF150D2B), noteInk = Color(0xFFD9CCFF),
+    ) else Seed(
+        bg = Color(0xFFF3F0FB), surface = Color(0xFFFFFFFF), surfaceElev = Color(0xFFFFFFFF),
+        ink = Color(0xFF160E2E), accent = Color(0xFF6D28D9), accentText = Color(0xFF5B21B6),
+        onAccent = Color.White, mint = Color(0xFFDB2777), gold = Color(0xFFB7791F),
+        goldText = Color(0xFF8F5E14), danger = Color(0xFFBE123C), inkIcon = Color(0xFF2E2350),
+        noteStart = Color(0xFFE6DDFB), noteEnd = Color(0xFFD3C4F7), noteInk = Color(0xFF3B1782),
+    )
+    // Glacier : blanc de neige, cyan glacé, bleu nuit.
+    BrandTokens.Theme.GLACIER -> if (dark) Seed(
+        bg = Color(0xFF06131C), surface = Color(0xFF0C1E2B), surfaceElev = Color(0xFF13293A),
+        ink = Color(0xFFEAF8FF), accent = Color(0xFF5CE1FF), accentText = Color(0xFF8DEBFF),
+        onAccent = Color(0xFF02161F), mint = Color(0xFFA5F3FC), gold = Color(0xFFCBD5E1),
+        goldText = Color(0xFFE2E8F0), danger = Color(0xFFFF7A7A), inkIcon = Color(0xFF26445A),
+        noteStart = Color(0xFF12324A), noteEnd = Color(0xFF0A1C2A), noteInk = Color(0xFFCFF4FF),
+    ) else Seed(
+        bg = Color(0xFFF2F9FC), surface = Color(0xFFFFFFFF), surfaceElev = Color(0xFFFFFFFF),
+        ink = Color(0xFF0B2233), accent = Color(0xFF0891B2), accentText = Color(0xFF0E7490),
+        onAccent = Color.White, mint = Color(0xFF06B6D4), gold = Color(0xFF64748B),
+        goldText = Color(0xFF475569), danger = Color(0xFFC0283F), inkIcon = Color(0xFF1E3A4C),
+        noteStart = Color(0xFFDDF3FA), noteEnd = Color(0xFFC3E7F3), noteInk = Color(0xFF0B4A5E),
+    )
 }
 
 private fun parseHex(hex: String): Color? = runCatching {

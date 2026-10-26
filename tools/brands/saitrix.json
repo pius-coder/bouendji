@@ -1,6 +1,6 @@
 {
-  "_comment": "Marque de la communauté Saitrix (prod). Créée le 2026-10-26 : nom = nom de la communauté, thème tiré au hasard, pas encore de logo ni de WhatsApp.",
-  "theme": "mono",
+  "_comment": "Marque de la communauté Saitrix (prod). Identité unique : nebula (une par app, 2026-10-26). Logo dessiné par tools/make-logo.mjs.",
+  "theme": "nebula",
   "appName": "Saitrix",
   "packageName": "cm.bouendji.saitrix",
   "apiBaseUrl": "https://api.numzer0.store",

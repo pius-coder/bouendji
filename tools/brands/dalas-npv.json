@@ -1,6 +1,6 @@
 {
-  "_comment": "Marque de la communauté dalas npv (prod). Créée le 2026-10-26 : nom = nom de la communauté, thème tiré au hasard, pas encore de logo ni de WhatsApp.",
-  "theme": "otaku",
+  "_comment": "Marque de la communauté dalas npv (prod). Identité unique : sahel (une par app, 2026-10-26). Logo dessiné par tools/make-logo.mjs.",
+  "theme": "sahel",
   "appName": "dalas npv",
   "packageName": "cm.bouendji.dalasnpv",
   "apiBaseUrl": "https://api.numzer0.store",

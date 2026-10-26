@@ -1,5 +1,5 @@
 {
-  "_comment": "Marque de la communauté GoatVpn (prod). Créée le 2026-10-26 : nom = nom de la communauté, thème tiré au hasard, pas encore de logo ni de WhatsApp.",
+  "_comment": "Marque de la communauté GoatVpn (prod). Identité unique : vector (une par app, 2026-10-26). Logo dessiné par tools/make-logo.mjs.",
   "theme": "vector",
   "appName": "GoatVpn",
   "packageName": "cm.bouendji.goatvpn",

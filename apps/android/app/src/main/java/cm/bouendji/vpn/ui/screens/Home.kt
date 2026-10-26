@@ -285,6 +285,20 @@ private fun PowerControl(state: TunnelState, reduceMotion: Boolean, onClick: () 
         PowerShape.SQUARE -> RoundedCornerShape(0.dp)
         PowerShape.OCTAGON -> CutCornerShape(30)
         PowerShape.BLOB -> RoundedCornerShape(topStartPercent = 50, topEndPercent = 30, bottomEndPercent = 50, bottomStartPercent = 35)
+        PowerShape.DIAMOND -> androidx.compose.foundation.shape.GenericShape { s, _ ->
+            moveTo(s.width / 2, 0f); lineTo(s.width, s.height / 2); lineTo(s.width / 2, s.height); lineTo(0f, s.height / 2); close()
+        }
+        PowerShape.PILL -> RoundedCornerShape(topStartPercent = 50, topEndPercent = 50, bottomEndPercent = 14, bottomStartPercent = 14)
+        PowerShape.HEXAGON -> androidx.compose.foundation.shape.GenericShape { s, _ ->
+            val r = s.minDimension / 2
+            for (i in 0 until 6) {
+                val a = Math.toRadians(-90.0 + i * 60)
+                val x = s.width / 2 + r * kotlin.math.cos(a).toFloat()
+                val y = s.height / 2 + r * kotlin.math.sin(a).toFloat()
+                if (i == 0) moveTo(x, y) else lineTo(x, y)
+            }
+            close()
+        }
     }
     val on = state == TunnelState.CONNECTED
     val connecting = state == TunnelState.CONNECTING || state == TunnelState.RECONNECTING

@@ -45,6 +45,12 @@ object BrandTokens {
         MONO("mono"),
         VECTOR("vector"),
         OTAKU("otaku"),
+        /** Terre cuite et motifs géométriques d'Afrique de l'Ouest. */
+        SAHEL("sahel"),
+        /** Violet cosmique, champ d'étoiles. */
+        NEBULA("nebula"),
+        /** Blanc glacé et cyan, facettes de cristal. */
+        GLACIER("glacier"),
         ;
 
         companion object {
