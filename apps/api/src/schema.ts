@@ -450,9 +450,8 @@ CREATE INDEX IF NOT EXISTS sessions_replaced_by_idx ON auth_sessions(replaced_by
 -- 3000 is the product default; an owner may grant less, never more.
 UPDATE communities SET commission_bps = 3000 WHERE commission_bps > 3000;
 ALTER TABLE communities ALTER COLUMN commission_bps SET DEFAULT 3000;
-ALTER TABLE communities DROP CONSTRAINT IF EXISTS communities_commission_bps_range;
-ALTER TABLE communities ADD CONSTRAINT communities_commission_bps_range
-  CHECK (commission_bps >= 0 AND commission_bps <= 3000);
+-- Les CHECK (DROP/ADD CONSTRAINT) ne sont plus rejoués ici : ils vivent dans la
+-- migration 001_constraints_once (R0), exécutée une seule fois sous schema_migrations.
 
 -- Append-only at the database level: an UPDATE or DELETE issued by any code
 -- path (including a future bug or a psql session) is a no-op instead of a
@@ -469,8 +468,6 @@ CREATE OR REPLACE RULE audit_log_no_delete AS
 
 -- D45/D68 : deux natures de nœuds, jamais mélangées.
 ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS tier text NOT NULL DEFAULT 'free-labs';
-ALTER TABLE endpoints DROP CONSTRAINT IF EXISTS endpoints_tier_check;
-ALTER TABLE endpoints ADD CONSTRAINT endpoints_tier_check CHECK (tier IN ('free-labs','paid-gcp'));
 ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS down_since   timestamptz;
 ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS down_reason  text;
 ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS client_pool  jsonb;
@@ -478,14 +475,11 @@ ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS client_pool  jsonb;
 -- d'un domaine Google, Host = service Cloud Run). NULL = Host = SNI.
 ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS ws_host      text;
 ALTER TABLE plans   ADD COLUMN IF NOT EXISTS endpoint_tier text NOT NULL DEFAULT 'free-labs';
-ALTER TABLE plans   DROP CONSTRAINT IF EXISTS plans_endpoint_tier_check;
-ALTER TABLE plans   ADD CONSTRAINT plans_endpoint_tier_check CHECK (endpoint_tier IN ('free-labs','paid-gcp'));
 
 -- D66 : manifeste de marque validé à la création.
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS brand jsonb;
 
 -- D53 : compte par marque + téléphone obligatoire.
-ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key;
 CREATE UNIQUE INDEX IF NOT EXISTS users_app_email_idx ON users(app_id, lower(email));
 ALTER TABLE users ADD COLUMN IF NOT EXISTS phone text;
 CREATE UNIQUE INDEX IF NOT EXISTS users_app_phone_idx ON users(app_id, phone) WHERE phone IS NOT NULL;
