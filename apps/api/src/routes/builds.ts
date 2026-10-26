@@ -1,36 +1,45 @@
 /**
- * Builds de marque (D66).
+ * Builds de marque (D66, D117).
  *
- * Deux surfaces, deux frontières :
+ * Trois surfaces, trois frontières :
  *
- *   - `/v1/admin/apps/:appId/builds` : la console déclenche et suit un build.
- *     L'appartenance est relue en base (`requireAdmin` + `roleInCommunity`),
- *     comme partout ailleurs : le jeton ne porte aucun droit.
- *   - `/v1/internal/builds/:id/callback` : GitHub Actions referme le build avec
- *     `BUILD_CALLBACK_SECRET`, un secret **distinct** de l'ingestion (D66). Vide
- *     = 503, jamais un callback ouvert.
+ *   - `/v1/admin/apps/:appId/build-requests` : le `community_admin` de la marque
+ *     **demande** un build. Aucun appel GitHub : la ligne passe en `requested`
+ *     et l'owner est alerté (Telegram, `notify`).
+ *   - `/v1/admin/builds/:id/approve` et `/reject` : l'owner tranche. Seule
+ *     l'approbation envoie le `workflow_dispatch`.
+ *   - `/v1/admin/apps/:appId/builds` : déclenchement direct, réservé à l'owner.
+ *   - `/v1/internal/builds/:id/callback` : GitHub Actions rapporte l'avancement
+ *     avec `BUILD_CALLBACK_SECRET`, un secret **distinct** de l'ingestion (D66).
+ *     Vide = 503, jamais un callback ouvert.
+ *
+ * Capacités (D117, matrice de `routes/admin.ts`) : la fonction `permitted()`
+ * n'existe pas encore dans cette copie (lot R1 non fusionné). Les contrôles
+ * sont donc écrits en rôle équivalent : `build.request` = owner ou
+ * `community_admin` de la marque, `build.approve` et `build.reject` = owner.
+ * Une fois `permitted()` fusionnée, ces deux gardes deviennent des appels à
+ * `permitted(admin, "build.request" | "build.approve", communityId)`.
  *
  * Ce que ces routes ne font jamais :
  *
  *   1. Lire `appId`, `apiBaseUrl` ou `theme` dans le corps d'une requête : le
  *      manifeste vient de la ligne `apps` (`buildBrandSpec`) et l'origine de
  *      `env.publicBaseUrl`.
- *   2. Renvoyer `builds.spec` : le manifeste contient la clé publique hors-ligne
- *      et la configuration de la marque, pas une donnée de console. Les
- *      sélections SQL sont explicites pour que ce soit vrai par construction.
- *   3. Laisser un build `queued` quand GitHub a refusé : `failed` + 502, pour
- *      que la console dise la vérité au lieu d'attendre un callback qui ne
- *      viendra pas.
+ *   2. Renvoyer `builds.spec` : sélections SQL explicites.
+ *   3. Laisser un build `queued` quand GitHub a refusé : `failed` + 502.
+ *   4. Laisser un rapport tardif réécrire un état terminal : `succeeded`,
+ *      `failed`, `cancelled` et `rejected` sont collants (voir le callback).
  */
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { env } from "../config.js";
-import type { Database, Row } from "../db.js";
+import type { Database, Queryable, Row } from "../db.js";
 import { requireAdmin, roleInCommunity, type AdminContext } from "../lib/auth.js";
 import { apiOrigin, buildBrandSpec, MAX_VERSION_CODE, type BrandManifest } from "../lib/brand.js";
 import { newId } from "../lib/crypto.js";
 import { ApiFailure, fail } from "../lib/errors.js";
+import { escapeHtml, notify } from "../services/telegram.js";
 
 const PREFIX = "/v1/admin";
 
@@ -60,10 +69,18 @@ const buildCreateSchema = z.object({
   versionName: z.string().trim().optional(),
 });
 
+/** Motif de refus : obligatoire, court, texte seul (il part dans le dashboard). */
+const rejectSchema = z.object({
+  reason: z
+    .string({ required_error: "motif de refus obligatoire." })
+    .trim()
+    .min(3, "motif de 3 à 280 caractères.")
+    .max(280, "motif de 3 à 280 caractères."),
+});
+
 /**
- * États qu'un build peut rapporter. `succeeded`/`failed`/`cancelled` sont
- * terminaux pour `completed_at` ; le statut lui-même suit le dernier rapport
- * reçu (une nouvelle livraison du même corps donne exactement la même ligne).
+ * États qu'un build peut rapporter depuis la CI. `requested`, `rejected` et
+ * `draft` ne viennent jamais de la CI : ils sont posés par les routes admin.
  */
 const BUILD_STATUSES = ["queued", "running", "succeeded", "failed", "cancelled"] as const;
 
@@ -75,7 +92,7 @@ const callbackSchema = z.object({
     .trim()
     .regex(/^[0-9a-f]{64}$/i, "empreinte sha256 hexadécimale de 64 caractères attendue.")
     .optional(),
-  /** URL publique de l'APK (Vercel Blob, D62). */
+  /** URL publique de l'APK (Cloudflare R2, D100). */
   apkUrl: z
     .string()
     .trim()
@@ -125,6 +142,22 @@ async function requireCallbackSecret(req: FastifyRequest): Promise<void> {
   if (!sameSecret(provided, expected)) throw fail.unauthenticated("Jeton de callback invalide.");
 }
 
+/** `build.request` : le propriétaire, ou l'administrateur de la communauté de la marque. */
+function requireBuildRequester(admin: AdminContext, communityId: string): void {
+  if (admin.platformRole === "owner") return;
+  if (roleInCommunity(admin, communityId) === "community_admin") return;
+  throw fail.forbidden("Builds réservés au propriétaire ou à l'administrateur de la marque.");
+}
+
+/**
+ * `build.approve` / `build.reject` et déclenchement direct : propriétaire seul.
+ * Le déclenchement consomme la clé de signature et des minutes de CI.
+ */
+function requireOwner(admin: AdminContext): void {
+  if (admin.platformRole === "owner") return;
+  throw fail.forbidden("Réservé au propriétaire de la plateforme.");
+}
+
 /* -------------------------------------------------------------- utilitaires */
 
 function iso(value: unknown): string | null {
@@ -132,22 +165,58 @@ function iso(value: unknown): string | null {
   return value instanceof Date ? value.toISOString() : new Date(String(value)).toISOString();
 }
 
-/**
- * Un build est un acte de marque (§1.4) : le propriétaire partout, le
- * `community_admin` de la communauté de l'app chez lui. `support` et `finance`
- * n'ont pas ce droit — il déclenche une dépense de CI et produit un APK signé.
- */
-function requireBuildAdmin(admin: AdminContext, communityId: string): void {
-  if (admin.platformRole === "owner") return;
-  if (roleInCommunity(admin, communityId) === "community_admin") return;
-  throw fail.forbidden("Builds réservés au propriétaire ou à l'administrateur de la marque.");
-}
-
 /** Une app porte la marque ; sa communauté est la frontière d'autorisation. */
-async function mustApp(db: Database, appId: string): Promise<Row> {
+async function mustApp(db: Queryable, appId: string): Promise<Row> {
   const row = await db.one<Row>("SELECT * FROM apps WHERE id = $1", [appId]);
   if (!row) throw fail.notFound("Application introuvable.");
   return row;
+}
+
+async function mustBuild(db: Queryable, buildId: string): Promise<Row> {
+  const row = await db.one<Row>("SELECT * FROM builds WHERE id = $1", [buildId]);
+  if (!row) throw fail.notFound("Build introuvable.");
+  return row;
+}
+
+/**
+ * Verrou sur la marque : deux clics simultanés (demande, approbation, direct)
+ * ne partagent pas le même `versionCode`, Android exigeant une valeur
+ * strictement croissante.
+ */
+async function lockApp(q: Queryable, appId: string): Promise<Row> {
+  const locked = await q.one<Row>("SELECT * FROM apps WHERE id = $1 FOR UPDATE", [appId]);
+  if (!locked) throw fail.notFound("Application introuvable.");
+  return locked;
+}
+
+/**
+ * Prochain `versionCode` de la marque. Les demandes en attente (`requested`) et
+ * les refusées (`rejected`) ne consomment pas de numéro : leur valeur n'est
+ * qu'une estimation, recalculée à l'approbation.
+ */
+async function nextVersionCode(q: Queryable, appId: string): Promise<number> {
+  const next = Number(
+    await q.scalar<number>(
+      `SELECT COALESCE(max(version_code), 0)::int + 1 AS next
+         FROM builds
+        WHERE app_id = $1
+          AND status NOT IN ('requested', 'rejected', 'draft')`,
+      [appId],
+    ),
+  );
+  if (!Number.isInteger(next) || next < 1 || next > MAX_VERSION_CODE) {
+    throw fail.conflict("Numéro de version suivant hors limites : aucun build ne peut être créé.");
+  }
+  return next;
+}
+
+/**
+ * La communauté porte le lien WhatsApp et le contact (R4). Lue en entier : les
+ * colonnes peuvent être absentes d'une base non migrée, `buildBrandSpec` les
+ * traite alors comme « non renseignées ».
+ */
+async function communityOf(q: Queryable, appRow: Row): Promise<Row | null> {
+  return q.one<Row>("SELECT * FROM communities WHERE id = $1", [appRow.community_id]);
 }
 
 /**
@@ -162,6 +231,7 @@ function buildDto(row: Row) {
     versionName: (row.version_name as string | null) ?? null,
     sha256: (row.sha256 as string | null) ?? null,
     apkUrl: (row.apk_url as string | null) ?? null,
+    rejectReason: (row.reject_reason as string | null) ?? null,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
@@ -217,44 +287,83 @@ async function dispatchBuild(spec: BrandManifest, buildId: string): Promise<Disp
   }
 }
 
+/**
+ * Envoie le dispatch après que la ligne est passée en `queued`. Un refus de
+ * GitHub ferme le build en `failed` (garde `status = 'queued'`) et répond 502.
+ */
+async function dispatchOrFail(db: Database, spec: BrandManifest, buildId: string): Promise<void> {
+  if (env.builds.mock) return; // Mode local / test : la file suffit.
+  const dispatched = await dispatchBuild(spec, buildId);
+  if (dispatched.ok) return;
+  await db.query(
+    "UPDATE builds SET status = 'failed', updated_at = now() WHERE id = $1 AND status = 'queued'",
+    [buildId],
+  );
+  throw new ApiFailure(
+    502,
+    "INTERNAL",
+    `Le build n'a pas été déclenché : ${dispatched.reason}. Il est marqué « failed » ; réessayez.`,
+  );
+}
+
 /* ---------------------------------------------------------------- routes */
 
 export function registerBuildRoutes(app: FastifyInstance, db: Database): void {
-  /* ------------------------------------------- déclencher un build de marque */
+  /* ----------------------------------------- demander un build (community_admin) */
+
+  app.post<{ Params: { appId: string } }>(`${PREFIX}/apps/:appId/build-requests`, async (req, reply) => {
+    const admin = await requireAdmin(db, req);
+    const appRow = await mustApp(db, req.params.appId);
+    requireBuildRequester(admin, String(appRow.community_id));
+
+    const input = parseBody(buildCreateSchema, req.body);
+    const versionName = input.versionName ?? "1.0.0";
+
+    const buildId = await db.tx(async (q) => {
+      const locked = await lockApp(q, String(appRow.id));
+      const next = await nextVersionCode(q, String(appRow.id));
+      // Validation seule : une marque non constructible répond 422 nommé dès
+      // la demande, et aucune ligne n'existe. Le manifeste est refait à
+      // l'approbation (version et logo peuvent avoir changé entre-temps).
+      const spec = buildBrandSpec(locked, next, versionName, await communityOf(q, locked));
+      const id = newId();
+      await q.query(
+        `INSERT INTO builds
+           (id, app_id, version_code, version_name, theme, status, requested_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 'requested', $6, now())`,
+        [id, appRow.id, next, spec.versionName, spec.theme, admin.adminId],
+      );
+      return id;
+    });
+
+    // Alerte à l'owner : sans contenu sensible (le nom de la marque et la version).
+    void notify(
+      `<b>Demande de build</b> : marque « ${escapeHtml(String(appRow.name))} », version ${escapeHtml(versionName)}. ` +
+        "Validation attendue dans le dashboard.",
+    );
+
+    return reply.code(202).send({ buildId, status: "requested" });
+  });
+
+  /* ------------------------------------ déclencher un build direct (owner seul) */
 
   app.post<{ Params: { appId: string } }>(`${PREFIX}/apps/:appId/builds`, async (req, reply) => {
     const admin = await requireAdmin(db, req);
     const appRow = await mustApp(db, req.params.appId);
-    requireBuildAdmin(admin, String(appRow.community_id));
+    requireOwner(admin);
 
     const input = parseBody(buildCreateSchema, req.body);
     // Pas de « correction » silencieuse : une valeur fournie et invalide doit
     // être un 422 nommé, pas un retour discret à 1.0.0.
     const versionName = input.versionName ?? "1.0.0";
 
-    /*
-     * Le numéro de version est calculé **dans la transaction** et la ligne
-     * `apps` est verrouillée : deux clics simultanés sur la même marque ne
-     * partagent pas le même `versionCode` (Android exige une valeur strictement
-     * croissante pour installer une mise à jour).
-     */
     const { buildId, spec } = await db.tx(async (q) => {
-      const locked = await q.one<Row>("SELECT id FROM apps WHERE id = $1 FOR UPDATE", [appRow.id]);
-      if (!locked) throw fail.notFound("Application introuvable.");
-
-      const next = Number(
-        await q.scalar<number>(
-          "SELECT COALESCE(max(version_code), 0)::int + 1 AS next FROM builds WHERE app_id = $1",
-          [appRow.id],
-        ),
-      );
-      if (!Number.isInteger(next) || next < 1 || next > MAX_VERSION_CODE) {
-        throw fail.conflict("Numéro de version suivant hors limites : aucun build ne peut être créé.");
-      }
+      const locked = await lockApp(q, String(appRow.id));
+      const next = await nextVersionCode(q, String(appRow.id));
 
       // Lève 422 (champ fautif) si la marque n'est pas constructible ; la
       // transaction est alors annulée et aucune ligne `builds` n'existe.
-      const spec = buildBrandSpec(appRow, next, versionName);
+      const spec = buildBrandSpec(locked, next, versionName, await communityOf(q, locked));
       const id = newId();
       await q.query(
         `INSERT INTO builds
@@ -265,31 +374,19 @@ export function registerBuildRoutes(app: FastifyInstance, db: Database): void {
       return { buildId: id, spec };
     });
 
-    // Mode local / test : la file suffit, aucun appel réseau.
-    if (env.builds.mock) return reply.code(202).send({ buildId, status: "queued" });
-
-    const dispatched = await dispatchBuild(spec, buildId);
-    if (!dispatched.ok) {
-      await db.query("UPDATE builds SET status = 'failed', updated_at = now() WHERE id = $1", [buildId]);
-      throw new ApiFailure(
-        502,
-        "INTERNAL",
-        `Le build n'a pas été déclenché : ${dispatched.reason}. Il est marqué « failed » ; réessayez.`,
-      );
-    }
-
+    await dispatchOrFail(db, spec, buildId);
     return reply.code(202).send({ buildId, status: "queued" });
   });
 
-  /* --------------------------------------------- suivre les builds d'une app */
+  /* ----------------------------------------- suivre les builds d'une app */
 
   app.get<{ Params: { appId: string } }>(`${PREFIX}/apps/:appId/builds`, async (req) => {
     const admin = await requireAdmin(db, req);
     const appRow = await mustApp(db, req.params.appId);
-    requireBuildAdmin(admin, String(appRow.community_id));
+    requireBuildRequester(admin, String(appRow.community_id));
 
     const rows = await db.query<Row>(
-      `SELECT id, status, version_code, version_name, sha256, apk_url, created_at, updated_at
+      `SELECT id, status, version_code, version_name, sha256, apk_url, reject_reason, created_at, updated_at
          FROM builds
         WHERE app_id = $1
         ORDER BY created_at DESC
@@ -297,6 +394,69 @@ export function registerBuildRoutes(app: FastifyInstance, db: Database): void {
       [appRow.id],
     );
     return { items: rows.map(buildDto) };
+  });
+
+  /* ------------------------------------ valider une demande (owner, dispatch) */
+
+  app.post<{ Params: { id: string } }>(`${PREFIX}/builds/:id/approve`, async (req, reply) => {
+    const admin = await requireAdmin(db, req);
+    requireOwner(admin);
+    const build = await mustBuild(db, req.params.id);
+
+    // Transition `requested` -> `queued` sous verrou : deux approbations
+    // simultanées, une seule passe ; la seconde reçoit 409.
+    const { buildId, spec } = await db.tx(async (q) => {
+      const appRow = await lockApp(q, String(build.app_id));
+      const current = await q.one<Row>("SELECT id, status FROM builds WHERE id = $1 FOR UPDATE", [req.params.id]);
+      if (!current) throw fail.notFound("Build introuvable.");
+      if (current.status !== "requested") {
+        throw fail.conflict(`Ce build n'attend pas de validation (statut : ${String(current.status)}).`);
+      }
+
+      const next = await nextVersionCode(q, appRow.id as string);
+      const spec = buildBrandSpec(appRow, next, String(build.version_name), await communityOf(q, appRow));
+      const updated = await q.query<Row>(
+        `UPDATE builds
+            SET status = 'queued',
+                version_code = $2,
+                theme = $3,
+                spec = $4::jsonb,
+                approved_by = $5,
+                updated_at = now()
+          WHERE id = $1 AND status = 'requested'
+          RETURNING id`,
+        [req.params.id, spec.versionCode, spec.theme, JSON.stringify(spec), admin.adminId],
+      );
+      if (updated.length === 0) throw fail.conflict("Ce build n'attend plus de validation.");
+      return { buildId: req.params.id, spec };
+    });
+
+    await dispatchOrFail(db, spec, buildId);
+    return reply.code(202).send({ buildId, status: "queued" });
+  });
+
+  /* ------------------------------------------- refuser une demande (owner) */
+
+  app.post<{ Params: { id: string } }>(`${PREFIX}/builds/:id/reject`, async (req) => {
+    const admin = await requireAdmin(db, req);
+    requireOwner(admin);
+    const input = parseBody(rejectSchema, req.body);
+    const build = await mustBuild(db, req.params.id);
+
+    const rows = await db.query<Row>(
+      `UPDATE builds
+          SET status = 'rejected',
+              reject_reason = $2,
+              approved_by = $3,
+              updated_at = now()
+        WHERE id = $1 AND status = 'requested'
+        RETURNING id, status`,
+      [req.params.id, input.reason, admin.adminId],
+    );
+    if (rows.length === 0) {
+      throw fail.conflict(`Ce build n'attend pas de validation (statut : ${String(build.status)}).`);
+    }
+    return { buildId: String(rows[0]?.id), status: "rejected" };
   });
 
   /* --------------------------------------- callback de la CI (D66, interne) */
@@ -308,10 +468,15 @@ export function registerBuildRoutes(app: FastifyInstance, db: Database): void {
       const input = parseBody(callbackSchema, req.body);
 
       /*
-       * Idempotent : rejouer le même corps laisse la ligne identique, et un
-       * build déjà clos répond quand même 200 (D66). Les champs optionnels sont
-       * en COALESCE : un callback qui ne porte que `status` ne perd ni
-       * l'empreinte ni l'URL déjà reçues.
+       * Garde de transition : seuls `queued` et `running` peuvent avancer. Un
+       * rapport tardif (un `running` qui arrive après `succeeded`, un `failed`
+       * après `succeeded`, un état qui n'a jamais été dispatché) ne réécrit
+       * rien et répond 200 avec l'état courant : la CI ne doit pas échouer sur
+       * un message périmé, et la console ne doit pas régresser.
+       *
+       * Idempotent : rejouer le même corps laisse la ligne identique. Les
+       * champs optionnels sont en COALESCE : un callback qui ne porte que
+       * `status` ne perd ni l'empreinte ni l'URL déjà reçues.
        */
       const rows = await db.query<Row>(
         `UPDATE builds
@@ -327,6 +492,7 @@ export function registerBuildRoutes(app: FastifyInstance, db: Database): void {
                                  ELSE builds.completed_at
                                END
           WHERE id = $1
+            AND status IN ('queued', 'running')
           RETURNING id, status`,
         [
           req.params.id,
@@ -337,10 +503,12 @@ export function registerBuildRoutes(app: FastifyInstance, db: Database): void {
           input.runId ?? null,
         ],
       );
-      const row = rows[0];
-      if (!row) throw fail.notFound("Build introuvable.");
+      if (rows[0]) return { buildId: String(rows[0].id), status: String(rows[0].status) };
 
-      return { buildId: String(row.id), status: String(row.status) };
+      // Rien appliqué : soit le build n'existe pas, soit son état ne permet pas
+      // le rapport (rapport tardif ou rejeu). On renvoie l'état courant.
+      const current = await mustBuild(db, req.params.id);
+      return { buildId: String(current.id), status: String(current.status) };
     },
   );
 }

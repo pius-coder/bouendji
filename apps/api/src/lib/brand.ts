@@ -36,6 +36,12 @@ export interface BrandSpec {
   versionCode: number;
   defaultLocale: string;
   offlineBundleSigningKeyB64: string;
+  /** Lien du groupe WhatsApp de la communauté (https), ou null. */
+  communityWhatsappUrl: string | null;
+  /** Numéro WhatsApp de contact de la communauté (chiffres, + facultatif), ou null. */
+  contactWhatsapp: string | null;
+  /** Référence du logo : URL https ou clé R2 relative, ou null. */
+  logoRef: string | null;
 }
 
 /**
@@ -66,6 +72,10 @@ const ACCENT_RE = /^#[0-9a-fA-F]{6}$/;
 const LOCALE_RE = /^[a-z]{2}$/;
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 const SUPPORT_PROTOCOLS = new Set(["https:", "mailto:", "tel:"]);
+const CONTACT_WHATSAPP_RE = /^\+?\d{8,15}$/;
+/** Clé R2 relative (ex. brands/x/logo.png) : pas de slash initial, pas de `..`. */
+const LOGO_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,511}$/;
+const MAX_LOGO_REF_LENGTH = 512;
 
 /**
  * Garde-fous qui ne changent rien pour une marque réelle et empêchent un
@@ -87,6 +97,12 @@ function invalid(field: string, message: string): ApiFailure {
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+/** Chaîne non vide, ou null : une colonne vide vaut « non renseigné ». */
+function nonEmpty(value: unknown): string | null {
+  const trimmed = text(value);
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -214,6 +230,47 @@ export function validateBrandSpec(input: unknown): BrandSpec {
     throw invalid("offlineBundleSigningKeyB64", "base64 attendu, ou \"\".");
   }
 
+  /* ------------------------------------------- communityWhatsappUrl (facultatif) */
+  let communityWhatsappUrl: string | null = null;
+  const groupRaw = text(raw.communityWhatsappUrl);
+  if (groupRaw.length > 0) {
+    let group: URL;
+    try {
+      group = new URL(groupRaw);
+    } catch {
+      throw invalid("communityWhatsappUrl", "URL absolue attendue.");
+    }
+    if (group.protocol !== "https:") throw invalid("communityWhatsappUrl", "https: attendu.");
+    if (groupRaw.length > MAX_SUPPORT_URL_LENGTH) {
+      throw invalid("communityWhatsappUrl", `${MAX_SUPPORT_URL_LENGTH} caractères au maximum.`);
+    }
+    communityWhatsappUrl = group.toString();
+  }
+
+  /* ------------------------------------------- contactWhatsapp (facultatif) */
+  let contactWhatsapp: string | null = null;
+  const contactRaw = text(raw.contactWhatsapp).replace(/[\s-]/g, "");
+  if (contactRaw.length > 0) {
+    if (!CONTACT_WHATSAPP_RE.test(contactRaw)) {
+      throw invalid("contactWhatsapp", "8 à 15 chiffres, + facultatif en tête.");
+    }
+    contactWhatsapp = contactRaw;
+  }
+
+  /* ----------------------------------------------- logoRef (facultatif) */
+  let logoRef: string | null = null;
+  const logoRaw = text(raw.logoRef);
+  if (logoRaw.length > 0) {
+    if (logoRaw.length > MAX_LOGO_REF_LENGTH || CONTROL_CHARS_RE.test(logoRaw)) {
+      throw invalid("logoRef", `${MAX_LOGO_REF_LENGTH} caractères au maximum, sans contrôle.`);
+    }
+    const isHttps = logoRaw.startsWith("https://");
+    if (!isHttps && (!LOGO_KEY_RE.test(logoRaw) || logoRaw.includes(".."))) {
+      throw invalid("logoRef", "URL https ou clé R2 relative attendue (ex. brands/marque/logo.png).");
+    }
+    logoRef = logoRaw;
+  }
+
   return {
     appName,
     packageName,
@@ -224,6 +281,9 @@ export function validateBrandSpec(input: unknown): BrandSpec {
     versionCode: versionCodeRaw,
     defaultLocale,
     offlineBundleSigningKeyB64: key,
+    communityWhatsappUrl,
+    contactWhatsapp,
+    logoRef,
   };
 }
 
@@ -270,8 +330,18 @@ function jsonObject(value: unknown): Record<string, unknown> {
  * sans `support_url` (par exemple la marque de référence du seed) ne produit pas
  * un build condamné à 78, elle produit un 422 qui nomme `supportUrl`.
  */
-export function buildBrandSpec(app: Record<string, unknown>, versionCode: number, versionName: string): BrandManifest {
+export function buildBrandSpec(
+  app: Record<string, unknown>,
+  versionCode: number,
+  versionName: string,
+  community: Record<string, unknown> | null = null,
+): BrandManifest {
   const stored = jsonObject(app.brand);
+  // `community` vient d'une ligne `communities` lue en entier : les colonnes
+  // ajoutées par R4 (`whatsapp_group_url`, `contact_whatsapp`) peuvent être
+  // absentes d'une base non migrée, elles sont alors simplement « non
+  // renseignées ».
+  const communityFields = community ?? {};
 
   const spec = validateBrandSpec({
     appName: typeof app.name === "string" ? app.name : "",
@@ -287,6 +357,10 @@ export function buildBrandSpec(app: Record<string, unknown>, versionCode: number
     versionCode,
     defaultLocale: stored.defaultLocale,
     offlineBundleSigningKeyB64: stored.offlineBundleSigningKeyB64,
+    communityWhatsappUrl: nonEmpty(communityFields.whatsapp_group_url),
+    contactWhatsapp: nonEmpty(communityFields.contact_whatsapp),
+    // Le logo de l'app : la clé R2 (R4, `logo_key`) fait foi, sinon l'URL héritée.
+    logoRef: nonEmpty(app.logo_key) ?? nonEmpty(app.logo_url),
   });
 
   const appId = typeof app.id === "string" ? app.id.trim() : "";
