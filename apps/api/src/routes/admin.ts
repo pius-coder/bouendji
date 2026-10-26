@@ -412,6 +412,54 @@ function payoutFailureReason(error: unknown): string {
   return `provider: ${message}`.slice(0, 280);
 }
 
+/**
+ * Après une réponse positive du fournisseur, le versement passe en
+ * `needs_review` (jamais `approved`). Tentative en transaction avec la ligne
+ * d'audit ; à défaut, mise à jour seule. Si même celle-ci échoue, la ligne reste
+ * `processing` : état sûr (non réclamable, `/resolve` le clôt), et l'erreur est
+ * journalisée pour qu'un humain la voie.
+ */
+async function flagPayoutForReview(
+  db: Database,
+  admin: AdminContext,
+  req: FastifyRequest,
+  payout: Row,
+  providerRef: string,
+  reason: string,
+): Promise<void> {
+  const payoutId = payout.id as string;
+  const communityId = payout.community_id as string;
+  const before = { status: "processing", attempts: Number(payout.attempts ?? 0) };
+  const failedReason = reason.slice(0, 280);
+  try {
+    await db.tx(async (q) => {
+      await q.query(
+        `UPDATE payouts SET status = 'needs_review', failed_reason = $2 WHERE id = $1 AND status = 'processing'`,
+        [payoutId, failedReason],
+      );
+      await appendAudit(q, admin, req, {
+        action: "payout.review",
+        targetType: "payout",
+        targetId: payoutId,
+        communityId,
+        before,
+        after: { status: "needs_review", reason: "provider_ref_not_recorded", providerRef },
+      });
+    });
+    return;
+  } catch (error) {
+    req.log.error({ err: error, payoutId }, "versement : passage en revue après réponse fournisseur impossible");
+  }
+  try {
+    await db.query(
+      `UPDATE payouts SET status = 'needs_review', failed_reason = $2 WHERE id = $1 AND status = 'processing'`,
+      [payoutId, failedReason],
+    );
+  } catch (error) {
+    req.log.error({ err: error, payoutId, providerRef }, "versement : reste en processing, à vérifier chez Fapshi");
+  }
+}
+
 /** Dernier `community_admin` actif : le retirer verrouillerait la communauté. */
 async function assertNotLastCommunityAdmin(db: Queryable, communityId: string, exceptId: string): Promise<void> {
   const remaining = await db.scalar<number>(
@@ -1558,18 +1606,22 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
         return row;
       });
     } catch (error) {
-      // `provider_ref` est UNIQUE : deux versements ne peuvent pas partager une
-      // référence. On ne laisse pas la ligne en `processing` sans explication.
-      if (isUniqueViolation(error)) {
-        await db.query(
-          `UPDATE payouts SET status = 'approved', claimed_at = NULL, failed_reason = $2 WHERE id = $1`,
-          [req.params.payoutId, "provider_ref déjà utilisé par un autre versement"],
-        );
-        throw fail.paymentProvider(
-          "Le fournisseur a renvoyé une référence déjà utilisée : le versement reste approuvé, à vérifier.",
-        );
-      }
-      throw error;
+      /*
+       * Le fournisseur a répondu OK : l'argent est peut-être déjà parti. Ce
+       * versement ne doit JAMAIS redevenir `approved` (un nouveau `/pay` le
+       * repayerait). Il passe en `needs_review`, avec la référence écrite dans la
+       * raison pour qu'un humain la vérifie chez Fapshi, puis `/resolve` le clôt.
+       * `provider_ref` ne peut pas être écrit ici : il est UNIQUE, et c'est
+       * précisément le cas d'une référence déjà prise.
+       */
+      const reason = isUniqueViolation(error)
+        ? `référence ${providerRef} déjà utilisée par un autre versement`
+        : `référence ${providerRef} non enregistrée : ${payoutFailureReason(error)}`;
+      // `claim` est la ligne réclamée (processing, attempts déjà incrémenté).
+      await flagPayoutForReview(db, admin, req, claim, providerRef, reason);
+      throw fail.paymentProvider(
+        "Le fournisseur a accepté le virement mais la référence n'a pas pu être enregistrée : versement à vérifier chez Fapshi, puis clôturé par /resolve.",
+      );
     }
 
     return payoutDto(settled);
