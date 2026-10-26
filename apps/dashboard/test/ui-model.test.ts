@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildNav } from "@/components/shell/nav-model";
+import { allSections, buildNav } from "@/components/shell/nav-model";
 import { can, roleIn } from "@/lib/roles";
 import { loadAuditParams } from "@/server/query/audit.params";
 import { loadOrdersParams, ordersParsers, ordersUrlKeys } from "@/server/query/orders.params";
@@ -55,24 +55,31 @@ describe("rôles : ce que l'écran affiche (miroir de permitted())", () => {
 });
 
 describe("navigation par rôle et communauté active", () => {
-  it("owner : 5 entrées de barre basse au plus, Communautés et Réseau dans Plus", () => {
+  it("owner : 4 sections en barre basse au plus, Communauté, Plateforme et Réseau derrière Plus", () => {
     const nav = buildNav(owner, "c1");
-    assert.ok(nav.primary.length <= 4, "barre basse : 4 entrées + Plus");
-    assert.ok(nav.more.some((i) => i.href === "/communities"));
-    assert.ok(nav.more.some((i) => i.href === "/network"));
-    assert.ok(nav.primary.some((i) => i.href === "/c1/orders"));
+    assert.ok(nav.bar.length <= 4, "barre basse : 4 sections + Plus");
+    assert.ok(nav.more.some((s) => s.items.some((i) => i.href === "/communities")));
+    assert.ok(nav.more.some((s) => s.key === "reseau"));
+    assert.ok(nav.bar.some((s) => s.items.some((i) => i.href === "/c1/orders")));
+  });
+
+  it("reseau : seul l'espace Réseau, et rien d'autre", () => {
+    const reseau = { adminId: "r", email: "r@x.io", name: "R", platformRole: "none" as const, memberships: [], platformRoles: ["reseau"] };
+    assert.equal(can(reseau, "network.write", null), true);
+    assert.equal(can(reseau, "payouts.read", null), false);
+    assert.equal(can(reseau, "audit.read", "c1"), false);
+    assert.deepEqual(allSections(buildNav(reseau, null)).map((s) => s.key), ["accueil", "reseau"]);
   });
 
   it("support : pas de Versements ni de Journal", () => {
-    const nav = buildNav(support, "c1");
-    const hrefs = [...nav.primary, ...nav.more].map((i) => i.href);
+    const hrefs = allSections(buildNav(support, "c1")).flatMap((s) => s.items.map((i) => i.href));
     assert.ok(!hrefs.includes("/payouts"));
     assert.ok(!hrefs.includes("/c1/audit"));
     assert.ok(hrefs.includes("/c1/devices"));
   });
 
   it("sans communauté active : seules les entrées globales", () => {
-    const hrefs = [...buildNav(owner, null).primary, ...buildNav(owner, null).more].map((i) => i.href);
+    const hrefs = allSections(buildNav(owner, null)).flatMap((s) => s.items.map((i) => i.href));
     assert.ok(hrefs.every((h) => !h.startsWith("/null")));
   });
 });

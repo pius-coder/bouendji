@@ -3,6 +3,7 @@ import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { ACCENT_BOOT_SCRIPT } from "@/lib/accent";
+import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,7 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-full">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <NuqsAdapter>{children}</NuqsAdapter>
+          <Providers>
+            <NuqsAdapter>{children}</NuqsAdapter>
+          </Providers>
           <Toaster position="top-center" />
         </ThemeProvider>
       </body>

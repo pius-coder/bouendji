@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildNav } from "@/components/shell/nav-model";
+import { allSections, buildNav } from "@/components/shell/nav-model";
 import { can } from "@/lib/roles";
 import type { ApiError } from "@/server/api/api-error";
 import type { BaseServiceDeps } from "@/server/api/base-service";
@@ -214,7 +214,7 @@ describe("rôles : forfaits et membres (miroir de plan.manage, membership.*)", (
   });
 
   it("navigation : Forfaits pour tous les rôles locaux, Membres pour owner et community_admin", () => {
-    const hrefs = (me: AdminMe) => [...buildNav(me, "c1").primary, ...buildNav(me, "c1").more].map((i) => i.href);
+    const hrefs = (me: AdminMe) => allSections(buildNav(me, "c1")).flatMap((s) => s.items.map((i) => i.href));
     assert.ok(hrefs(support).includes("/c1/plans"));
     assert.ok(!hrefs(support).includes("/c1/members"));
     assert.ok(hrefs(admin).includes("/c1/members"));

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildNav, buildSections, resolveSection } from "@/components/shell/nav-model";
+import { allSections, buildNav, resolveSection } from "@/components/shell/nav-model";
 import {
   countCreatedIn,
   dailySeries,
@@ -156,17 +156,16 @@ describe("accueil : calculs", () => {
 
 describe("shell : sections", () => {
   const owner: AdminMe = { adminId: "a", email: "o@x", name: "O", platformRole: "owner", memberships: [] };
-  it("range toutes les entrées de la navigation, deux niveaux", () => {
+  it("range toutes les entrées de la navigation, par section", () => {
     const nav = buildNav(owner, "c1");
-    const sections = buildSections(nav, "c1");
-    const flat = sections.flatMap((s) => s.items.map((i) => i.href)).sort();
-    assert.deepEqual(flat, [...nav.primary, ...nav.more].map((i) => i.href).sort());
-    assert.deepEqual(sections.map((s) => s.key), ["pilot", "community", "money", "platform"]);
+    const sections = allSections(nav);
+    assert.deepEqual(sections.map((s) => s.key), ["accueil", "abonnes", "offres", "argent", "communaute", "plateforme", "reseau"]);
+    assert.ok(nav.bar.length <= 4, "barre basse : 4 sections au plus, Plus en 5e");
   });
   it("résout la section active par le plus long préfixe", () => {
-    const sections = buildSections(buildNav(owner, "c1"), "c1");
-    assert.equal(resolveSection(sections, "/c1/orders").section?.key, "community");
+    const sections = allSections(buildNav(owner, "c1"));
+    assert.equal(resolveSection(sections, "/c1/orders").section?.key, "abonnes");
     assert.equal(resolveSection(sections, "/").item?.href, "/");
-    assert.equal(resolveSection(sections, "/payouts").section?.key, "money");
+    assert.equal(resolveSection(sections, "/payouts").section?.key, "argent");
   });
 });

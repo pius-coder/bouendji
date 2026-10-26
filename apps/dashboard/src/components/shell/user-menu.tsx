@@ -1,6 +1,8 @@
 "use client";
 
 import { Icon } from "@/components/common/icon";
+import { useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useTheme } from "next-themes";
 import { useSyncExternalStore } from "react";
 import {
@@ -14,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ACCENT_STORAGE_KEY, ACCENTS, DEFAULT_ACCENT, isAccent, type Accent } from "@/lib/accent";
+import { ACCOUNT_ITEM } from "./nav-model";
 import { logoutAction } from "@/server/actions/auth.action";
 
 function initials(name: string): string {
@@ -53,6 +56,7 @@ const ITEM = "min-h-11 md:min-h-9";
 export function UserMenu({ name, email, side = "bottom" }: { name: string; email: string; side?: "bottom" | "right" }) {
   const { theme, setTheme } = useTheme();
   const accent = useSyncExternalStore(subscribeAccent, readAccent, () => DEFAULT_ACCENT);
+  const queryClient = useQueryClient();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -68,6 +72,12 @@ export function UserMenu({ name, email, side = "bottom" }: { name: string; email
           <span className="block truncate text-subhead font-semibold">{name}</span>
           <span className="block truncate text-footnote text-muted-foreground">{email}</span>
         </DropdownMenuLabel>
+        <DropdownMenuItem asChild className={ITEM}>
+          <Link href={ACCOUNT_ITEM.href}>
+            <Icon name="users" className="size-4" />
+            {ACCOUNT_ITEM.label}
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-footnote font-normal text-muted-foreground">Couleur</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={accent} onValueChange={(v) => isAccent(v) && setAccent(v)}>
@@ -93,7 +103,7 @@ export function UserMenu({ name, email, side = "bottom" }: { name: string; email
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild className={`${ITEM} text-destructive`}>
-          <form action={logoutAction}>
+          <form action={logoutAction} onSubmit={() => queryClient.clear()}>
             <button type="submit" className="flex w-full items-center gap-2">
               <Icon name="logout" className="size-4" />
               Se déconnecter

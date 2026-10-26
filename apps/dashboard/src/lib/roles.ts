@@ -3,18 +3,28 @@ import type { AdminMe } from "@/server/services/admin-auth/admin-auth.schema";
 /**
  * Ce que l'écran AFFICHE selon le rôle. Aucune protection : Fastify recharge
  * rôles et appartenances à chaque requête et répond 403 (D78). Miroir de
- * `permitted()` dans `apps/api/src/routes/admin.ts` (relu, 2026-10-23).
+ * `permitted()` dans `apps/api/src/routes/admin.ts` (relu, 2026-10-23), complété
+ * par les capacités de la section 5 du chantier vague 1.
+ *
+ * Rôles plateforme cumulables : `owner`, `reseau`. `reseau` n'est lu que lorsque
+ * l'API expose `platformRoles` (contrat R1, chantier §6) ; tant qu'il n'est pas
+ * fusionné, seul `platformRole === "owner"` est connu.
  */
-export type Role = "owner" | "community_admin" | "support" | "finance";
+export type Role = "owner" | "reseau" | "community_admin" | "support" | "finance";
+export type PlatformRole = "owner" | "reseau";
 
 export const ROLE_LABEL: Record<Role, string> = {
   owner: "Propriétaire",
+  reseau: "Réseau",
   community_admin: "Administrateur",
   support: "Support",
   finance: "Finance",
 };
 
 export type Capability =
+  | "account.self"
+  | "admin.invite"
+  | "onboarding.self"
   | "community.manage"
   | "community.read"
   | "plans.read"
@@ -31,27 +41,71 @@ export type Capability =
   | "payouts.operate"
   | "network.read"
   | "network.write"
+  | "night_slot.manage"
+  | "build.request"
+  | "build.approve"
+  | "pricing.read"
+  | "pricing.manage"
+  | "xui.manage"
+  | "presence.read"
   | "audit.read";
 
-export function roleIn(me: AdminMe, communityId: string | null): Role | null {
-  if (me.platformRole === "owner") return "owner";
-  const entry = communityId ? me.memberships.find((m) => m.communityId === communityId) : undefined;
-  return entry && isStaffRole(entry.role) ? entry.role : null;
+/** Ce qu'il faut pour décider : le contexte admin, `platformRoles` quand l'API le fournit. */
+export type RoleSource = Pick<AdminMe, "platformRole" | "memberships"> & { platformRoles?: readonly string[] };
+
+/** Rôles plateforme du compte (`owner` et/ou `reseau`). */
+export function platformRolesOf(me: RoleSource): PlatformRole[] {
+  const out: PlatformRole[] = [];
+  if (me.platformRole === "owner" || me.platformRoles?.includes("owner")) out.push("owner");
+  if (me.platformRoles?.includes("reseau")) out.push("reseau");
+  return out;
 }
 
-function isStaffRole(value: string): value is Exclude<Role, "owner"> {
+/** Capacités que `reseau` reçoit, et rien d'autre (section 5 du chantier). */
+const RESEAU_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability>([
+  "account.self",
+  "network.read",
+  "network.write",
+  "night_slot.manage",
+]);
+
+export function roleIn(me: RoleSource, communityId: string | null): Role | null {
+  const platform = platformRolesOf(me);
+  if (platform.includes("owner")) return "owner";
+  const entry = communityId ? me.memberships.find((m) => m.communityId === communityId) : undefined;
+  if (entry && isStaffRole(entry.role)) return entry.role;
+  return platform.includes("reseau") ? "reseau" : null;
+}
+
+function isStaffRole(value: string): value is Exclude<Role, "owner" | "reseau"> {
   return value === "community_admin" || value === "support" || value === "finance";
 }
 
-function anyRole(me: AdminMe, roles: readonly string[]): boolean {
+function anyRole(me: RoleSource, roles: readonly string[]): boolean {
   return me.memberships.some((m) => roles.includes(m.role));
 }
 
-export function can(me: AdminMe, capability: Capability, communityId: string | null): boolean {
-  if (me.platformRole === "owner") return true;
+export function can(me: RoleSource, capability: Capability, communityId: string | null): boolean {
+  if (platformRolesOf(me).includes("owner")) return true;
+  if (capability === "account.self") return true;
+  if (platformRolesOf(me).includes("reseau") && RESEAU_CAPABILITIES.has(capability)) return true;
   const local = roleIn(me, communityId);
   switch (capability) {
+    case "admin.invite":
+    case "pricing.manage":
+    case "xui.manage":
+    case "build.approve":
+    case "presence.read":
     case "community.manage":
+      // Owner seul (le court-circuit ci-dessus le couvre ; ici, rien d'autre).
+      return false;
+    case "onboarding.self":
+      // Admin sans communauté (premier accès) ou administrateur de la communauté active.
+      return communityId ? local === "community_admin" : me.memberships.length === 0;
+    case "build.request":
+    case "pricing.read":
+      return local === "community_admin";
+    case "night_slot.manage":
       return false;
     case "community.read":
       // API `community.read` : une communauté précise exige une appartenance ; la liste, au moins une.

@@ -8,7 +8,7 @@ import type { AdminMe } from "@/server/services/admin-auth/admin-auth.schema";
 import { BottomBar } from "./bottom-bar";
 import { CommunitySwitcher, type CommunityOption } from "./community-switcher";
 import { NavGlyph } from "./nav-icon";
-import { buildNav, buildSections, isActivePath, resolveSection } from "./nav-model";
+import { allSections, buildNav, isActivePath, resolveSection } from "./nav-model";
 import { useActiveCommunityId } from "./use-active-community";
 import { UserMenu } from "./user-menu";
 
@@ -29,7 +29,7 @@ function useShellNav({ me, communities }: ShellNavProps) {
   const pathname = usePathname();
   const activeId = useActiveCommunityId(communities.map((c) => c.id));
   const nav = buildNav(me, activeId);
-  const sections = buildSections(nav, activeId);
+  const sections = allSections(nav);
   const { section, item } = resolveSection(sections, pathname);
   return { pathname, activeId, nav, sections, section, item, role: roleIn(me, activeId) };
 }
@@ -52,7 +52,7 @@ export function ShellRail(props: ShellNavProps) {
           return (
             <Link
               key={s.key}
-              href={s.items[0]?.href ?? "/"}
+              href={s.href}
               aria-current={active ? "true" : undefined}
               className={cn(
                 "group flex w-[4.5rem] flex-col items-center gap-1 rounded-2xl py-2 text-caption-2 font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",

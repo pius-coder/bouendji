@@ -15,7 +15,7 @@ import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/compone
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useMediaQuery, WIDE_QUERY } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
-import { Button } from "./button";
+import { Button } from "@/components/common/button";
 
 export interface SheetAction {
   label: string;
@@ -29,13 +29,12 @@ export interface SheetAction {
 }
 
 /**
- * Feuille pour une tâche ciblée (HIG sheets, règles §7). En-tête iOS : « Annuler » au
- * début, titre au centre, action à la fin. ≥ 768 px : feuille latérale droite ;
- * en dessous : feuille du bas avec poignée, jusqu'à 92 % de la hauteur.
- * `dirty` : fermer (geste, Échap, Annuler) demande de confirmer l'abandon.
- * Une seule feuille à la fois : n'en ouvrez jamais une depuis une autre.
+ * Feuille unique du dashboard (fusion de l'ancienne feuille responsive et du panneau de détail).
+ * En-tête iOS : « Annuler » au début, titre au centre, action à la fin. Au-delà de 768 px : feuille
+ * latérale droite ; en dessous : feuille du bas avec poignée, jusqu'92 % de la hauteur.
+ * `dirty` : fermer demande de confirmer l'abandon. Une seule feuille à la fois.
  */
-export function AppSheet({
+export function ResponsiveSheet({
   open,
   onOpenChange,
   title,
@@ -50,8 +49,8 @@ export function AppSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
-  /** Phrase sous le titre ; sinon le titre seul est annoncé. */
-  description?: string;
+  /** Phrase ou contenu sous le titre ; sinon le titre seul est annoncé. */
+  description?: ReactNode;
   cancelLabel?: string;
   action?: SheetAction;
   dirty?: boolean;
