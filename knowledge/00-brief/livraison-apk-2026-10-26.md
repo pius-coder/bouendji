@@ -105,3 +105,16 @@ peut renvoyer l'entrée.
   200/200/350 F) mais **non appliqués** : la prod a **0 serveur 3x-ui**, donc un
   forfait à quota vendu ne donnerait aucune connexion. Bloqué en attente de
   l'utilisateur.
+
+## Offres sur mesure préparées, serveur 3x-ui attendu
+
+- Décision utilisateur : il ajoute d'abord un serveur 3x-ui, puis l'offre sur
+  mesure s'active avec les prix d'exemple sur les 8 apps.
+- Prod : 8 lignes `plans` famille `custom` (code `sur-mesure`, `paid-gcp`,
+  **`active = false`**), termes 150 / 400 F par Go, 1-50 Go pas 1, 1-30 j,
+  nuit 20-24 = 200, 24-04 = 200, 20-04 = 350. Vérifié par SELECT.
+- Dashboard (commit `3bf56e0`) : section « Serveurs 3x-ui » dans la page Réseau
+  (owner) : liste, ajout (jeton en champ mot de passe, scellé par l'API), Tester.
+  tsc, lint, tests 135/135. Non vu dans le navigateur.
+- Activation prévue après un « Tester » réussi :
+  `UPDATE plans SET active = true WHERE family = 'custom';`
