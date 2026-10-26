@@ -31,7 +31,8 @@ const { openAdminSession } = await import("../src/lib/auth.js");
 const { encryptSecret } = await import("../src/lib/crypto.js");
 
 const db = await createDb();
-// Les migrations sont appliquées par l'exécuteur R0, dans `createDb`.
+// Les migrations sont appliquées par l'exécuteur R0, dans `createDb` (040 et
+// 044 de R4 comprises — pas d'application manuelle dans le test).
 // app.ts est maintenant câblé par l'orchestrateur (registerAdminRoutes y figure) :
 // le test passe par la vraie application, sans greffe locale.
 const app = await buildApp({ db });
@@ -354,7 +355,6 @@ test("owner : création, rôle, suspension, révocation, pool, audit", async () 
   const admin = await call("POST", "/admins", OWNER, {
     email: "nouveau@example.com",
     name: "Nouveau Staff",
-    password: "mot-de-passe-solide-2026",
     platformRole: "none",
   });
   assert.equal(admin.status, 201);

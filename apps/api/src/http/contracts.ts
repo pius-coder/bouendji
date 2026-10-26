@@ -770,8 +770,8 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
     tags: ["administration"],
     security: ADMIN_SECURITY,
     params: PARAM_COMMUNITY_ID,
-    body: { type: "object", additionalProperties: false, properties: { name: str("Nom."), commissionBps: int("0 à 3000.", { minimum: 0, maximum: 3000 }), status: { type: "string", enum: ["active", "suspended"] } } },
-    response: withErrors({ 200: jsonResponse("Communauté mise à jour.", { properties: { id: str("Communauté.") } }) }),
+    body: { type: "object", additionalProperties: false, properties: { name: str("Nom."), commissionBps: int("0 à 3000.", { minimum: 0, maximum: 3000 }), status: { type: "string", enum: ["active", "suspended"] }, whatsappGroupUrl: { type: ["string", "null"], description: "Lien https://chat.whatsapp.com/..., ou null." }, contactWhatsapp: { type: ["string", "null"], description: "9 chiffres, +237 facultatif, ou null." } } },
+    response: withErrors({ 200: jsonResponse("Communauté mise à jour.", { properties: { id: str("Communauté."), whatsappGroupUrl: str("Lien du groupe, ou null."), contactWhatsapp: str("Contact, ou null.") } }) }),
   },
 
   "GET /v1/admin/apps": {
@@ -867,11 +867,11 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
 
   "POST /v1/admin/admins": {
     summary: "Créer un compte d'administration",
-    description: "Owner uniquement. Mot de passe de 12 caractères minimum.",
+    description: "Owner uniquement. Le mot de passe temporaire est généré par le serveur et renvoyé une seule fois. Email facultatif si un numéro WhatsApp est donné.",
     tags: ["administration"],
     security: ADMIN_SECURITY,
-    body: { type: "object", additionalProperties: false, required: ["email", "name", "password"], properties: { email: str("Email.", { format: "email" }), name: str("Nom."), password: str("Mot de passe.", { minLength: 12 }), platformRole: { type: "string", enum: ["none", "owner"] } } },
-    response: withErrors({ 201: jsonResponse("Compte créé.", { properties: { id: str("Compte."), email: str("Email.") } }), 409: errorResponse("Email déjà utilisé.") }),
+    body: { type: "object", additionalProperties: false, required: ["name"], properties: { email: str("Email (facultatif si numéro WhatsApp).", { format: "email" }), name: str("Nom."), whatsappNumber: str("9 chiffres, +237 facultatif."), platformRole: { type: "string", enum: ["none", "owner"] } } },
+    response: withErrors({ 201: jsonResponse("Compte créé, mot de passe temporaire renvoyé une seule fois.", { properties: { adminId: str("Compte."), email: str("Email, ou null."), whatsappNumber: str("Numéro, ou null."), temporaryPassword: str("Mot de passe temporaire (affiché une seule fois)."), mustChangePassword: { type: "boolean" }, whatsappLink: str("Lien wa.me prêt à envoyer, ou null.") } }), 409: errorResponse("Email ou numéro déjà utilisé.") }),
   },
 
   "GET /v1/admin/admins": {
@@ -1020,6 +1020,63 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
     security: ADMIN_SECURITY,
     querystring: { type: "object", properties: { communityId: str("Communauté."), limit: int("1 à 200.") } },
     response: withErrors({ 200: jsonResponse("Entrées.", { properties: { items: arrayOf(shape({ id: str("Entrée."), action: str("Action."), actorId: str("Auteur."), createdAt: str("Date.", { format: "date-time" }) }), "Entrées.") } }) }),
+  },
+
+  /* ----------------------------------------------- onboarding (R4, libre-service) */
+
+  "GET /v1/admin/onboarding": {
+    summary: "Lire l'avancement de l'onboarding",
+    description: "Étape de l'assistant (0 à 5), étape du guide, communauté et application de l'administrateur.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    response: withErrors({ 200: jsonResponse("Avancement.", { properties: { step: int("0 à 5."), completedAt: str("Récapitulatif atteint.", { format: "date-time" }), guideStep: int("Étape du guide."), guideDoneAt: str("Guide terminé.", { format: "date-time" }), communityId: str("Communauté, ou null."), appId: str("Application, ou null.") } }) }),
+  },
+
+  "PATCH /v1/admin/onboarding": {
+    summary: "Mettre à jour l'avancement de l'onboarding",
+    description: "Étape 5 (récapitulatif) date `completedAt`. `guideDone` true date la fin du guide, false la rouvre.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    body: { type: "object", additionalProperties: false, properties: { step: int("0 à 5.", { minimum: 0, maximum: 5 }), guideStep: int("0 à 20.", { minimum: 0, maximum: 20 }), guideDone: { type: "boolean", description: "Guide terminé ou non." } } },
+    response: withErrors({ 200: jsonResponse("Avancement.", { properties: { step: int("Étape."), guideStep: int("Étape du guide.") } }) }),
+  },
+
+  "POST /v1/admin/onboarding/community": {
+    summary: "Créer sa communauté (une seule fois)",
+    description: "Ouvert à tout administrateur sans communauté. Il en devient community_admin. Refusé si ce compte a déjà une communauté.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    body: { type: "object", additionalProperties: false, required: ["name"], properties: { name: str("Nom, 2 à 120."), slug: str("Identifiant ; dérivé du nom si absent."), whatsappGroupUrl: str("Lien https://chat.whatsapp.com/..."), contactWhatsapp: str("9 chiffres, +237 facultatif.") } },
+    response: withErrors({ 201: jsonResponse("Communauté créée.", { properties: { id: str("Communauté."), slug: str("Identifiant.") } }), 409: errorResponse("Une communauté existe déjà pour ce compte.") }),
+  },
+
+  "POST /v1/admin/apps": {
+    summary: "Créer l'application de sa communauté",
+    description: "Une seule application par communauté. Le paquet est calculé côté serveur à partir du slug de la communauté, puis validé comme une marque.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    body: { type: "object", additionalProperties: false, required: ["name", "theme", "supportUrl"], properties: { name: str("Nom, 2 à 40."), theme: { type: "string", enum: ["billet", "halo", "mono", "vector", "otaku"] }, accent: { type: ["string", "null"], description: "#RRGGBB ou null." }, supportUrl: str("https:, mailto: ou tel:."), supportEmail: str("Email de contact.", { format: "email" }) } },
+    response: withErrors({ 201: jsonResponse("Application créée.", { properties: { id: str("Application."), packageName: str("Paquet calculé.") } }), 409: errorResponse("Une application existe déjà pour cette communauté.") }),
+  },
+
+  "PATCH /v1/admin/apps/:appId": {
+    summary: "Modifier son application",
+    description: "Nom, thème, couleur d'accent et liens. Le paquet ne change jamais. Refusé pendant un build.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    params: PARAM_APP_ID,
+    body: { type: "object", additionalProperties: false, properties: { name: str("Nom, 2 à 40."), theme: { type: "string", enum: ["billet", "halo", "mono", "vector", "otaku"] }, accent: { type: ["string", "null"], description: "#RRGGBB ou null." }, supportUrl: str("https:, mailto: ou tel:."), supportEmail: { type: ["string", "null"], description: "Email, ou null." }, privacyUrl: { type: ["string", "null"], description: "https:, ou null." }, termsUrl: { type: ["string", "null"], description: "https:, ou null." } } },
+    response: withErrors({ 200: jsonResponse("Application mise à jour.", { properties: { id: str("Application.") } }), 409: errorResponse("Un build est en cours.") }),
+  },
+
+  "POST /v1/admin/apps/:appId/logo": {
+    summary: "Téléverser le logo de l'application",
+    description: "PNG ou SVG, 1 Mo au plus, en base64 dans le corps JSON. Stockage provisoire en base : la copie vers R2 n'est pas câblée.",
+    tags: ["administration"],
+    security: ADMIN_SECURITY,
+    params: PARAM_APP_ID,
+    body: { type: "object", additionalProperties: false, required: ["mime", "data"], properties: { mime: { type: "string", enum: ["image/png", "image/svg+xml"] }, data: str("Contenu en base64.") } },
+    response: withErrors({ 200: jsonResponse("Logo enregistré.", { properties: { appId: str("Application."), logoKey: str("Clé de stockage."), sha256: str("Empreinte SHA-256.") } }), 422: errorResponse("Logo refusé (type, taille ou contenu).") }),
   },
 };
 

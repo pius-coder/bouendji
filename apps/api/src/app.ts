@@ -12,6 +12,7 @@ import { registerOpenApi, registerOpenApiReference } from "./openapi.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminAccountRoutes } from "./routes/adminAccount.js";
 import { registerAdminAuthRoutes } from "./routes/adminAuth.js";
+import { registerAdminOnboardingRoutes } from "./routes/adminOnboarding.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerBuildRoutes } from "./routes/builds.js";
 import { registerBundleRoutes } from "./routes/bundle.js";
@@ -309,6 +310,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerAdminRoutes(app, db);
   registerAdminAuthRoutes(app, db);
   registerAdminAccountRoutes(app, db);
+  registerAdminOnboardingRoutes(app, db);
   registerBuildRoutes(app, db);
   registerOfflineRoutes(app, db);
   await registerOpenApiReference(app);
