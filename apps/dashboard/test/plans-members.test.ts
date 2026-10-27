@@ -236,6 +236,10 @@ describe("formulaires forfait et membre", () => {
     featured: false,
     active: true,
     endpointTier: "paid-gcp" as const,
+    family: "limited_night" as const,
+    quotaGb: "10",
+    nightPrices: { "20-24": "200", "24-04": "", "20-04": "" },
+    nightActive: { "20-24": true, "24-04": true, "20-04": true },
   };
 
   it("valeurs vides = défauts de l'API ; nombres convertis", () => {
@@ -248,6 +252,13 @@ describe("formulaires forfait et membre", () => {
     assert.equal(update.deviceLimit, 1);
     assert.equal(update.sortOrder, 0);
     assert.ok(!("code" in update));
+    assert.equal(update.quotaBytes, 10_000_000_000);
+    assert.deepEqual(update.nightOptions, [{ window: "20-24", priceXaf: 200, active: true }]);
+  });
+
+  it("modification : seuls les champs fournis partent, pas de termes sans famille", () => {
+    assert.deepEqual(planFormToUpdate({ name: "Nouveau nom" }), { name: "Nouveau nom" });
+    assert.ok(!("quotaBytes" in planFormToUpdate({ priceXaf: "3000" })));
   });
 
   it("refuse prix décimal, durée 0, appareils 11, code en majuscules", () => {

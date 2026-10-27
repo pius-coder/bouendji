@@ -16,10 +16,13 @@ export async function createPlanAction(appId: string, input: unknown): Promise<A
   });
 }
 
-/** Modification : `code` est immuable, il n'est jamais envoyé. */
+/**
+ * Modification : seuls les champs fournis partent (`code` est immuable). Une
+ * entrée partielle est acceptée : un changement de nom ne touche pas aux prix.
+ */
 export async function updatePlanAction(planId: string, input: unknown): Promise<ActionResult<{ id: string }>> {
   return runAction(async () => {
-    const values = planFormSchema.omit({ code: true }).parse(input);
+    const values = planFormSchema.omit({ code: true }).partial().parse(input);
     const updated = await getServices().plans.updatePlan({ planId: id.parse(planId), ...planFormToUpdate(values) });
     return { id: updated.id };
   });
