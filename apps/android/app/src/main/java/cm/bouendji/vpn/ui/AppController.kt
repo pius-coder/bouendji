@@ -116,7 +116,7 @@ class AppController(
         when (target) {
             Screen.PROFILE -> if (signedIn) loadStats()
             Screen.INVITE -> loadReferral()
-            Screen.SERVERS -> syncServersFromVault()
+            Screen.SERVERS -> refreshServers()
             Screen.PLANS -> if (plans.isEmpty()) loadPlans()
             else -> Unit
         }
@@ -429,6 +429,21 @@ class AppController(
                 container.vault.read()?.let { SingBoxConfig.nodesOf(it) }.orEmpty()
             }
             ServerBus.setServers(nodes.map { ServerStatus(it.configId, it.tag, it.label, it.region) })
+        }
+    }
+
+    /**
+     * Tire la liste à jour depuis le serveur (bundle), puis l'affiche. Sans
+     * compte actif, on se contente du coffre local.
+     */
+    fun refreshServers() {
+        if (!signedIn) { syncServersFromVault(); return }
+        scope.launch {
+            busy = true; error = null
+            runCatching { withContext(Dispatchers.IO) { refreshPrivate() } }
+                .onSuccess { showToast("Liste des serveurs mise à jour.") }
+                .onFailure { error = friendly(it) }
+            busy = false
         }
     }
 

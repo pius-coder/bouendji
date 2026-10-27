@@ -75,6 +75,7 @@ import cm.bouendji.vpn.ui.theme.Fonts
 import cm.bouendji.vpn.ui.theme.LocalTokens
 import cm.bouendji.vpn.vpn.ServerBus
 import cm.bouendji.vpn.vpn.TunnelState
+import cm.bouendji.vpn.vpn.TunnelStateBus
 import kotlinx.coroutines.delay
 import java.util.Locale
 
@@ -89,13 +90,9 @@ fun HomeScreen(ctx: ShellContext) {
     val activeId by ServerBus.active.collectAsState()
     val traffic by ServerBus.traffic.collectAsState()
 
-    // Chronomètre de session : depuis le passage à « connecté ».
-    var since by remember { mutableLongStateOf(0L) }
+    // Chronomètre de session : tenu par TunnelStateBus, donc il ne repart pas quand on change de page.
+    val since by TunnelStateBus.since.collectAsState()
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(state) {
-        if (state == TunnelState.CONNECTED && since == 0L) since = System.currentTimeMillis()
-        if (state !in RUNNING) since = 0L
-    }
     LaunchedEffect(state) {
         while (state in RUNNING) { now = System.currentTimeMillis(); delay(1_000) }
     }

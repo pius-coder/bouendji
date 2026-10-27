@@ -730,3 +730,16 @@ ferme une question ouverte ou un défaut vérifié dans le code.
   avec migrations ; les secrets (Fapshi reel, R2, keystore) sont poses par
   l'utilisateur lui-meme. Aucune APK distribuee avant un test reel sur le
   Pixel 8 (tunnel + petit paiement).
+- **D129** (2026-10-27) — **Liste des serveurs côté application : tirage explicite,
+  pas de push pour l'instant.** L'app télécharge la liste (bundle) au lancement, au
+  retour au premier plan, et à l'ouverture de la page Serveurs (`refreshServers`).
+  Un bouton « Actualiser la liste » est ajouté sous les filtres. Un push temps réel
+  (FCM) vers le téléphone reste à décider : il impose de recompiler les 8 APK et
+  de créer un projet Firebase (côté utilisateur). Le bouton « Activer » d'un nœud
+  dans le tableau de bord (à côté de « Tester ») demande une route API
+  (`POST /v1/admin/endpoints/:id/status`) : non fait. Voir
+  `30-clients/flux-serveurs-app.md`.
+- **D130** (2026-10-27) — **Chronomètre de session tenu par `TunnelStateBus`.** Il était
+  dans l'écran Accueil (`remember`) : il repartait à zéro à chaque changement de page.
+  Désormais `TunnelStateBus.since` garde le début (premier passage à « connecté »,
+  remis à zéro à l'arrêt). Code relu, non compilé.

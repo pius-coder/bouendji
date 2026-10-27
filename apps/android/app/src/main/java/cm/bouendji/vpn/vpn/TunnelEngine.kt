@@ -192,5 +192,13 @@ object TunnelStateBus {
     fun publish(state: TunnelState, detail: String? = null) {
         _detail.value = detail
         _state.value = state
+        // Début de session : premier passage à « connecté », remis à zéro à l'arrêt.
+        if (state == TunnelState.CONNECTED && _since.value == 0L) _since.value = System.currentTimeMillis()
+        if (state == TunnelState.STOPPED) _since.value = 0L
     }
+
+    private val _since = MutableStateFlow(0L)
+
+    /** Début de la session en cours (epoch ms), 0 si aucune. Tenu ici : la navigation ne le remet pas à zéro. */
+    val since: StateFlow<Long> = _since.asStateFlow()
 }

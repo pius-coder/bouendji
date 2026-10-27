@@ -106,6 +106,15 @@ fun ServersScreen(ctx: ShellContext) {
             SearchField(query, { query = it }, "Rechercher un pays ou une ville")
             Spacer(Modifier.height(12.dp))
             Segmented(listOf("Tous", "Favoris", "Disponibles"), filter, { filter = it })
+            Spacer(Modifier.height(10.dp))
+            Btn(
+                "Actualiser la liste",
+                c::refreshServers,
+                kind = BtnKind.TINTED,
+                icon = Ic.Refresh,
+                busy = c.busy,
+                height = 34.dp,
+            )
 
             if (servers.isEmpty()) {
                 Spacer(Modifier.height(18.dp))
