@@ -1,8 +1,9 @@
 import "server-only";
 import { BaseService, type BaseServiceDeps } from "@/server/api/base-service";
 import { endpoint } from "@/server/api/endpoint";
-import { listOf } from "@/server/api/schema-kit";
-import { type AdminCreate, adminAccount, adminCreateBody, adminCreated } from "./admins.schema";
+import { id, listOf } from "@/server/api/schema-kit";
+import { z } from "zod";
+import { type AdminCreate, adminAccount, adminCreateBody, adminCreated, adminResetResponse } from "./admins.schema";
 
 export type CreateAdminInput = AdminCreate;
 
@@ -18,6 +19,13 @@ export class AdminsService extends BaseService {
       idempotent: true,
       refreshAfter: true,
     }),
+    resetPassword: endpoint({
+      method: "POST",
+      path: "/:adminId/reset-password",
+      params: z.object({ adminId: id }),
+      response: adminResetResponse,
+      refreshAfter: true,
+    }),
   } as const;
 
   constructor(deps: BaseServiceDeps) {
@@ -30,5 +38,10 @@ export class AdminsService extends BaseService {
 
   createAdmin(input: CreateAdminInput) {
     return this.call(AdminsService.endpoints.create, { body: input });
+  }
+
+  /** Owner : mot de passe provisoire renvoyé une fois ; l'admin doit le changer. */
+  resetPassword(adminId: string) {
+    return this.call(AdminsService.endpoints.resetPassword, { params: { adminId } });
   }
 }

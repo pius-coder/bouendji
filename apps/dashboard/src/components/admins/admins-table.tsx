@@ -5,17 +5,20 @@ import { CellStack, Initials, TableMessage, TableRows, type TableColumn } from "
 import { getMe, withSession } from "@/server/context";
 import { getServices } from "@/server/services";
 import { CreateAdminSheet } from "./create-admin-sheet";
+import { ResetPasswordButton } from "./reset-password-button";
 
 export const ADMIN_COLUMNS = [
   { id: "name", header: "Compte", mobile: "primary" },
   { id: "scope", header: "Portée", mobile: "secondary" },
   { id: "status", header: "Statut", mobile: "trailing" },
+  { id: "actions", header: "", align: "right", mobile: "trailing" },
 ] as const satisfies readonly TableColumn[];
 
 /** Lignes (owner seulement). */
 export async function AdminsRows() {
   const me = await getMe();
   if (me.platformRole !== "owner") return <TableMessage columns={ADMIN_COLUMNS}><ForbiddenBlock /></TableMessage>;
+  const selfId = me.adminId;
   const admins = await withSession(() => getServices().admins.listAdmins());
   if (admins.length === 0) {
     return <TableMessage columns={ADMIN_COLUMNS}><EmptyBlock icon="shield" title="Aucun compte" /></TableMessage>;
@@ -34,6 +37,7 @@ export async function AdminsRows() {
         ),
         scope: a.platformRole === "owner" ? "Propriétaire" : "Personnel",
         status: <StatusBadge status={a.active ? "active" : "disabled"} />,
+        actions: a.id === selfId ? null : <ResetPasswordButton adminId={a.id} name={a.name || a.email} />,
       })}
     />
   );

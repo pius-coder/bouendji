@@ -20,3 +20,12 @@ export const adminCreateBody = z.object({
 export type AdminCreate = z.input<typeof adminCreateBody>;
 
 export const adminCreated = z.object({ adminId: z.string(), email: z.string(), name: z.string(), platformRole });
+
+/** Réinitialisation par l'owner : mot de passe provisoire renvoyé une seule fois. */
+export const adminResetResponse = z.object({
+  adminId: z.string(),
+  mustChangePassword: z.literal(true),
+  temporaryPassword: z.string(),
+  whatsappLink: z.string().nullable(),
+});
+export type AdminResetResult = z.infer<typeof adminResetResponse>;

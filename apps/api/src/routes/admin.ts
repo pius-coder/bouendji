@@ -1472,6 +1472,49 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
   });
 
   /**
+   * Réinitialisation du mot de passe d'un compte d'administration (owner).
+   *
+   * Un mot de passe provisoire est généré, hashé, et renvoyé **une seule fois**.
+   * `must_change_password` repasse à vrai : à sa prochaine connexion, l'admin
+   * est renvoyé vers l'écran de changement de mot de passe. Toutes ses sessions
+   * ouvertes sont révoquées. L'owner ne réinitialise pas son propre compte ici.
+   */
+  app.post<{ Params: { adminId: string } }>(`${PREFIX}/admins/:adminId/reset-password`, async (req, reply) => {
+    const admin = await requireAdmin(db, req);
+    authorize(admin, "community.manage", null);
+    const targetId = String(req.params.adminId);
+    if (targetId === admin.adminId) throw fail.validation({ adminId: "Vous ne réinitialisez pas votre propre compte ici." });
+    const target = await db.one<Row>("SELECT id, name, email, whatsapp_number FROM admin_users WHERE id = $1", [targetId]);
+    if (!target) throw fail.notFound("Compte introuvable.");
+
+    const temporaryPassword = generateTemporaryPassword();
+    const whatsapp = (target.whatsapp_number as string | null) ?? null;
+    const identifier = whatsapp ? `+237 ${whatsapp}` : String(target.email ?? "");
+    const whatsappLink = whatsapp
+      ? waMeLink(
+          whatsapp,
+          `Bonjour ${String(target.name)}, votre mot de passe a été réinitialisé. Identifiant ${identifier}, mot de passe provisoire ${temporaryPassword}. Connectez-vous puis choisissez votre nouveau mot de passe.`,
+        )
+      : null;
+
+    await db.tx(async (q) => {
+      await q.query(
+        "UPDATE admin_users SET password_hash = $2, must_change_password = true WHERE id = $1",
+        [targetId, hashPassword(temporaryPassword)],
+      );
+      await q.query("UPDATE admin_sessions SET revoked_at = now() WHERE admin_id = $1 AND revoked_at IS NULL", [targetId]);
+      await appendAudit(q, admin, req, {
+        action: "admin.password_reset",
+        targetType: "admin_user",
+        targetId,
+        communityId: null,
+        after: { mustChangePassword: true },
+      });
+    });
+    return reply.send({ adminId: targetId, mustChangePassword: true, temporaryPassword, whatsappLink });
+  });
+
+  /**
    * Annuaire de l'équipe (owner). Sans lui, la console devine des identifiants :
    * on ne peut pas composer un formulaire « ajouter ce compte à cette
    * communauté » sans savoir qui existe. Aucun secret n'y figure — ni empreinte
