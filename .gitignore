@@ -24,6 +24,7 @@ apps/admin/next-env.d.ts
 
 # Données locales (PGlite, exports)
 data/
+apps/api/.pgdata/
 *.sqlite
 *.db
 

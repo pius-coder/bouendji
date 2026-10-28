@@ -14,7 +14,8 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": ["DATABASE_URL"]
     },
     "seed": {
       "cache": false
