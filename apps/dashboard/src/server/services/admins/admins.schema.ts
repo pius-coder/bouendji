@@ -33,23 +33,37 @@ export const adminCreateBody = z
   });
 export type AdminCreate = z.input<typeof adminCreateBody>;
 
-export const adminCreated = z.object({
-  adminId: z.string(),
-  email: z.string().nullable(),
-  name: z.string(),
-  whatsappNumber: z.string().nullable().optional(),
-  platformRole,
-  mustChangePassword: z.boolean().optional(),
-  temporaryPassword: z.string(),
-  whatsappLink: z.string().nullable(),
-});
+export const adminCreated = z
+  .object({
+    adminId: z.string().optional(),
+    id: z.string().optional(),
+    email: z.string().nullable(),
+    name: z.string(),
+    whatsappNumber: z.string().nullable().optional(),
+    platformRole,
+    mustChangePassword: z.boolean().optional(),
+    temporaryPassword: z.string(),
+    whatsappLink: z.string().nullable(),
+  })
+  .transform((data) => ({
+    ...data,
+    adminId: data.adminId ?? data.id ?? "",
+  }));
 export type AdminCreated = z.infer<typeof adminCreated>;
 
 /** Réinitialisation par l'owner : mot de passe provisoire renvoyé une seule fois. */
-export const adminResetResponse = z.object({
-  adminId: z.string(),
-  mustChangePassword: z.literal(true),
-  temporaryPassword: z.string(),
-  whatsappLink: z.string().nullable(),
-});
+export const adminResetResponse = z
+  .object({
+    adminId: z.string().optional(),
+    id: z.string().optional(),
+    mustChangePassword: z.literal(true),
+    temporaryPassword: z.string(),
+    whatsappLink: z.string().nullable(),
+  })
+  .transform((data) => ({
+    adminId: data.adminId ?? data.id ?? "",
+    mustChangePassword: data.mustChangePassword,
+    temporaryPassword: data.temporaryPassword,
+    whatsappLink: data.whatsappLink,
+  }));
 export type AdminResetResult = z.infer<typeof adminResetResponse>;

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -150,16 +152,16 @@ fun ServersScreen(ctx: ShellContext) {
                     ) {
                         Icon(Ic.Lock, t.accent, size = 36.dp)
                         Spacer(Modifier.height(12.dp))
-                        T("Aucun forfait actif", size = 18.sp, weight = androidx.compose.ui.text.font.FontWeight.Bold, color = t.ink)
+                        T("Aucun forfait actif", size = 18.sp, weight = androidx.compose.ui.text.font.FontWeight.Bold, color = t.label)
                         Spacer(Modifier.height(6.dp))
                         T(
                             "Choisis un forfait pour débloquer l'accès aux serveurs et te connecter.",
                             color = t.label2,
                             size = 14.sp,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            align = TextAlign.Center,
                         )
                         Spacer(Modifier.height(16.dp))
-                        Btn("Voir les forfaits", { c.go(Screen.PLANS) }, kind = BtnKind.PRIMARY, height = 42.dp)
+                        Btn("Voir les forfaits", { c.go(Screen.PLANS) }, kind = BtnKind.FILLED, height = 42.dp)
                     }
                 }
                 return@ScreenColumn
@@ -176,7 +178,7 @@ fun ServersScreen(ctx: ShellContext) {
                             else "Aucun serveur disponible pour les critères choisis.",
                             color = t.label2,
                             size = 15.sp,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            align = TextAlign.Center,
                         )
                     }
                 }

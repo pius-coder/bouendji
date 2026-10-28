@@ -413,8 +413,8 @@ class AppController(
                     val offlineMe = ApiClient.MeResponse(
                         user = offlineUser,
                         community = ApiClient.CommunityDto(id = "offline", name = BrandTokens.appName, slug = BrandTokens.appName.lowercase()),
-                        entitlement = ApiClient.EntitlementDto(active = false, state = "none", expiresAt = null, endpointTier = "free-labs"),
-                        roles = emptyList(),
+                        entitlement = ApiClient.EntitlementDto(active = false),
+                        device = ApiClient.DeviceDto(id = "offline-device", name = "Android Device", status = "active"),
                     )
                     me = offlineMe
                     signedIn = true

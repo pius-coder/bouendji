@@ -58,7 +58,7 @@ class ApiClient(
     private val keys: DeviceKeys,
     private val store: SecureStore,
     private val http: OkHttpClient = defaultHttpClient(),
-    private val json: Json = JSON,
+    val json: Json = JSON,
 ) {
 
     companion object {
@@ -550,13 +550,12 @@ class ApiClient(
     data class RegisterRequest(
         val appId: String,
         val email: String? = null,
-        val phone: String? = null,
         val password: String,
         val name: String,
-        /** D53 : obligatoire, normalisÃ© cÃ´tÃ© serveur (8 Ã  15 chiffres, `+` optionnel). */
+        /** D53 : obligatoire, normalisé côté serveur (8 à 15 chiffres, `+` optionnel). */
         val phone: String,
         val locale: String? = null,
-        /** Code parrain facultatif ; inconnu = 400 cÃ´tÃ© serveur. */
+        /** Code parrain facultatif ; inconnu = 400 côté serveur. */
         val referralCode: String? = null,
     )
 

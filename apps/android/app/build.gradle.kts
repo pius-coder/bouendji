@@ -29,6 +29,7 @@ android {
     // Les niveaux de SDK viennent du catalogue, comme les bibliothèques : une
     // seule source de versions dans ce projet.
     compileSdk = libs.versions.compileSdk.get().toInt()
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = brandValue("packageName", "cm.bouendji.vpn")

@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -338,7 +339,7 @@ private fun SyncLoaderPill() {
                 strokeWidth = 2.dp,
                 color = t.accent,
             )
-            T("Synchronisation…", size = 12.sp, color = t.ink, weight = androidx.compose.ui.text.font.FontWeight.Medium)
+            T("Synchronisation…", size = 12.sp, color = t.label, weight = androidx.compose.ui.text.font.FontWeight.Medium)
         }
     }
 }

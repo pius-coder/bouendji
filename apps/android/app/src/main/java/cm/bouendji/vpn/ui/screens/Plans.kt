@@ -298,7 +298,7 @@ private fun UnlimitedCard(plan: ApiClient.PlanDto, selected: Boolean, onSelect: 
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                T(plan.name, size = 16.sp, weight = FontWeight.SemiBold, color = t.ink)
+                T(plan.name, size = 16.sp, weight = FontWeight.SemiBold, color = t.label)
                 plan.badge?.let { b ->
                     Box(
                         Modifier.clip(RoundedCornerShape(4.dp)).background(t.accentSoft).padding(horizontal = 6.dp, vertical = 2.dp)
@@ -310,7 +310,7 @@ private fun UnlimitedCard(plan: ApiClient.PlanDto, selected: Boolean, onSelect: 
             T("${durationLabel(plan.durationDays)} · Data illimitée", size = 13.sp, color = t.label2)
         }
         Column(horizontalAlignment = Alignment.End) {
-            T(fcfa(plan.priceXaf), size = 20.sp, weight = FontWeight.Bold, family = Fonts.display, color = t.ink)
+            T(fcfa(plan.priceXaf), size = 20.sp, weight = FontWeight.Bold, family = Fonts.display, color = t.label)
             T("FCFA", size = 11.sp, family = Fonts.mono, color = t.label3)
         }
     }
