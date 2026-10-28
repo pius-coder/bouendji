@@ -8,6 +8,8 @@ import {
   type OrdersQuery,
   commission,
   commissionsQuery,
+  orderDetail,
+  orderIdParams,
   orderPage,
   ordersQuery,
 } from "./orders.schema";
@@ -15,7 +17,7 @@ import {
 export type ListOrdersInput = { communityId: string } & OrdersQuery;
 export type ListCommissionsInput = { communityId: string } & CommissionsQuery;
 
-/** Dossier API : `/v1/admin/communities` (sous-ressources `orders` et `commissions`). */
+/** Dossier API : `/v1/admin/communities` (listes) et `/v1/admin/orders` (fiche R3). */
 export class OrdersService extends BaseService {
   private static readonly endpoints = {
     orders: endpoint({
@@ -25,6 +27,13 @@ export class OrdersService extends BaseService {
       query: ordersQuery,
       paginate: "cursor",
       response: orderPage,
+    }),
+    get: endpoint({
+      method: "GET",
+      basePath: "/v1/admin/orders",
+      path: "/:orderId",
+      params: orderIdParams,
+      response: orderDetail,
     }),
     // `limit` seulement, pas de curseur côté API.
     commissions: endpoint({
@@ -44,6 +53,10 @@ export class OrdersService extends BaseService {
   listOrders(input: ListOrdersInput) {
     const { communityId, ...query } = input;
     return this.call(OrdersService.endpoints.orders, { params: { communityId }, query });
+  }
+
+  getOrder(orderId: string) {
+    return this.call(OrdersService.endpoints.get, { params: { orderId } });
   }
 
   async listCommissions(input: ListCommissionsInput) {

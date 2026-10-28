@@ -8,8 +8,9 @@ import { CreateAdminSheet } from "./create-admin-sheet";
 import { ResetPasswordButton } from "./reset-password-button";
 
 export const ADMIN_COLUMNS = [
-  { id: "name", header: "Compte", mobile: "primary" },
-  { id: "scope", header: "Portée", mobile: "secondary" },
+  { id: "name", header: "Administrateur", mobile: "primary" },
+  { id: "presence", header: "Présence", mobile: "secondary" },
+  { id: "scope", header: "Rôle plateforme" },
   { id: "status", header: "Statut", mobile: "trailing" },
   { id: "actions", header: "", align: "right", mobile: "trailing" },
 ] as const satisfies readonly TableColumn[];
@@ -28,17 +29,35 @@ export async function AdminsRows() {
       rows={admins}
       columns={ADMIN_COLUMNS}
       getKey={(a) => a.id}
-      cells={(a) => ({
-        name: (
-          <span className="flex min-w-0 items-center gap-3">
-            <Initials name={a.name || a.email} />
-            <CellStack title={a.name || a.email} subtitle={a.name ? a.email : undefined} />
-          </span>
-        ),
-        scope: a.platformRole === "owner" ? "Propriétaire" : "Personnel",
-        status: <StatusBadge status={a.active ? "active" : "disabled"} />,
-        actions: a.id === selfId ? null : <ResetPasswordButton adminId={a.id} name={a.name || a.email} />,
-      })}
+      cells={(a) => {
+        const displayName = a.name || a.email || a.id;
+        const isSelf = a.id === selfId;
+        return {
+          name: (
+            <span className="flex min-w-0 items-center gap-3">
+              <Initials name={displayName} />
+              <CellStack title={displayName} subtitle={a.name ? (a.email ?? "Connexion WhatsApp") : undefined} />
+            </span>
+          ),
+          presence: (
+            <span className="inline-flex items-center gap-1.5 text-footnote font-medium">
+              <span
+                className={
+                  isSelf
+                    ? "size-2 rounded-full bg-positive"
+                    : "size-2 rounded-full bg-muted-foreground/45"
+                }
+              />
+              <span className={isSelf ? "text-foreground" : "text-muted-foreground"}>
+                {isSelf ? "En ligne (vous)" : "Hors ligne"}
+              </span>
+            </span>
+          ),
+          scope: a.platformRole === "owner" ? "Propriétaire" : "Admin de communauté / Staff",
+          status: <StatusBadge status={a.active ? "active" : "disabled"} />,
+          actions: isSelf ? null : <ResetPasswordButton adminId={a.id} name={displayName} />,
+        };
+      }}
     />
   );
 }

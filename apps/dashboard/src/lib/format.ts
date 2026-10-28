@@ -25,3 +25,15 @@ export function formatTime(date: Date): string {
 export function formatBps(bps: number): string {
   return `${(bps / 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} %`;
 }
+
+/** Octets -> Go / Mo / Ko lisible. */
+export function formatBytes(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined || Number.isNaN(bytes) || bytes < 0) return NO_VALUE;
+  if (bytes === 0) return "0 o";
+  const gb = bytes / 1024 ** 3;
+  if (gb >= 1) return `${gb.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Go`;
+  const mb = bytes / 1024 ** 2;
+  if (mb >= 1) return `${mb.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} Mo`;
+  const kb = bytes / 1024;
+  return `${kb.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} Ko`;
+}

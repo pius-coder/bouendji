@@ -913,9 +913,12 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
   app.patch<{ Params: { communityId: string } }>(`${PREFIX}/communities/:communityId`, async (req) => {
     const admin = await requireAdmin(db, req);
     const communityId = scopedCommunity(admin, req.params.communityId) as string;
-    authorize(admin, "community.manage", communityId);
+    authorize(admin, "onboarding.self", communityId);
     await mustCommunity(db, communityId);
     const input = parseBody(communityPatchSchema, req.body);
+    if (input.commissionBps !== undefined || input.status !== undefined) {
+      authorize(admin, "community.manage", communityId);
+    }
     const before = await db.one<Row>("SELECT * FROM communities WHERE id = $1", [communityId]);
     if (!before) throw fail.notFound("Communauté introuvable.");
 

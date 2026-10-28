@@ -16,6 +16,38 @@ export type Device = z.infer<typeof device>;
 
 export const deviceIdParams = z.object({ deviceId: id });
 
+/** Source : `GET /v1/admin/devices/:id` (`routes/adminDetails.ts`). */
+export const deviceDetail = z.object({
+  deviceId: z.string(),
+  communityId: z.string().nullable(),
+  userId: z.string().nullable(),
+  userName: z.string().nullable(),
+  userEmail: z.string().nullable(),
+  name: z.string(),
+  platform: z.string(),
+  status: z.string(),
+  appVersion: z.string().nullable(),
+  androidVersion: z.number().nullable(),
+  integrityOk: z.boolean(),
+  lastSeenAt: z.string().nullable(),
+  revokedAt: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  usage: z.array(
+    z.object({
+      day: z.string(),
+      source: z.string(),
+      bytesUp: z.number(),
+      bytesDown: z.number(),
+      seconds: z.number(),
+    }),
+  ),
+  reports24h: z.object({
+    ok: z.number(),
+    failed: z.number(),
+  }),
+});
+export type DeviceDetail = z.infer<typeof deviceDetail>;
+
 export const deviceRevoked = z.object({ deviceId: z.string(), status: z.string(), sessionsRevoked: z.number() });
 
 export const offlineBundleState = z.object({

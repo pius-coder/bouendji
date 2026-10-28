@@ -8,8 +8,9 @@ import { getCommunities, getMe } from "@/server/context";
 import { CommunityDrawer } from "./community-drawer";
 
 export const COMMUNITY_COLUMNS = [
-  { id: "name", header: "Communauté", mobile: "primary" },
-  { id: "commission", header: "Commission", align: "right", mobile: "secondary" },
+  { id: "name", header: "Communauté & Marque", mobile: "primary" },
+  { id: "whatsapp", header: "WhatsApp", mobile: "secondary" },
+  { id: "commission", header: "Commission", align: "right" },
   { id: "status", header: "Statut", mobile: "trailing" },
   { id: "createdAt", header: "Créée", wide: true },
   { id: "actions", header: "", align: "right" },
@@ -34,10 +35,16 @@ export async function CommunitiesRows() {
       getKey={(c) => c.id}
       cells={(c) => ({
         name: (
-          <Link href={`/${c.id}/orders`} className="flex min-w-0 items-center gap-3 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <Link href={`/${c.id}/subscribers`} className="flex min-w-0 items-center gap-3 outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <Initials name={c.name} />
             <CellStack title={c.name} subtitle={c.slug} />
           </Link>
+        ),
+        whatsapp: (
+          <CellStack
+            title={c.contactWhatsapp ? `+237 ${c.contactWhatsapp.replace(/^\+?237/, "")}` : "Non configuré"}
+            subtitle={c.whatsappGroupUrl ? "Groupe actif" : "Aucun lien de groupe"}
+          />
         ),
         commission: formatBps(c.commissionBps),
         status: <StatusBadge status={c.suspended ? "suspended" : c.status} />,

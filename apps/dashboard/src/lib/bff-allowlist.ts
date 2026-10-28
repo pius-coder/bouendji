@@ -17,6 +17,13 @@ export const BFF_READ_PREFIXES: readonly string[] = [
   "/v1/admin/devices",
   "/v1/admin/offline-bundles",
   "/v1/admin/pool",
+  "/v1/admin/users",
+  "/v1/admin/orders",
+  "/v1/admin/search",
+  "/v1/admin/onboarding",
+  "/v1/admin/pricing",
+  "/v1/admin/night-slots",
+  "/v1/admin/xui",
 ];
 
 const MAX_SEGMENTS = 8;

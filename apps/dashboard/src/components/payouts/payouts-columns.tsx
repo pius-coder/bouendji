@@ -1,8 +1,10 @@
 import { StatusBadge } from "@/components/common/status-badge";
+import { EntityLink } from "@/components/drawers/entity-link";
 import { CellStack, type TableColumn } from "@/components/page/table";
+import { Button } from "@/components/ui/button";
 import { formatDateTime, formatXaf } from "@/lib/format";
 import type { Payout } from "@/server/services/payouts/payouts.schema";
-import { PayoutDrawer, type PayoutCaps } from "./payout-drawer";
+import type { PayoutCaps } from "./payout-drawer";
 
 export const PAYOUT_COLUMNS = [
   { id: "community", header: "Communauté", mobile: "primary" },
@@ -13,14 +15,24 @@ export const PAYOUT_COLUMNS = [
   { id: "open", header: "", align: "right" },
 ] as const satisfies readonly TableColumn[];
 
-export function payoutCells(p: Payout, caps: PayoutCaps) {
+export function payoutCells(p: Payout, _caps: PayoutCaps) {
   const community = p.communityName ?? p.communityId.slice(0, 8);
   return {
-    community: <CellStack title={community} subtitle={p.note ?? undefined} />,
+    community: (
+      <EntityLink kind="versement" id={p.id} className="no-underline hover:underline">
+        <CellStack title={community} subtitle={p.note ?? `Réf. ${p.id.slice(0, 8)}`} />
+      </EntityLink>
+    ),
     amount: formatXaf(p.amountXaf),
     status: <StatusBadge status={p.status} />,
     createdAt: formatDateTime(p.createdAt),
     paidAt: formatDateTime(p.paidAt),
-    open: <PayoutDrawer payout={p} communityName={community} caps={caps} />,
+    open: (
+      <Button asChild variant="outline" size="sm">
+        <EntityLink kind="versement" id={p.id} className="no-underline">
+          Fiche
+        </EntityLink>
+      </Button>
+    ),
   };
 }

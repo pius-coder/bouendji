@@ -1,5 +1,7 @@
 import { StatusBadge } from "@/components/common/status-badge";
+import { EntityLink } from "@/components/drawers/entity-link";
 import { CellStack, type TableColumn } from "@/components/page/table";
+import { Button } from "@/components/ui/button";
 import { formatDateTime, NO_VALUE } from "@/lib/format";
 import type { Build } from "@/server/services/builds/builds.service";
 import { formatVersion, shortSha256 } from "./builds-format";
@@ -11,16 +13,24 @@ export const BUILD_COLUMNS = [
   { id: "createdAt", header: "Créé" },
   { id: "updatedAt", header: "Mis à jour", wide: true },
   { id: "link", header: "Lien", mobile: "secondary" },
+  { id: "open", header: "", align: "right", mobile: "trailing" },
 ] as const satisfies readonly TableColumn[];
 
 /**
- * Lien de l'APK : seulement quand l'API l'a reçu du callback CI (`apkUrl`). Sans
- * lien, un tiret : le build n'est pas encore terminé, ou il a échoué.
+ * Chaque ligne de build ouvre son tiroir (`?build=id`) permettant de voir le SHA-256,
+ * le motif de refus éventuel ou de valider/refuser la demande (owner).
  */
 export function buildCells(build: Build) {
   const sha = shortSha256(build.sha256);
   return {
-    version: <CellStack title={formatVersion(build.versionName, build.versionCode)} />,
+    version: (
+      <EntityLink kind="build" id={build.id} className="no-underline hover:underline">
+        <CellStack
+          title={formatVersion(build.versionName, build.versionCode)}
+          subtitle={build.rejectReason ? `Refusé : ${build.rejectReason}` : undefined}
+        />
+      </EntityLink>
+    ),
     status: <StatusBadge status={build.status} />,
     createdAt: formatDateTime(build.createdAt),
     updatedAt: formatDateTime(build.updatedAt),
@@ -37,6 +47,13 @@ export function buildCells(build: Build) {
       <span className="text-muted-foreground" title="Le lien apparaît quand le build est terminé.">
         {NO_VALUE}
       </span>
+    ),
+    open: (
+      <Button asChild variant="outline" size="sm">
+        <EntityLink kind="build" id={build.id} className="no-underline">
+          Fiche
+        </EntityLink>
+      </Button>
     ),
   };
 }

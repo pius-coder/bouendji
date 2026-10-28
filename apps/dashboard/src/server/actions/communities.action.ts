@@ -4,6 +4,7 @@ import { z } from "zod";
 import { id } from "@/server/api/schema-kit";
 import { getServices } from "@/server/services";
 import { communityFormSchema } from "@/server/services/communities/communities.schema";
+import { isWhatsappGroupUrl, normalizeCameroonWhatsapp } from "@/server/services/onboarding/onboarding.schema";
 import { runAction, type ActionResult } from "./action-result";
 
 /**
@@ -26,18 +27,34 @@ export async function createCommunityAction(input: unknown): Promise<ActionResul
 
 const editSchema = z.object({
   name: z.string().trim().min(2, "2 caractères min.").max(120),
-  commissionPercent: communityFormSchema.shape.commissionPercent,
+  commissionPercent: communityFormSchema.shape.commissionPercent.optional(),
+  whatsappGroupUrl: z
+    .string()
+    .trim()
+    .refine((v) => v === "" || isWhatsappGroupUrl(v), "Lien de groupe attendu : https://chat.whatsapp.com/...")
+    .optional(),
+  contactWhatsapp: z
+    .string()
+    .trim()
+    .refine((v) => v === "" || normalizeCameroonWhatsapp(v) !== null, "9 chiffres attendus, +237 facultatif.")
+    .optional(),
 });
 
-/** Modifier nom et commission (owner : community.manage). */
+/** Modifier nom, commission (owner) et WhatsApp (owner / community_admin). */
 export async function updateCommunityAction(communityId: string, input: unknown): Promise<ActionResult<{ id: string }>> {
   return runAction(async () => {
     const values = editSchema.parse(input);
-    const percent = values.commissionPercent.replace(",", ".");
+    const percent = values.commissionPercent?.replace(",", ".") ?? "";
     const updated = await getServices().communities.updateCommunity({
       communityId: id.parse(communityId),
       name: values.name,
       ...(percent ? { commissionBps: Math.round(Number(percent) * 100) } : {}),
+      ...(values.whatsappGroupUrl !== undefined
+        ? { whatsappGroupUrl: values.whatsappGroupUrl === "" ? null : values.whatsappGroupUrl }
+        : {}),
+      ...(values.contactWhatsapp !== undefined
+        ? { contactWhatsapp: values.contactWhatsapp === "" ? null : values.contactWhatsapp }
+        : {}),
     });
     return { id: updated.id };
   });

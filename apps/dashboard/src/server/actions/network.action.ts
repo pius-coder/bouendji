@@ -1,7 +1,13 @@
 "use server";
 
 import { getServices } from "@/server/services";
-import { manualEndpointFormSchema, manualEndpointFormToBody } from "@/server/services/network/network.schema";
+import {
+  type DeployKeyResult,
+  manualEndpointFormSchema,
+  manualEndpointFormToBody,
+  type NightSlotView,
+  type TelegramTestResult,
+} from "@/server/services/network/network.schema";
 import { xuiServerFormSchema, xuiServerFormToBody } from "@/server/services/network/xui.schema";
 import { runAction, type ActionResult } from "./action-result";
 
@@ -38,5 +44,26 @@ export async function testXuiServerAction(serverId: string): Promise<ActionResul
   return runAction(async () => {
     const result = await getServices().network.testXuiServer(String(serverId));
     return { ok: result.ok, message: result.message };
+  });
+}
+
+/** Prise en charge d'un créneau de nuit (« Je m'en occupe »). */
+export async function claimNightSlotAction(slotId: string): Promise<ActionResult<NightSlotView>> {
+  return runAction(async () => {
+    return getServices().network.claimNightSlot(String(slotId));
+  });
+}
+
+/** Émission d'une clé de déploiement à usage unique (`ENDPOINT_INGEST_SECRET`). */
+export async function issueDeployKeyAction(slotId: string): Promise<ActionResult<DeployKeyResult>> {
+  return runAction(async () => {
+    return getServices().network.issueDeployKey(String(slotId));
+  });
+}
+
+/** Envoi d'un message de test Telegram (owner / réseau). */
+export async function testTelegramAction(): Promise<ActionResult<TelegramTestResult>> {
+  return runAction(async () => {
+    return getServices().network.testTelegram();
   });
 }

@@ -1,11 +1,13 @@
-import { IconTile } from "@/components/page/icon-tile";
 import { StatusBadge } from "@/components/common/status-badge";
-import type { ChipOption } from "@/components/page/chip-filter";
+import { EntityLink } from "@/components/drawers/entity-link";
 import { shortId } from "@/components/offline/offline-status";
+import type { ChipOption } from "@/components/page/chip-filter";
+import { IconTile } from "@/components/page/icon-tile";
 import { CellStack, type TableColumn } from "@/components/page/table";
+import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format";
 import type { Device, OfflineBundleState } from "@/server/services/devices/devices.schema";
-import { DeviceDrawer, type DeviceCaps } from "./device-drawer";
+import type { DeviceCaps } from "./device-drawer";
 
 export const DEVICE_COLUMNS = [
   { id: "name", header: "Appareil", mobile: "primary" },
@@ -23,28 +25,35 @@ export const DEVICE_STATUS_OPTIONS: readonly ChipOption[] = [
 ];
 
 export interface DeviceCellOptions {
-  /** Droits affichés, venus du rôle ; l'API refuse de toute façon (403). */
   caps: DeviceCaps;
   subscriberLabel: (userId: string) => string;
-  /** Fichiers de secours déjà lus côté serveur pour cet appareil. */
   bundlesOf: (deviceId: string) => readonly OfflineBundleState[];
 }
 
-/** Une seule action par ligne : « Détails » ouvre le tiroir de l'appareil. */
-export function deviceCells(d: Device, { caps, subscriberLabel, bundlesOf }: DeviceCellOptions) {
+export function deviceCells(d: Device, { subscriberLabel }: DeviceCellOptions) {
   const name = d.name || shortId(d.deviceId);
   const live = !d.revokedAt && d.status !== "revoked";
   const subscriber = subscriberLabel(d.userId);
   return {
     name: (
-      <span className="flex min-w-0 items-center gap-3">
+      <EntityLink kind="appareil" id={d.deviceId} className="flex min-w-0 items-center gap-3 no-underline hover:underline">
         <IconTile name="smartphone" size="sm" tone={live ? "accent" : "neutral"} />
         <CellStack title={name} subtitle={d.platform} />
-      </span>
+      </EntityLink>
     ),
-    user: subscriber,
+    user: (
+      <EntityLink kind="abonne" id={d.userId}>
+        {subscriber}
+      </EntityLink>
+    ),
     status: <StatusBadge status={d.status} />,
     lastSeen: formatDateTime(d.lastSeenAt),
-    actions: <DeviceDrawer device={d} subscriber={subscriber} bundles={bundlesOf(d.deviceId)} caps={caps} />,
+    actions: (
+      <Button asChild variant="outline" size="sm">
+        <EntityLink kind="appareil" id={d.deviceId} className="no-underline">
+          Fiche
+        </EntityLink>
+      </Button>
+    ),
   };
 }

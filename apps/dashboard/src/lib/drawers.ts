@@ -34,3 +34,15 @@ export function drawerCloseHref(pathname: string, params: SearchParamsLike): str
   const qs = search.toString();
   return qs ? `${pathname}?${qs}` : pathname;
 }
+
+/** URL de la page qui ouvre un tiroir donné (et remplace tout tiroir déjà ouvert) en gardant les autres filtres. */
+export function drawerOpenHref(pathname: string, params: SearchParamsLike, kind: DrawerKind, id: string): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if ((DRAWER_KEYS as readonly string[]).includes(key)) continue;
+    for (const item of Array.isArray(value) ? value : value ? [value] : []) search.append(key, item);
+  }
+  if (ID.test(id)) search.set(kind, id);
+  const qs = search.toString();
+  return qs ? `${pathname}?${qs}` : pathname;
+}

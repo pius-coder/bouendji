@@ -6,26 +6,49 @@ import { Icon } from "@/components/common/icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { triggerBuildAction } from "@/server/actions/builds.action";
+import { requestBuildAction, triggerBuildAction } from "@/server/actions/builds.action";
 
 /**
- * « Construire l'APK » et son champ « Nom de version » (facultatif). Quand la marque
- * est incomplète, le bouton est désactivé et la raison reste affichée. L'API reste
- * l'autorité : un 422 ou un 403 s'affiche tel quel dans un toast.
+ * Pour l'admin de communauté : « Demander une nouvelle version » (`requestBuildAction`, statut `requested`).
+ * Pour le propriétaire (`isOwner`) : « Construire l'APK » direct (`triggerBuildAction`) ou demande.
  */
-export function BuildTrigger({ appId, brandReady }: { appId: string; brandReady: boolean }) {
+export function BuildTrigger({
+  appId,
+  brandReady,
+  isOwner = false,
+}: {
+  appId: string;
+  brandReady: boolean;
+  isOwner?: boolean;
+}) {
   const [versionName, setVersionName] = useState("");
   const [pending, startTransition] = useTransition();
   const inputId = useId();
   const reasonId = useId();
 
-  function build() {
+  function handleRequest() {
+    startTransition(async () => {
+      const result = await requestBuildAction(appId, versionName);
+      if (result.ok) {
+        toast.success("Demande de version envoyée", {
+          description: "Le propriétaire de la plateforme est notifié pour lancer la compilation.",
+        });
+        setVersionName("");
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
+  function handleTrigger() {
     startTransition(async () => {
       const result = await triggerBuildAction(appId, versionName);
       if (result.ok) {
-        toast.success("Build lancé", { description: "En file d'attente. La liste se met à jour." });
+        toast.success("Build lancé", { description: "En file d'attente GitHub Actions." });
         setVersionName("");
-      } else toast.error(result.message);
+      } else {
+        toast.error(result.message);
+      }
     });
   }
 
@@ -45,17 +68,31 @@ export function BuildTrigger({ appId, brandReady }: { appId: string; brandReady:
           />
         </label>
         <Button
+          variant={isOwner ? "outline" : "default"}
           className="min-h-11"
           disabled={!brandReady || pending}
           aria-describedby={brandReady ? undefined : reasonId}
-          onClick={build}
+          onClick={handleRequest}
         >
           {pending ? <Spinner /> : <Icon name="download" />}
-          Construire l&apos;APK
+          Demander une nouvelle version
         </Button>
+        {isOwner ? (
+          <Button
+            className="min-h-11"
+            disabled={!brandReady || pending}
+            aria-describedby={brandReady ? undefined : reasonId}
+            onClick={handleTrigger}
+          >
+            {pending ? <Spinner /> : <Icon name="check" />}
+            Construire l&apos;APK maintenant (Owner)
+          </Button>
+        ) : null}
       </div>
       {brandReady ? (
-        <p className="text-footnote text-muted-foreground">Nom facultatif. Vide : 1.0.0. Le numéro de build est attribué automatiquement.</p>
+        <p className="text-footnote text-muted-foreground">
+          Nom facultatif (défaut : 1.0.0). Le numéro de version code est incrémenté automatiquement.
+        </p>
       ) : (
         <p id={reasonId} className="text-footnote text-muted-foreground">
           Construction impossible tant que la marque est incomplète.

@@ -124,3 +124,61 @@ export function manualEndpointFormToBody(values: z.output<typeof manualEndpointF
     hostHeader: values.hostHeader || null,
   };
 }
+
+/** Source : `slotDto` de `apps/api/src/routes/adminNight.ts` (R8, D119, D120, D124). */
+export const slotIdParams = z.object({ slotId: id });
+
+export const nightSlotView = z.object({
+  slotId: z.string(),
+  day: z.string(),
+  slot: z.string(),
+  label: z.string().optional(),
+  startsAt: z.string().nullable(),
+  endsAt: z.string().nullable(),
+  state: z.string(),
+  claimedBy: z.object({ id: z.string(), name: z.string() }).nullable(),
+  claimedAt: z.string().nullable(),
+  deployedBy: z.object({ id: z.string(), name: z.string() }).nullable(),
+  keyPending: z.boolean(),
+  keyExpiresAt: z.string().nullable(),
+  endpoint: z
+    .object({
+      endpointId: z.string(),
+      label: z.string(),
+      status: z.string(),
+      health: z.string(),
+      expiresAt: z.string().nullable(),
+    })
+    .nullable(),
+});
+export type NightSlotView = z.infer<typeof nightSlotView>;
+
+export const nightSlotsResponse = z.object({
+  timezone: z.string(),
+  now: z.string(),
+  today: z.array(nightSlotView),
+  upcoming: z.array(nightSlotView),
+});
+export type NightSlotsResponse = z.infer<typeof nightSlotsResponse>;
+
+export const nightSlotsHistoryResponse = z.object({
+  timezone: z.string(),
+  slots: z.array(nightSlotView),
+});
+
+export const deployKeyResponse = z.object({
+  slotId: z.string(),
+  key: z.string(),
+  variable: z.string(),
+  expiresAt: z.string().nullable(),
+  note: z.string(),
+});
+export type DeployKeyResult = z.infer<typeof deployKeyResponse>;
+
+export const telegramTestResponse = z.object({
+  delivered: z.number(),
+  recipients: z.number(),
+  timezone: z.string(),
+  deployWarnMinutes: z.number(),
+});
+export type TelegramTestResult = z.infer<typeof telegramTestResponse>;

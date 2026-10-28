@@ -10,9 +10,11 @@ import { BuildsService } from "./builds/builds.service";
 import { CommunitiesService } from "./communities/communities.service";
 import { DevicesService } from "./devices/devices.service";
 import { NetworkService } from "./network/network.service";
+import { OnboardingService } from "./onboarding/onboarding.service";
 import { OrdersService } from "./orders/orders.service";
 import { PayoutsService } from "./payouts/payouts.service";
 import { PlansService } from "./plans/plans.service";
+import { PricingService } from "./pricing/pricing.service";
 import { SubscribersService } from "./subscribers/subscribers.service";
 
 /** Construit tous les services sur les mêmes dépendances. Injectable pour les tests. */
@@ -29,6 +31,8 @@ export function createServices(deps: BaseServiceDeps) {
     network: new NetworkService(deps),
     audit: new AuditService(deps),
     builds: new BuildsService(deps),
+    pricing: new PricingService(deps),
+    onboarding: new OnboardingService(deps),
   };
 }
 

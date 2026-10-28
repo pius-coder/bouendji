@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageOf } from "@/server/api/schema-kit";
+import { id, pageOf } from "@/server/api/schema-kit";
 
 /** Source : `orderDto`, `commissionDto`, `listQuerySchema` de `apps/api/src/routes/admin.ts`. */
 export const order = z.object({
@@ -43,3 +43,27 @@ export const commissionsQuery = z.object({
   limit: z.number().int().min(1).max(100).optional(),
 });
 export type CommissionsQuery = z.input<typeof commissionsQuery>;
+
+export const orderIdParams = z.object({ orderId: id });
+
+/** Source : `GET /v1/admin/orders/:id` (`routes/adminDetails.ts`). */
+export const orderDetail = order.extend({
+  communityId: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  provider: z.string(),
+  failureReason: z.string().nullable(),
+  userName: z.string(),
+  planCode: z.string(),
+  planName: z.string(),
+  providerRef: z.string().nullable().optional(),
+  subscription: z
+    .object({
+      id: z.string(),
+      status: z.string(),
+      startsAt: z.string().nullable(),
+      endsAt: z.string().nullable(),
+    })
+    .nullable(),
+  commissions: z.array(commission).optional(),
+});
+export type OrderDetail = z.infer<typeof orderDetail>;

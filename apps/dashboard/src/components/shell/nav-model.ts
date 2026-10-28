@@ -61,8 +61,8 @@ const META: Record<SectionKey, { label: string; description: string; icon: NavIc
   offres: { label: "Offres", description: "Forfaits et application de la communauté.", icon: "tag" },
   argent: { label: "Argent", description: "Commissions et versements.", icon: "wallet" },
   communaute: { label: "Communauté", description: "Équipe, journal et réglages de la communauté active.", icon: "building" },
-  plateforme: { label: "Plateforme", description: "Communautés et comptes d'administration.", icon: "shield" },
-  reseau: { label: "Réseau", description: "Serveurs illimités par créneau et serveurs limités.", icon: "server" },
+  plateforme: { label: "Plateforme", description: "Communautés, administrateurs, builds et tarifs.", icon: "shield" },
+  reseau: { label: "Réseau", description: "Créneaux de nuit, serveurs 3x-ui et historique.", icon: "server" },
 };
 
 /**
@@ -112,7 +112,7 @@ export function buildNav(me: RoleSource, communityId: string | null): NavModel {
   const communaute = section(
     "communaute",
     [
-      inCommunity && can(me, "staff.manage", communityId) ? { href: scoped("members"), label: "Équipe", icon: "shield" as const } : null,
+      inCommunity && can(me, "staff.manage", communityId) ? { href: scoped("members"), label: "Équipe & Réglages", icon: "shield" as const } : null,
       inCommunity && can(me, "audit.read", communityId) ? { href: scoped("audit"), label: "Journal", icon: "history" as const } : null,
     ],
   );
@@ -123,6 +123,7 @@ export function buildNav(me: RoleSource, communityId: string | null): NavModel {
       ? [
           { href: "/communities", label: "Communautés", icon: "building" as const },
           { href: "/admins", label: "Administrateurs", icon: "shield" as const },
+          { href: "/pricing", label: "Tarifs et marges", icon: "tag" as const },
         ]
       : [],
   );

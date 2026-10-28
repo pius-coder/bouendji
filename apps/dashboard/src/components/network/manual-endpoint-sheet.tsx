@@ -2,11 +2,13 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { PlusIcon } from "@/components/common/icon-compat";
+import { Icon } from "@/components/common/icon";
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { SegmentedControl } from "@/components/common/segmented-control";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -24,19 +26,33 @@ const SUBMIT_LABEL = "Publier";
 const TEXT_FIELDS = ["group", "label", "region", "address", "port", "hostHeader", "wsPath", "uuid", "ttlHours"] as const;
 const TIER_OPTIONS = (["free-labs", "paid-gcp"] as const).map((value) => ({ value, label: ENDPOINT_TIER_LABEL[value] }));
 
-const EMPTY: ManualEndpointFormValues = {
-  group: "",
-  label: "",
-  region: "",
-  address: "",
-  port: "443",
-  snis: "",
-  hostHeader: "",
-  wsPath: "/",
-  uuid: "",
-  ttlHours: "24",
-  tier: "free-labs",
-};
+const RANDOM_WORDS = ["wouri", "sanaga", "fako", "benoue", "nyong", "kora", "savane", "baobab"] as const;
+
+function generateRandomNodeName(): { group: string; label: string } {
+  const word = RANDOM_WORDS[Math.floor(Math.random() * RANDOM_WORDS.length)] ?? "wouri";
+  const num = Math.floor(10 + Math.random() * 89);
+  return {
+    group: `relais-${word}-${num}`,
+    label: `Relais ${word.charAt(0).toUpperCase() + word.slice(1)} ${num}`,
+  };
+}
+
+function makeEmpty(defaultLabel?: string): ManualEndpointFormValues {
+  const rand = generateRandomNodeName();
+  return {
+    group: rand.group,
+    label: defaultLabel || rand.label,
+    region: "Francfort",
+    address: "",
+    port: "443",
+    snis: "",
+    hostHeader: "",
+    wsPath: "/",
+    uuid: "",
+    ttlHours: "12",
+    tier: "free-labs",
+  };
+}
 
 /**
  * Coller un lien VLESS (D107) : analysé ici, dans le navigateur, pour remplir les
@@ -55,15 +71,15 @@ function VlessPaste({ onFields }: { onFields: (fields: VlessFields) => void }) {
     setError(null);
     setDraft("");
     onFields(parsed.fields);
-    toast.success("Champs remplis depuis le lien");
+    toast.success("Champs remplis automatiquement depuis le lien.");
   }
   return (
     <Field data-invalid={Boolean(error)}>
-      <FieldLabel htmlFor="manual-vless">Lien VLESS</FieldLabel>
+      <FieldLabel htmlFor="manual-vless">Lien VLESS (extraction automatique)</FieldLabel>
       <Input
         id="manual-vless"
         value={draft}
-        placeholder="Coller un lien vless://…"
+        placeholder="Coller le lien fourni par le serveur…"
         autoComplete="off"
         autoCapitalize="none"
         autoCorrect="off"
@@ -77,34 +93,35 @@ function VlessPaste({ onFields }: { onFields: (fields: VlessFields) => void }) {
         onBlur={() => draft && apply(draft)}
         aria-invalid={Boolean(error)}
       />
-      <FieldDescription>Facultatif. WebSocket + TLS uniquement ; le lien n&apos;est ni envoyé ni conservé.</FieldDescription>
+      <FieldDescription>
+        WebSocket + TLS uniquement ; le lien est décodé localement puis effacé aussitôt.
+      </FieldDescription>
       {error ? <FieldError>{error}</FieldError> : null}
     </Field>
   );
 }
 
-/** L'API nomme un SNI fautif `snis.<index>` : on le rattache au champ unique. */
 function sniError(details: Record<string, string> | undefined): string | undefined {
   if (!details) return undefined;
   return details.snis ?? Object.entries(details).find(([key]) => key.startsWith("snis."))?.[1];
 }
 
-/**
- * Nœuds qui ne s'enregistrent pas eux-mêmes (fronting Cloud Run, 3x-ui, image
- * tierce) : une ligne du pool par SNI. Republier le même groupe remplace ses
- * lignes et retire celles qui n'y sont plus. Réservé au propriétaire
- * (`endpoint.write`) ; l'écran ne l'affiche qu'à lui, Fastify revérifie.
- */
-export function ManualEndpointSheet() {
+export function ManualEndpointSheet({ defaultLabel }: { defaultLabel?: string } = {}) {
   const [open, setOpen] = useState(false);
-  const form = useForm<ManualEndpointFormValues>({ resolver: zodResolver(manualEndpointFormSchema), defaultValues: EMPTY });
+  const [techOpen, setTechOpen] = useState(false);
+  const [lockedFromLink, setLockedFromLink] = useState(false);
+  const form = useForm<ManualEndpointFormValues>({
+    resolver: zodResolver(manualEndpointFormSchema),
+    defaultValues: makeEmpty(defaultLabel),
+  });
 
   async function submit(values: ManualEndpointFormValues) {
     const result = await addManualEndpointsAction(values);
     if (result.ok) {
       const { count, expiresAt } = result.data;
       toast.success(`${count} nœud${count > 1 ? "s" : ""} publié${count > 1 ? "s" : ""} · jusqu'au ${formatDateTime(expiresAt)}`);
-      form.reset(EMPTY);
+      form.reset(makeEmpty(defaultLabel));
+      setLockedFromLink(false);
       setOpen(false);
       return;
     }
@@ -124,7 +141,17 @@ export function ManualEndpointSheet() {
     if (!placed) toast.error(result.message);
   }
 
-  const text = (name: (typeof TEXT_FIELDS)[number], label: string, extra?: { hint?: string; numeric?: boolean; mono?: boolean }) => (
+  const regenerateName = () => {
+    const rand = generateRandomNodeName();
+    form.setValue("group", rand.group, { shouldDirty: true });
+    form.setValue("label", rand.label, { shouldDirty: true });
+  };
+
+  const text = (
+    name: (typeof TEXT_FIELDS)[number],
+    label: string,
+    extra?: { hint?: string; numeric?: boolean; mono?: boolean; readOnly?: boolean },
+  ) => (
     <Controller
       name={name}
       control={form.control}
@@ -134,6 +161,7 @@ export function ManualEndpointSheet() {
           <Input
             {...field}
             id={`manual-${name}`}
+            readOnly={extra?.readOnly}
             className={extra?.mono ? "h-11 font-mono" : "h-11"}
             inputMode={extra?.numeric ? "numeric" : undefined}
             autoCapitalize="none"
@@ -152,7 +180,10 @@ export function ManualEndpointSheet() {
     <Sheet
       open={open}
       onOpenChange={(next) => {
-        if (next) form.reset(EMPTY);
+        if (next) {
+          form.reset(makeEmpty(defaultLabel));
+          setLockedFromLink(false);
+        }
         setOpen(next);
       }}
     >
@@ -166,7 +197,7 @@ export function ManualEndpointSheet() {
         <SheetHeader>
           <SheetTitle>{ADD_LABEL}</SheetTitle>
           <SheetDescription>
-            Pour les nœuds qui ne s&apos;enregistrent pas seuls. Un SNI devient un nœud ; republier un groupe le remplace.
+            Collez un lien pour remplir automatiquement les paramètres techniques en lecture seule et attribuer un nom aléatoire.
           </SheetDescription>
         </SheetHeader>
         <form onSubmit={form.handleSubmit(submit)} className="flex flex-1 flex-col gap-4 px-4" noValidate>
@@ -174,9 +205,11 @@ export function ManualEndpointSheet() {
             <VlessPaste
               onFields={(f) => {
                 const current = form.getValues();
+                const rand = generateRandomNodeName();
                 form.reset({
                   ...current,
-                  label: current.label || f.label,
+                  group: current.group || rand.group,
+                  label: current.label || f.label || rand.label,
                   address: f.address,
                   port: f.port,
                   snis: f.sni,
@@ -184,38 +217,23 @@ export function ManualEndpointSheet() {
                   wsPath: f.wsPath,
                   uuid: f.uuid,
                 });
+                setLockedFromLink(true);
               }}
             />
-            {text("group", "Groupe", { hint: "Ex. « cloudrun-uswest1 ». Minuscules, chiffres et tirets." })}
-            {text("label", "Nom affiché", { hint: "Numéroté s'il y a plusieurs SNI." })}
-            {text("region", "Région", { hint: "Ex. « Oregon »." })}
-            {text("address", "Adresse", { hint: "IP ou nom que l'app contacte ; avec le fronting, celle du frontal.", mono: true })}
-            {text("port", "Port", { numeric: true })}
-            <Controller
-              name="snis"
-              control={form.control}
-              render={({ field, fieldState }) => (
-                <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="manual-snis">SNI</FieldLabel>
-                  <Textarea
-                    {...field}
-                    id="manual-snis"
-                    rows={4}
-                    className="font-mono"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    aria-invalid={fieldState.invalid}
-                  />
-                  <FieldDescription>Un par ligne, 12 au plus.</FieldDescription>
-                  {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
-                </Field>
-              )}
-            />
-            {text("hostHeader", "Host WebSocket", { hint: "Seulement s'il diffère du SNI (fronting vers Cloud Run).", mono: true })}
-            {text("wsPath", "Chemin WebSocket", { mono: true })}
-            {text("uuid", "UUID du client", { hint: "Chiffré en base, jamais réaffiché.", mono: true })}
-            {text("ttlHours", "Durée (heures)", { numeric: true, hint: "1 à 720. Le nœud sort du pool ensuite." })}
+
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                {text("label", "Nom affiché (aléatoire)", { hint: "Nom convivial visible dans la console." })}
+              </div>
+              <Button type="button" variant="outline" className="h-11" onClick={regenerateName}>
+                <Icon name="refresh" className="size-4" />
+              </Button>
+            </div>
+
+            {text("group", "Identifiant de groupe", { hint: "Minuscules, chiffres et tirets.", mono: true })}
+            {text("region", "Région", { hint: "Ex. « Francfort », « Oregon »." })}
+            {text("ttlHours", "Durée de validité (heures)", { numeric: true, hint: "1 à 720. Le nœud sort du pool ensuite." })}
+
             <Controller
               name="tier"
               control={form.control}
@@ -232,6 +250,47 @@ export function ManualEndpointSheet() {
                 </Field>
               )}
             />
+
+            <Collapsible
+              open={techOpen || !lockedFromLink}
+              onOpenChange={setTechOpen}
+              className="rounded-section border border-separator bg-muted/25 p-3.5"
+            >
+              <CollapsibleTrigger className="flex w-full items-center justify-between text-start">
+                <span className="text-subhead font-semibold text-foreground">
+                  Paramètres techniques {lockedFromLink ? "(extraits en lecture seule)" : ""}
+                </span>
+                <Icon name={techOpen ? "chevron-up" : "chevron-down"} className="size-4 text-muted-foreground" />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-3 flex flex-col gap-3">
+                {text("address", "Adresse", { mono: true, readOnly: lockedFromLink })}
+                {text("port", "Port", { numeric: true, readOnly: lockedFromLink })}
+                <Controller
+                  name="snis"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <Field data-invalid={fieldState.invalid}>
+                      <FieldLabel htmlFor="manual-snis">SNI</FieldLabel>
+                      <Textarea
+                        {...field}
+                        id="manual-snis"
+                        rows={3}
+                        className="font-mono"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        aria-invalid={fieldState.invalid}
+                      />
+                      <FieldDescription>Un par ligne, 12 au plus.</FieldDescription>
+                      {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
+                    </Field>
+                  )}
+                />
+                {text("hostHeader", "Host WebSocket", { mono: true, readOnly: lockedFromLink })}
+                {text("wsPath", "Chemin WebSocket", { mono: true, readOnly: lockedFromLink })}
+                {text("uuid", "UUID du client", { mono: true, readOnly: lockedFromLink })}
+              </CollapsibleContent>
+            </Collapsible>
           </FieldGroup>
           <SheetFooter className="px-0">
             <Button type="submit" className="h-11 w-full" disabled={form.formState.isSubmitting}>

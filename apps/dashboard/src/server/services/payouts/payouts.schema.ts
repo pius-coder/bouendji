@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { id } from "@/server/api/schema-kit";
+import { commission } from "../orders/orders.schema";
 
 /** Source : `payoutDto`, `payoutCreateSchema`, `payoutResolveSchema`, `payoutQueueQuerySchema` (admin.ts). */
 export const payoutStatus = z.enum(["pending", "approved", "processing", "paid", "failed", "needs_review"]);
@@ -26,6 +27,12 @@ export const payout = z.object({
   paidAt: z.string().nullable(),
 });
 export type Payout = z.infer<typeof payout>;
+
+/** Source : `GET /v1/admin/payouts/:id` (`routes/adminDetails.ts`). */
+export const payoutDetail = payout.extend({
+  commissions: z.array(commission),
+});
+export type PayoutDetail = z.infer<typeof payoutDetail>;
 
 /** Réponses d'étape : l'API renvoie au moins ces champs. */
 export const payoutStep = z.object({

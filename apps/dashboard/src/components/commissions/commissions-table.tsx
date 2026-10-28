@@ -1,7 +1,8 @@
 import { StatusBadge } from "@/components/common/status-badge";
 import { UpdatedAt } from "@/components/common/updated-at";
+import { EntityLink } from "@/components/drawers/entity-link";
 import { EmptyBlock, ForbiddenBlock } from "@/components/page/empty";
-import { CellStack, TableMessage, TableRows, type TableColumn } from "@/components/page/table";
+import { TableMessage, TableRows, type TableColumn } from "@/components/page/table";
 import { formatBps, formatDateTime, formatXaf } from "@/lib/format";
 import { can } from "@/lib/roles";
 import { getMe, withSession } from "@/server/context";
@@ -18,7 +19,7 @@ export const COMMISSION_COLUMNS = [
 
 type Params = Promise<{ communityId: string }>;
 
-/** Lignes (100 dernières). Montants visibles par community_admin et finance (commission.read). */
+/** Lignes (100 dernières) : chaque commande et chaque versement sont cliquables et ouvrent leur tiroir. */
 export async function CommissionsRows({ params }: { params: Params }) {
   const { communityId } = await params;
   const me = await getMe();
@@ -37,7 +38,18 @@ export async function CommissionsRows({ params }: { params: Params }) {
       columns={COMMISSION_COLUMNS}
       getKey={(c) => c.id}
       cells={(c) => ({
-        order: <CellStack title={`Commande ${c.orderId.slice(0, 8)}`} subtitle={c.payoutId ? `Versement ${c.payoutId.slice(0, 8)}` : undefined} />,
+        order: (
+          <div className="flex flex-col">
+            <EntityLink kind="commande" id={c.orderId} className="text-subhead">
+              Commande {c.orderId.slice(0, 8)}
+            </EntityLink>
+            {c.payoutId ? (
+              <EntityLink kind="versement" id={c.payoutId} className="text-caption text-muted-foreground">
+                Versement {c.payoutId.slice(0, 8)}
+              </EntityLink>
+            ) : null}
+          </div>
+        ),
         amount: formatXaf(c.amountXaf),
         rate: formatBps(c.bps),
         status: <StatusBadge status={c.status} />,

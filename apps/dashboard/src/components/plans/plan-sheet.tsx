@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { PencilIcon, PlusIcon } from "@/components/common/icon-compat";
+import { PriceIndicator } from "@/components/common/price-indicator";
 import { useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -27,6 +28,7 @@ import {
   type PlanFormValues,
   TERM_KEYS,
 } from "@/server/services/plans/plans.schema";
+import { nightOptionFloorXaf, type PricingSettings } from "@/server/services/pricing/pricing.schema";
 
 /** Durées proposées d'un clic ; le réglage fin se fait avec − et +. */
 const DURATION_PRESETS = [1, 7, 15, 30, 60, 90] as const;
@@ -47,9 +49,13 @@ const FAMILY_OPTIONS = [
 /** Champs qui peuvent porter une erreur de l'API, nommés comme dans le schéma. */
 const FIELDS = ["name", "description", "family", "quotaGb", "priceXaf", "durationDays", "deviceLimit", "badge", "sortOrder"] as const;
 
-type Props =
+type Props = (
   | { mode: "create"; appId: string; from?: Plan }
-  | { mode: "edit"; plan: Plan };
+  | { mode: "edit"; plan: Plan }
+) & {
+  pricing?: PricingSettings;
+  commissionBps?: number;
+};
 
 /** Identifiant lisible depuis le nom : « Forfait 30 jours » → « forfait-30-jours ». */
 function slugify(value: string): string {
@@ -108,8 +114,7 @@ function changedValues(original: PlanFormValues, values: PlanFormValues): Partia
 
 /**
  * Création, duplication et modification d'un forfait, par étapes lisibles :
- * nom, famille, quota, durée, prix, plages de nuit, appareils, badge. Les
- * réglages rares (description, ordre) sont repliés.
+ * nom, famille, quota, durée, prix (avec indicateur plancher/gain en direct), plages de nuit, appareils, badge.
  */
 export function PlanSheet(props: Props) {
   const editing = props.mode === "edit";
@@ -168,6 +173,7 @@ export function PlanSheet(props: Props) {
   const priceNumber = Number(values.priceXaf);
   const hasPrice = values.priceXaf !== undefined && values.priceXaf !== "" && Number.isFinite(priceNumber);
   const nightCount = NIGHT_WINDOWS.filter((w) => values.nightPrices?.[w]).length;
+  const commissionBps = props.commissionBps ?? 1500;
 
   const title = editing
     ? `Modifier « ${props.plan.name} »`
@@ -367,6 +373,17 @@ export function PlanSheet(props: Props) {
                 </Field>
               )}
             />
+            {props.pricing ? (
+              <PriceIndicator
+                quotaGb={quota}
+                priceXaf={hasPrice ? priceNumber : 0}
+                commissionBps={commissionBps}
+                pricing={props.pricing}
+                onUseFloor={(floor) =>
+                  form.setValue("priceXaf", String(floor), { shouldDirty: true, shouldValidate: true })
+                }
+              />
+            ) : null}
           </section>
 
           {/* 5. Plages de nuit (famille limité + nuit seulement) */}
@@ -374,22 +391,44 @@ export function PlanSheet(props: Props) {
             <section className="flex flex-col gap-3">
               <h3 className="text-subhead font-semibold">5. Plages de nuit</h3>
               <FieldDescription>Laisser le prix vide pour ne pas proposer la plage.</FieldDescription>
-              {NIGHT_WINDOWS.map((window) => (
-                <Controller
-                  key={window}
-                  name={`nightPrices.${window}`}
-                  control={form.control}
-                  render={({ field, fieldState }) => (
-                    <Field data-invalid={fieldState.invalid}>
-                      <div className="flex items-center gap-3">
-                        <span className="w-28 shrink-0 text-subhead">{NIGHT_WINDOW_LABEL[window]}</span>
-                        <Input {...field} aria-label={`Prix de la plage ${NIGHT_WINDOW_LABEL[window]}`} inputMode="numeric" placeholder="FCFA" className="h-11" aria-invalid={fieldState.invalid} />
-                      </div>
-                      {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
-                    </Field>
-                  )}
-                />
-              ))}
+              {NIGHT_WINDOWS.map((window) => {
+                const nFloor = props.pricing
+                  ? (nightOptionFloorXaf(window, props.pricing) ?? 0)
+                  : 0;
+                const valNum = Number(values.nightPrices?.[window] || 0);
+                const hasVal = Boolean(values.nightPrices?.[window]?.trim());
+                return (
+                  <Controller
+                    key={window}
+                    name={`nightPrices.${window}`}
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <Field data-invalid={fieldState.invalid}>
+                        <div className="flex items-center gap-3">
+                          <span className="w-28 shrink-0 text-subhead">{NIGHT_WINDOW_LABEL[window]}</span>
+                          <Input {...field} aria-label={`Prix de la plage ${NIGHT_WINDOW_LABEL[window]}`} inputMode="numeric" placeholder={nFloor > 0 ? `Min. ${nFloor} FCFA` : "FCFA"} className="h-11" aria-invalid={fieldState.invalid} />
+                          {nFloor > 0 && (!hasVal || valNum < nFloor) ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                form.setValue(`nightPrices.${window}`, String(nFloor), {
+                                  shouldDirty: true,
+                                  shouldValidate: true,
+                                })
+                              }
+                            >
+                              {formatXaf(nFloor)}
+                            </Button>
+                          ) : null}
+                        </div>
+                        {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
+                      </Field>
+                    )}
+                  />
+                );
+              })}
               <p className="text-footnote text-muted-foreground">{nightCount === 0 ? "Aucune plage de nuit proposée." : `${nightCount} plage(s) proposée(s).`}</p>
             </section>
           ) : null}

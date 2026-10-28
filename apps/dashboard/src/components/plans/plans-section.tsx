@@ -1,10 +1,12 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { Icon } from "@/components/common/icon";
 import { UpdatedAt } from "@/components/common/updated-at";
 import { EmptyBlock, ForbiddenBlock } from "@/components/page/empty";
 import { TableCard, TableRowsSkeleton } from "@/components/page/table";
+import { Button } from "@/components/ui/button";
 import { can } from "@/lib/roles";
-import { getMe, withSession } from "@/server/context";
+import { getCommunities, getMe, withSession } from "@/server/context";
 import { getServices } from "@/server/services";
 import { AppPlansRows } from "./app-plans-table";
 import { CustomOfferCard } from "./custom-offer-card";
@@ -19,18 +21,29 @@ const MISSING_LABELS: Record<string, string> = {
 };
 
 /**
- * Une carte par marque de la communauté. La liste des marques est une donnée
- * (elle vient de l'API) : elle est dans le Suspense de la page ; chaque tableau
- * suspend ensuite ses seules lignes.
+ * Une carte par marque de la communauté, avec indicateur de prix plancher en direct.
  */
 export async function PlansSection({ params }: { params: Promise<{ communityId: string }> }) {
   const { communityId } = await params;
-  const me = await getMe();
+  const [me, communities, pricing] = await Promise.all([
+    getMe(),
+    getCommunities(),
+    getServices().pricing.getPricing().catch(() => undefined),
+  ]);
   if (!can(me, "plans.read", communityId)) return <ForbiddenBlock />;
 
+  const community = communities.find((c) => c.id === communityId);
+  const commissionBps = community?.commissionBps ?? 1500;
   const apps = (await withSession(() => getServices().plans.listApps())).filter((a) => a.communityId === communityId);
   if (apps.length === 0) {
-    return <EmptyBlock icon="smartphone" title="Aucune marque" description="Cette communauté n'a pas encore d'application." />;
+    return (
+      <div className="flex flex-col items-center gap-3">
+        <EmptyBlock icon="smartphone" title="Aucune marque" description="Cette communauté n'a pas encore d'application configurée." />
+        <Button asChild size="sm">
+          <Link href="/onboarding">Configurer mon application (Assistant)</Link>
+        </Button>
+      </div>
+    );
   }
   const canManage = can(me, "plans.manage", communityId);
 
@@ -43,7 +56,9 @@ export async function PlansSection({ params }: { params: Promise<{ communityId: 
               <h2 className="text-title-3 font-semibold tracking-tight">{app.name}</h2>
               <p className="font-mono text-footnote text-muted-foreground">{app.packageName}</p>
             </div>
-            {canManage ? <PlanSheet mode="create" appId={app.id} /> : null}
+            {canManage ? (
+              <PlanSheet mode="create" appId={app.id} pricing={pricing} commissionBps={commissionBps} />
+            ) : null}
           </div>
           {!app.brandReady ? (
             <p role="status" className="flex items-start gap-2 rounded-xl border border-border bg-warning-soft px-4 py-3 text-footnote text-warning-text">
@@ -56,7 +71,12 @@ export async function PlansSection({ params }: { params: Promise<{ communityId: 
           </Suspense>
           <TableCard label={`Forfaits de ${app.name}`} columns={PLAN_COLUMNS} footer={<UpdatedAt />}>
             <Suspense fallback={<TableRowsSkeleton columns={PLAN_COLUMNS} rows={3} />}>
-              <AppPlansRows appId={app.id} canManage={canManage} />
+              <AppPlansRows
+                appId={app.id}
+                canManage={canManage}
+                pricing={pricing}
+                commissionBps={commissionBps}
+              />
             </Suspense>
           </TableCard>
         </section>

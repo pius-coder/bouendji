@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { id } from "@/server/api/schema-kit";
 import { staffRole } from "../admin-auth/admin-auth.schema";
+import { isWhatsappGroupUrl, normalizeCameroonWhatsapp } from "../onboarding/onboarding.schema";
 
 /** Source : `communityDto` et schémas d'entrée de `apps/api/src/routes/admin.ts` (relus). */
 export const community = z.object({
@@ -9,6 +10,8 @@ export const community = z.object({
   slug: z.string(),
   status: z.string(),
   commissionBps: z.number(),
+  whatsappGroupUrl: z.string().nullable().optional(),
+  contactWhatsapp: z.string().nullable().optional(),
   createdAt: z.string().nullable(),
   suspended: z.boolean(),
 });
@@ -33,8 +36,44 @@ export const communityUpdateBody = z.object({
   name: z.string().trim().min(2).max(120).optional(),
   commissionBps: z.number().int().min(0).max(3000).optional(),
   status: z.enum(["active", "suspended"]).optional(),
+  whatsappGroupUrl: z
+    .string()
+    .trim()
+    .refine(isWhatsappGroupUrl, "Lien de groupe attendu : https://chat.whatsapp.com/...")
+    .nullable()
+    .optional(),
+  contactWhatsapp: z
+    .string()
+    .trim()
+    .refine((v) => normalizeCameroonWhatsapp(v) !== null, "9 chiffres attendus, +237 facultatif.")
+    .nullable()
+    .optional(),
 });
 export type CommunityUpdate = z.input<typeof communityUpdateBody>;
+
+/** Source : `GET /v1/admin/communities/:communityId/summary` (`routes/adminDetails.ts`). */
+export const communityTodoItem = z.object({
+  kind: z.string(),
+  count: z.number().int(),
+  ids: z.array(z.string()),
+});
+export type CommunityTodoItem = z.infer<typeof communityTodoItem>;
+
+export const communitySummary = z.object({
+  communityId: z.string(),
+  name: z.string(),
+  status: z.string(),
+  commissionBps: z.number(),
+  sales: z.object({
+    today: z.object({ count: z.number().int(), amountXaf: z.number().optional() }),
+    month: z.object({ count: z.number().int(), amountXaf: z.number().optional() }),
+  }),
+  activeSubscribers: z.number().int(),
+  usageTodayBytes: z.number(),
+  commissionsAvailable: z.object({ count: z.number().int(), amountXaf: z.number() }).nullable().optional(),
+  todo: z.array(communityTodoItem),
+});
+export type CommunitySummary = z.infer<typeof communitySummary>;
 
 export const membership = z.object({
   id: z.string(),

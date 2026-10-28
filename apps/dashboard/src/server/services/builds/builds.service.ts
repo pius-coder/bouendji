@@ -5,35 +5,69 @@ import { endpoint } from "@/server/api/endpoint";
 import { id, listOf } from "@/server/api/schema-kit";
 
 /** Source : `buildDto` (routes/builds.ts). */
-const build = z.object({
+export const build = z.object({
   id: z.string(),
   status: z.string(),
   versionCode: z.number().nullable(),
   versionName: z.string().nullable(),
   sha256: z.string().nullable(),
   apkUrl: z.string().nullable(),
+  rejectReason: z.string().nullable().optional(),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
 });
 export type Build = z.infer<typeof build>;
 
 const appParams = z.object({ appId: id });
+const buildParams = z.object({ buildId: id });
 const triggerBody = z.object({ versionName: z.string().trim().min(1).max(40).optional() });
+export const rejectBuildBody = z.object({
+  reason: z.string().trim().min(3, "Motif de 3 à 280 caractères.").max(280, "Motif de 3 à 280 caractères."),
+});
+const buildStepResponse = z.object({ buildId: z.string(), status: z.string() });
 
 export type ListBuildsInput = { appId: string };
 export type TriggerBuildInput = { appId: string } & z.input<typeof triggerBody>;
+export type RequestBuildInput = { appId: string } & z.input<typeof triggerBody>;
 
-/** Dossier API : `/v1/admin/apps` (sous-ressource `builds`). */
+/** Dossier API : `/v1/admin/apps` (builds) et `/v1/admin/builds` (approve / reject R5). */
 export class BuildsService extends BaseService {
   private static readonly endpoints = {
     list: endpoint({ method: "GET", path: "/:appId/builds", params: appParams, response: listOf(build) }),
-    // 202 : le build est en file ; le suivi se fait par `listBuilds`.
+    request: endpoint({
+      method: "POST",
+      path: "/:appId/build-requests",
+      params: appParams,
+      body: triggerBody,
+      response: buildStepResponse,
+      idempotent: true,
+      refreshAfter: true,
+    }),
     trigger: endpoint({
       method: "POST",
       path: "/:appId/builds",
       params: appParams,
       body: triggerBody,
-      response: z.object({ buildId: z.string(), status: z.string() }),
+      response: buildStepResponse,
+      idempotent: true,
+      refreshAfter: true,
+    }),
+    approve: endpoint({
+      method: "POST",
+      basePath: "/v1/admin/builds",
+      path: "/:buildId/approve",
+      params: buildParams,
+      response: buildStepResponse,
+      idempotent: true,
+      refreshAfter: true,
+    }),
+    reject: endpoint({
+      method: "POST",
+      basePath: "/v1/admin/builds",
+      path: "/:buildId/reject",
+      params: buildParams,
+      body: rejectBuildBody,
+      response: buildStepResponse,
       idempotent: true,
       refreshAfter: true,
     }),
@@ -47,8 +81,21 @@ export class BuildsService extends BaseService {
     return (await this.call(BuildsService.endpoints.list, { params: input })).items;
   }
 
+  requestBuild(input: RequestBuildInput) {
+    const { appId, ...body } = input;
+    return this.call(BuildsService.endpoints.request, { params: { appId }, body });
+  }
+
   triggerBuild(input: TriggerBuildInput) {
     const { appId, ...body } = input;
     return this.call(BuildsService.endpoints.trigger, { params: { appId }, body });
+  }
+
+  approveBuild(buildId: string) {
+    return this.call(BuildsService.endpoints.approve, { params: { buildId } });
+  }
+
+  rejectBuild(buildId: string, reason: string) {
+    return this.call(BuildsService.endpoints.reject, { params: { buildId }, body: { reason } });
   }
 }

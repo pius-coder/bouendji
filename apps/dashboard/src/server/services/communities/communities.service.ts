@@ -10,6 +10,7 @@ import {
   community,
   communityCreateBody,
   communityIdParams,
+  communitySummary,
   communityUpdateBody,
   membership,
   membershipCreateBody,
@@ -29,6 +30,12 @@ export class CommunitiesService extends BaseService {
   private static readonly endpoints = {
     list: endpoint({ method: "GET", path: "/", response: listOf(community) }),
     get: endpoint({ method: "GET", path: "/:communityId", params: communityIdParams, response: community }),
+    summary: endpoint({
+      method: "GET",
+      path: "/:communityId/summary",
+      params: communityIdParams,
+      response: communitySummary,
+    }),
     create: endpoint({
       method: "POST",
       path: "/",
@@ -88,6 +95,10 @@ export class CommunitiesService extends BaseService {
 
   getCommunity(input: { communityId: string }) {
     return this.call(CommunitiesService.endpoints.get, { params: input });
+  }
+
+  getSummary(input: { communityId: string }) {
+    return this.call(CommunitiesService.endpoints.summary, { params: input });
   }
 
   createCommunity(input: CreateCommunityInput) {

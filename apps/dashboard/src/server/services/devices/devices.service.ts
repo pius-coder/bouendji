@@ -6,6 +6,7 @@ import { communityIdParams } from "../communities/communities.schema";
 import {
   type OfflineIssue,
   device,
+  deviceDetail,
   deviceIdParams,
   deviceRevoked,
   offlineBundleIssued,
@@ -19,7 +20,7 @@ export type RevokeDeviceInput = { deviceId: string };
 export type IssueOfflineBundleInput = { deviceId: string } & OfflineIssue;
 export type ListOfflineBundlesInput = { deviceId?: string };
 
-/** Dossier API : `/v1/admin/devices` (révocation, fichiers hors-ligne). La liste vit sous les communautés (100 derniers). */
+/** Dossier API : `/v1/admin/devices` (fiche, révocation, fichiers hors-ligne). La liste vit sous les communautés (100 derniers). */
 export class DevicesService extends BaseService {
   private static readonly endpoints = {
     // Autre dossier de l'API.
@@ -29,6 +30,12 @@ export class DevicesService extends BaseService {
       path: "/:communityId/devices",
       params: communityIdParams,
       response: listOf(device),
+    }),
+    get: endpoint({
+      method: "GET",
+      path: "/:deviceId",
+      params: deviceIdParams,
+      response: deviceDetail,
     }),
     revoke: endpoint({
       method: "POST",
@@ -63,6 +70,10 @@ export class DevicesService extends BaseService {
 
   async listDevices(input: ListDevicesInput) {
     return (await this.call(DevicesService.endpoints.list, { params: input })).items;
+  }
+
+  getDevice(deviceId: string) {
+    return this.call(DevicesService.endpoints.get, { params: { deviceId } });
   }
 
   revokeDevice(input: RevokeDeviceInput) {

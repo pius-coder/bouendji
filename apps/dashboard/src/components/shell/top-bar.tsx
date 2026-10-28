@@ -1,14 +1,16 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Icon } from "@/components/common/icon";
 import { useCollapsedTitle } from "@/components/common/page-chrome";
+import { RoleGuideSheet } from "@/components/guide/role-guide";
+import { triggerCommandPalette } from "@/components/shell/command-palette";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
- * Barre du haut (chrome, verre), collée en haut de la zone de contenu. Début :
- * sélecteur de communauté (< 1024 px, `leading`). Centre : titre compact quand le grand
- * titre de la page est sorti de l'écran. Fin : compte (< 1024 px ; au-delà il est dans le rail). Pas de fond plein : un filet
- * n'apparaît que lorsque le titre est replié (effet de bord de défilement).
+ * Barre du haut (chrome, verre), collée en haut de la zone de contenu (< 1024 px).
+ * Inclut le sélecteur de communauté, le titre replié, la recherche rapide, le guide et le menu compte.
  */
 export function TopBar({ leading, trailing }: { leading?: ReactNode; trailing?: ReactNode }) {
   const title = useCollapsedTitle();
@@ -26,13 +28,25 @@ export function TopBar({ leading, trailing }: { leading?: ReactNode; trailing?: 
       <p
         aria-hidden={!title}
         className={cn(
-          "max-w-[50vw] truncate text-headline text-foreground transition-opacity duration-150",
+          "max-w-[42vw] truncate text-headline text-foreground transition-opacity duration-150",
           title ? "opacity-100" : "opacity-0",
         )}
       >
         {title ?? ""}
       </p>
-      <div className="flex items-center justify-end gap-1 lg:hidden">{trailing}</div>
+      <div className="flex items-center justify-end gap-1 lg:hidden">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Rechercher"
+          onClick={triggerCommandPalette}
+        >
+          <Icon name="search" className="size-4" />
+        </Button>
+        <RoleGuideSheet />
+        {trailing}
+      </div>
     </div>
   );
 }

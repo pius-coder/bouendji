@@ -7,6 +7,7 @@ import {
   type PayoutResolve,
   type PayoutsQuery,
   payout,
+  payoutDetail,
   payoutIdParams,
   payoutPrepareBody,
   payoutPrepared,
@@ -27,6 +28,7 @@ export type ResolvePayoutInput = { payoutId: string } & PayoutResolve;
 export class PayoutsService extends BaseService {
   private static readonly endpoints = {
     list: endpoint({ method: "GET", path: "/", query: payoutsQuery, response: listOf(payout) }),
+    get: endpoint({ method: "GET", path: "/:payoutId", params: payoutIdParams, response: payoutDetail }),
     // Autre dossier de l'API : la préparation vit sous la communauté.
     prepare: endpoint({
       method: "POST",
@@ -81,6 +83,10 @@ export class PayoutsService extends BaseService {
 
   async listPayouts(input: ListPayoutsInput = {}) {
     return (await this.call(PayoutsService.endpoints.list, { query: input })).items;
+  }
+
+  getPayout(payoutId: string) {
+    return this.call(PayoutsService.endpoints.get, { params: { payoutId } });
   }
 
   preparePayout(input: PreparePayoutInput) {
