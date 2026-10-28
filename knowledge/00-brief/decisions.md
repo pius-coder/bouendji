@@ -743,3 +743,9 @@ ferme une question ouverte ou un défaut vérifié dans le code.
   dans l'écran Accueil (`remember`) : il repartait à zéro à chaque changement de page.
   Désormais `TunnelStateBus.since` garde le début (premier passage à « connecté »,
   remis à zéro à l'arrêt). Code relu, non compilé.
+- **D131** (2026-10-28) — **Aucun domaine de plateforme codé en dur dans le
+  partage d'application.** `ShareAppCard` retombait sur `https://bouendji.app`
+  quand une marque n'avait ni APK ni groupe WhatsApp : une communauté partageait
+  l'adresse de la plateforme, pas la sienne. Le repli est supprimé : sans lien,
+  la carte affiche « Lien bientôt disponible », pas de QR, pas de boutons
+  Copier/WhatsApp. Ordre conservé : APK, puis groupe WhatsApp.
