@@ -17,6 +17,8 @@ related: [dashboard-plan, admin-access-flows, decisions, journeys, aura-vps-3x-u
 > doit voir **qui est connecté**. Version 2 (diagrammes, rôles, chaque écran
 > avec composants, clics et routes API) :
 > https://claude.ai/artifact/Sxajm3C2zFFcdiyZaBrRPm — en attente de validation.
+> Texte complet versionné : `docs/refonte-admin/parcours-admin-bouendji-v2.md`
+> (copie du 2026-10-28, SHA-256 `85b20340…42da490426b2a1e08c`).
 > Les sections ci-dessous (P1 en particulier) sont remplacées par cette page.
 
 > **Pourquoi ce nœud.** Constat de l'utilisateur (2026-10-26) : la refonte 1 a
