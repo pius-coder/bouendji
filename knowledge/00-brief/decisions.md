@@ -786,3 +786,9 @@ ferme une question ouverte ou un défaut vérifié dans le code.
     Mot de passe, Code de parrainage facultatif).
   - Hors-ligne, le profil est conservé dans le téléphone ; l'application s'appuie sur le tunnel de secours
     (rescue bundle pré-embarqué) pour contacter l'API et ouvrir la page de paiement Mobile Money.
+
+- **D138** (2026-10-28) - **Moteur sing-box (`libbox.aar`) et APK en mode universel (`armeabi-v7a`, `arm64-v8a`, `x86_64`)** :
+  Certains smartphones Android récents (ex. Tecno Pova 6 Neo, gammes Infinix et Itel) tournent sous un système Android 32-bit (`armeabi-v7a`) sur SoC 64-bit et rejettent l'installation d'une APK qui ne porte que `arm64-v8a` (`INSTALL_FAILED_NO_MATCHING_ABIS`). Le workflow CI `libbox.yml` compile désormais les architectures `android/arm`, `android/arm64` et `android/amd64`, assurant la compatibilité totale dès Android 8.0 (`minSdk = 26`).
+
+- **D139** (2026-10-28) - **Déclenchement automatique des builds APK depuis le dashboard via l'API Dokku** :
+  Pour que l'approbation d'un build par l'owner (`/v1/admin/builds/:id/approve`) déclenche la compilation réelle sur GitHub Actions, `vpn-api` sur `aura-vps` a été configuré avec `GITHUB_TOKEN`, `GITHUB_REPO=pius-coder/bouendji`, `GITHUB_REF=api/prod-hardening`, `BUILD_CALLBACK_SECRET`, et `MOCK_BUILDS=false`. Le secret GitHub `BUILD_CALLBACK_TOKEN` est aligné pour sécuriser le rapport terminal d'avancement vers l'API.
