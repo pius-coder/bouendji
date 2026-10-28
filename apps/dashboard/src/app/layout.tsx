@@ -1,11 +1,34 @@
 import type { Metadata, Viewport } from "next";
+import { Aleo, Host_Grotesk, JetBrains_Mono } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
-import { Suspense } from "react";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { ACCENT_BOOT_SCRIPT } from "@/lib/accent";
+import { cn } from "@/lib/utils";
 import { Providers } from "./providers";
 import "./globals.css";
+
+// Système typographique Chariow / orya : Host Grotesk (corps), Aleo (titres display), JetBrains Mono (code / identifiants).
+const fontBody = Host_Grotesk({
+  weight: ["300", "400", "500", "600", "700"],
+  subsets: ["latin"],
+  variable: "--font-body",
+  display: "swap",
+});
+
+const fontHeading = Aleo({
+  weight: ["400", "500", "600", "700"],
+  subsets: ["latin"],
+  variable: "--font-heading",
+  display: "swap",
+});
+
+const fontMono = JetBrains_Mono({
+  weight: ["400", "500", "600"],
+  subsets: ["latin"],
+  variable: "--font-mono-face",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: { default: "Console", template: "%s · Console" },
@@ -17,18 +40,19 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, view
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className="h-full antialiased" suppressHydrationWarning>
+    <html
+      lang="fr"
+      className={cn("h-full antialiased", fontBody.variable, fontHeading.variable, fontMono.variable)}
+      suppressHydrationWarning
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: ACCENT_BOOT_SCRIPT }} />
       </head>
-      <body className="min-h-full">
+      <body className={cn("min-h-full font-sans", fontBody.className)} suppressHydrationWarning>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          {/* QueryClient lit Date.now() : sans Suspense, Next refuse le prérendu. Console privée, pas de coque statique à garder. */}
-          <Suspense fallback={null}>
-            <Providers>
-              <NuqsAdapter>{children}</NuqsAdapter>
-            </Providers>
-          </Suspense>
+          <Providers>
+            <NuqsAdapter>{children}</NuqsAdapter>
+          </Providers>
           <Toaster position="top-center" />
         </ThemeProvider>
       </body>

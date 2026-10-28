@@ -10,6 +10,7 @@ import { shortId } from "@/components/offline/offline-status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { useInvalidateAdmin } from "@/hooks/use-admin-query";
 import { formatBps, formatDateTime, formatXaf, NO_VALUE } from "@/lib/format";
 import type { ActionResult } from "@/server/actions/action-result";
 import {
@@ -38,6 +39,7 @@ export function PayoutSheetBody({
   caps: PayoutSheetCaps;
 }) {
   const { commissions } = detail;
+  const invalidate = useInvalidateAdmin();
   const [pending, startTransition] = React.useTransition();
   const [reason, setReason] = React.useState("");
   const [providerRef, setProviderRef] = React.useState("");
@@ -47,6 +49,7 @@ export function PayoutSheetBody({
       const result = await action();
       if (result.ok) {
         toast.success(label);
+        await invalidate("/v1/admin/payouts");
       } else {
         toast.error(result.message);
       }

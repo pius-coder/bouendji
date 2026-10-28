@@ -1,9 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
+import { useInvalidateAdmin } from "@/hooks/use-admin-query";
 import { setPlanActiveAction } from "@/server/actions/plans.action";
 
 /**
@@ -11,7 +11,7 @@ import { setPlanActiveAction } from "@/server/actions/plans.action";
  * le forfait de la vente immédiatement ; le tiroir Modifier reste disponible.
  */
 export function PlanActiveSwitch({ planId, name, active, disabled }: { planId: string; name: string; active: boolean; disabled: boolean }) {
-  const router = useRouter();
+  const invalidate = useInvalidateAdmin();
   const [value, setValue] = useState(active);
   const [pending, startTransition] = useTransition();
 
@@ -21,7 +21,7 @@ export function PlanActiveSwitch({ planId, name, active, disabled }: { planId: s
       const result = await setPlanActiveAction(planId, next);
       if (result.ok) {
         toast.success(next ? `« ${name} » proposé à la vente` : `« ${name} » retiré de la vente`);
-        router.refresh();
+        await invalidate("/v1/admin/plans");
       } else {
         setValue(!next);
         toast.error(result.message);

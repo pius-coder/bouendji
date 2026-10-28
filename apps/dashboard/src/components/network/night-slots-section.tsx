@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
 import { formatDateTime } from "@/lib/format";
+import { useInvalidateAdmin } from "@/hooks/use-admin-query";
 import { claimNightSlotAction, issueDeployKeyAction } from "@/server/actions/network.action";
 import type { DeployKeyResult, NightSlotView } from "@/server/services/network/network.schema";
 
@@ -44,6 +45,7 @@ export function NightSlotsClient({ slots }: { slots: readonly NightSlotView[] })
 }
 
 function NightSlotCard({ slot }: { slot: NightSlotView }) {
+  const invalidate = useInvalidateAdmin();
   const [pending, startTransition] = React.useTransition();
   const [deployKey, setDeployKey] = React.useState<DeployKeyResult | null>(null);
   const [suggestedName, setSuggestedName] = React.useState(() => randomNodeLabel(slot.slot));
@@ -53,6 +55,7 @@ function NightSlotCard({ slot }: { slot: NightSlotView }) {
     startTransition(async () => {
       const res = await claimNightSlotAction(slot.slotId);
       if (res.ok) {
+        await invalidate("/v1/admin/night-slots");
         toast.success("Créneau pris en charge !");
       } else {
         toast.error(res.message);
@@ -65,6 +68,7 @@ function NightSlotCard({ slot }: { slot: NightSlotView }) {
       const res = await issueDeployKeyAction(slot.slotId);
       if (res.ok) {
         setDeployKey(res.data);
+        await invalidate("/v1/admin/night-slots");
         toast.success("Clé de déploiement à usage unique générée.");
       } else {
         toast.error(res.message);

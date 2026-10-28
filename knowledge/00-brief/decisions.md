@@ -749,3 +749,40 @@ ferme une question ouverte ou un défaut vérifié dans le code.
   l'adresse de la plateforme, pas la sienne. Le repli est supprimé : sans lien,
   la carte affiche « Lien bientôt disponible », pas de QR, pas de boutons
   Copier/WhatsApp. Ordre conservé : APK, puis groupe WhatsApp.
+
+- **D132** (2026-10-28) - **Forfaits : trois types, l'illimite revient.** Limite (Go),
+  **Illimite sur une duree** (ex. 7 j, 30 j) et Limite + illimite de nuit. **Annule la partie
+  "pas d'illimite seul" de D115** (corrige par l'utilisateur). Chaque forfait illimite porte
+  **son propre prix** saisi par l'admin (pas de prix global), controle contre le plancher
+  plateforme. Les durees/prix ne sont pas ecrits en dur : ni "la verite absolue", ni le slider.
+- **D133** (2026-10-28) - **Slider Android (Plans.kt)** : il choisit la quantite de Go (ou la
+  duree) ; l'offre illimitee est une carte fixe attachee au slider, avec son prix propre.
+  Les forfaits illimites ne sont plus des paliers du slider.
+- **D134** (2026-10-28) - **Dashboard : le v2 prime sur le legacy.** 5 ecrans (Accueil, Abonnes,
+  Offres, Argent, Communaute) avec onglets et tiroirs ; sidebar differente par role ;
+  Plateforme et Reseau reserves a l'owner / membre Reseau. L'admin de communaute ne voit pas le
+  technique par defaut (appareils, secours, journal, builds : derriere onglets/tiroirs) ;
+  l'accueil = "A traiter" + 4 chiffres. Code non touche : audit d'abord (voir ecarts-v2-2026-10-28).
+
+- **D135** (2026-10-28) — **Dashboard : conditionnement automatique du sélecteur de serveurs selon la famille.**
+  Dans le formulaire de forfait (`plan-sheet.tsx`), le sélecteur « Serveurs » (Illimité `free-labs` vs Limité `paid-gcp`)
+  est automatiquement verrouillé selon la famille du forfait :
+  - `unlimited` → `free-labs` (« Illimité ») ;
+  - `limited` → `paid-gcp` (« Limité ») ;
+  - `limited_night` → `paid-gcp` (« Limité ») le jour, les créneaux de nuit activant les serveurs illimités.
+  Le sélecteur manuel redondant est verrouillé/masqué pour éviter toute mauvaise configuration.
+
+- **D136** (2026-10-28) — **Android : filtrage dynamique des serveurs affichés selon l'abonnement payé.**
+  Tous les serveurs connus du bundle restent persistés dans le stockage local du téléphone (fonctionnement hors-ligne).
+  Toutefois, la liste affichée à l'utilisateur dans l'interface et active dans le sélecteur dépend de son abonnement :
+  - Sans abonnement actif : aucun serveur n'apparaît (message invitant à souscrire un forfait) ;
+  - Forfait `unlimited` : seuls les serveurs illimités (`free-labs`) s'affichent ;
+  - Forfait `limited` : seuls les serveurs limités (`paid-gcp`) s'affichent ;
+  - Forfait `limited_night` : serveurs `paid-gcp` le jour, complétés des serveurs illimités (`free-labs`) pendant
+    la plage horaire nocturne souscrite (fuseau de Douala UTC+1).
+
+- **D137** (2026-10-28) — **Android : inscription sans email (4 champs) et synchronisation différée / secours.**
+  - L'inscription sur Android ne demande plus aucun email : strictement 4 champs (Nom complet, Téléphone/WhatsApp,
+    Mot de passe, Code de parrainage facultatif).
+  - Hors-ligne, le profil est conservé dans le téléphone ; l'application s'appuie sur le tunnel de secours
+    (rescue bundle pré-embarqué) pour contacter l'API et ouvrir la page de paiement Mobile Money.

@@ -6,6 +6,7 @@ import {
   ShellRail,
   ShellSectionBand,
   ShellSectionChips,
+  ShellSidebar,
   ShellSubmenu,
 } from "./shell-nav";
 import { UserMenu } from "./user-menu";
@@ -18,6 +19,10 @@ import { UserMenu } from "./user-menu";
 async function readNav() {
   const [me, communities] = await Promise.all([getMe(), getCommunities()]);
   return { me, communities: communities.map((c) => ({ id: c.id, name: c.name })) };
+}
+
+export async function SidebarSection() {
+  return <ShellSidebar {...await readNav()} />;
 }
 
 export async function RailSection() {

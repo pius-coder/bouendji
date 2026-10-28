@@ -5,11 +5,31 @@ export const BRAND_THEMES = ["billet", "halo", "mono", "vector", "otaku"] as con
 export type BrandTheme = (typeof BRAND_THEMES)[number];
 
 export const BRAND_THEME_META: Record<BrandTheme, { label: string; color: string; description: string }> = {
-  billet: { label: "Billet", color: "#ffcc00", description: "Contraste élevé, jaune signature et typographie billet." },
-  halo: { label: "Halo", color: "#10b981", description: "Lueur émeraude moderne et surfaces apaisées." },
-  mono: { label: "Mono", color: "#18181b", description: "Noir et blanc épuré, sobriété technique." },
-  vector: { label: "Vector", color: "#e11d48", description: "Accents vifs rubis et géométrie nette." },
-  otaku: { label: "Otaku", color: "#ec4899", description: "Rose électrique et énergie communautaire." },
+  billet: {
+    label: "Billet",
+    color: "#0F5D3A",
+    description: "Papier billet ivoire (#F6F2EA), vert forêt (#0F5D3A) et rosace guillochée or (#C89B3C).",
+  },
+  halo: {
+    label: "Halo",
+    color: "#4F3CC9",
+    description: "Verre givré, violet iris (#4F3CC9), anneaux orbitaux et bouton squircle.",
+  },
+  mono: {
+    label: "Mono",
+    color: "#0A0A0A",
+    description: "Éditorial encre sur papier (#FAFAFA), cadran gradué 60 traits et filets.",
+  },
+  vector: {
+    label: "Vector",
+    color: "#005F3A",
+    description: "Terminal radar (#00E887 en sombre), coins coupés, octogone et police monospace.",
+  },
+  otaku: {
+    label: "Otaku",
+    color: "#C81E3A",
+    description: "Vermillon manga (#C81E3A / #FF3860), rayons de vitesse, trame et bordure franche.",
+  },
 };
 
 const WHATSAPP_NUMBER_RE = /^(?:\+237)?(\d{9})$/;

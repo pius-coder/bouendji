@@ -59,8 +59,8 @@ fun AuthScreen(ctx: ShellContext) {
                     DisplayTitle("Bienvenue sur\n${BrandTokens.appName}.", size = 38.sp)
                     Spacer(Modifier.height(10.dp))
                     Lead(
-                        if (form.register) "Crée ton compte : ton accès s'active dès que ton paiement est confirmé."
-                        else "Connecte-toi avec l'adresse e-mail de ton compte.",
+                        if (form.register) "Crée ton compte avec ton numéro : ton accès s'active dès que ton paiement est confirmé."
+                        else "Connecte-toi avec ton numéro de téléphone et ton mot de passe.",
                     )
                 }
                 Spacer(Modifier.height(14.dp))
@@ -71,7 +71,7 @@ fun AuthScreen(ctx: ShellContext) {
                 )
 
                 if (form.register) {
-                    GroupHeader("Identité")
+                    GroupHeader("Identité et contact")
                     Group {
                         ListRow(
                             "Pays",
@@ -80,15 +80,8 @@ fun AuthScreen(ctx: ShellContext) {
                             onClick = { c.sheet = "country" },
                         )
                         Divider()
-                        FormRow("Nom", form.lastName, { c.authForm = c.authForm.copy(lastName = it) }, "Ndam")
+                        FormRow("Nom complet", form.fullName, { c.authForm = c.authForm.copy(fullName = it) }, "Ex. Amina Ndam")
                         Divider()
-                        FormRow("Prénoms", form.firstNames, { c.authForm = c.authForm.copy(firstNames = it) }, "Amina")
-                    }
-                }
-
-                GroupHeader(if (form.register) "Contact" else "Compte")
-                Group {
-                    if (form.register) {
                         FormRow(
                             "WhatsApp",
                             form.phone,
@@ -98,16 +91,33 @@ fun AuthScreen(ctx: ShellContext) {
                             prefix = "+${COUNTRIES[form.countryIndex].second}",
                         )
                         Divider()
+                        FormRow("Mot de passe", form.password, { c.authForm = c.authForm.copy(password = it) }, "8 caractères minimum", KeyboardType.Password, password = true)
                     }
-                    FormRow("E-mail", form.email, { c.authForm = c.authForm.copy(email = it) }, "toi@exemple.com", KeyboardType.Email)
-                    Divider()
-                    FormRow("Mot de passe", form.password, { c.authForm = c.authForm.copy(password = it) }, "8 caractères minimum", KeyboardType.Password, password = true)
-                }
 
-                if (form.register) {
                     GroupHeader("Parrainage")
                     Group {
                         FormRow("Code", form.referral, { c.authForm = c.authForm.copy(referral = it.uppercase()) }, "Facultatif", mono = true)
+                    }
+                } else {
+                    GroupHeader("Connexion")
+                    Group {
+                        ListRow(
+                            "Pays",
+                            value = COUNTRIES[form.countryIndex].first,
+                            chevron = true,
+                            onClick = { c.sheet = "country" },
+                        )
+                        Divider()
+                        FormRow(
+                            "Téléphone",
+                            form.phone,
+                            { c.authForm = c.authForm.copy(phone = it) },
+                            "6XX XX XX XX",
+                            KeyboardType.Phone,
+                            prefix = "+${COUNTRIES[form.countryIndex].second}",
+                        )
+                        Divider()
+                        FormRow("Mot de passe", form.password, { c.authForm = c.authForm.copy(password = it) }, "Mot de passe", KeyboardType.Password, password = true)
                     }
                 }
                 GroupFooter(c.error, danger = true)

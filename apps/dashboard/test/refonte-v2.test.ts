@@ -13,6 +13,7 @@ import {
   breakdownBasePrice,
   isPlanBelowFloor,
   nightOptionFloorXaf,
+  unlimitedFloorXaf,
   pricingFormSchema,
   pricingFormToBody,
   type PricingSettings,
@@ -25,6 +26,7 @@ const SAMPLE_PRICING: PricingSettings = {
     "24-04": 400,
     "20-04": 600,
   },
+  unlimitedCostPerDayXaf: 100,
   platformMarginBps: 2000, // 20 %
   maxCommissionBps: 3000, // 30 %
   effectiveMaxCommissionBps: 3000,
@@ -42,6 +44,10 @@ describe("Refonte v2 : calculs de prix plancher et indicateur de répartition", 
     // Nuit 20-04 : coût 600 XAF ; marge 20% => ceil(600 * 1.20) = 720 XAF
     const nightFloor = nightOptionFloorXaf("20-04", SAMPLE_PRICING);
     assert.equal(nightFloor, 720);
+
+    // Illimité 7 jours : 7 * 100 = 700 XAF coût ; marge 20% => ceil(700 * 1.20) = 840 XAF
+    const unlimFloor = unlimitedFloorXaf(7, SAMPLE_PRICING);
+    assert.equal(unlimFloor, 840);
   });
 
   it("ventile le prix entre serveur, marge plateforme et gain admin", () => {
@@ -74,6 +80,26 @@ describe("Refonte v2 : calculs de prix plancher et indicateur de répartition", 
       SAMPLE_PRICING,
     );
     assert.equal(lowNightPlan, true);
+
+    const okUnlimited = isPlanBelowFloor(
+      {
+        family: "unlimited",
+        durationDays: 7,
+        priceXaf: 1000,
+      },
+      SAMPLE_PRICING,
+    );
+    assert.equal(okUnlimited, false);
+
+    const lowUnlimited = isPlanBelowFloor(
+      {
+        family: "unlimited",
+        durationDays: 7,
+        priceXaf: 800,
+      },
+      SAMPLE_PRICING,
+    );
+    assert.equal(lowUnlimited, true);
   });
 
   it("valide et convertit le formulaire de tarifs plateforme", () => {
@@ -82,11 +108,14 @@ describe("Refonte v2 : calculs de prix plancher et indicateur de répartition", 
       night20_24: "350",
       night24_04: "450",
       night20_04: "700",
+      unlimitedCostPerDayXaf: "80",
       platformMarginPercent: "18,5",
       maxCommissionPercent: "25",
     });
     const body = pricingFormToBody(parsed);
     assert.equal(body.costPerGbXaf, 120);
+    assert.equal(body.nightWindowCostXaf["20-24"], 350);
+    assert.equal(body.unlimitedCostPerDayXaf, 80);
     assert.equal(body.platformMarginBps, 1850);
     assert.equal(body.maxCommissionBps, 2500);
   });

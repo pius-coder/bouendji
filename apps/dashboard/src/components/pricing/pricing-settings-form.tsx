@@ -18,17 +18,20 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { useInvalidateAdmin } from "@/hooks/use-admin-query";
 import { formatXaf } from "@/lib/format";
 import { updatePricingAction } from "@/server/actions/pricing.action";
 import {
   baseFloorXaf,
   nightOptionFloorXaf,
+  unlimitedFloorXaf,
   pricingToFormValues,
   type PricingFormValues,
   type PricingSettings,
 } from "@/server/services/pricing/pricing.schema";
 
 export function PricingSettingsForm({ initialPricing }: { initialPricing: PricingSettings }) {
+  const invalidate = useInvalidateAdmin();
   const [pending, startTransition] = React.useTransition();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [values, setValues] = React.useState<PricingFormValues>(() =>
@@ -43,6 +46,7 @@ export function PricingSettingsForm({ initialPricing }: { initialPricing: Pricin
       "24-04": Math.max(0, Number(values.night24_04) || 0),
       "20-04": Math.max(0, Number(values.night20_04) || 0),
     },
+    unlimitedCostPerDayXaf: Math.max(0, Number(values.unlimitedCostPerDayXaf) || 0),
     platformMarginBps: Math.max(0, Math.round((Number(values.platformMarginPercent.replace(",", ".")) || 0) * 100)),
     maxCommissionBps: previewMaxComm,
     effectiveMaxCommissionBps: previewMaxComm || 3000,
@@ -57,6 +61,7 @@ export function PricingSettingsForm({ initialPricing }: { initialPricing: Pricin
       if (res.ok) {
         toast.success("Tarifs et marges de la plateforme mis à jour.");
         setConfirmOpen(false);
+        await invalidate(["/v1/admin/pricing", "/v1/admin/plans"]);
       } else {
         toast.error(res.message);
       }
@@ -88,6 +93,19 @@ export function PricingSettingsForm({ initialPricing }: { initialPricing: Pricin
           </Field>
 
           <Field>
+            <FieldLabel htmlFor="p-cost-unlimited">Coût par jour d&apos;illimité (FCFA)</FieldLabel>
+            <Input
+              id="p-cost-unlimited"
+              inputMode="numeric"
+              value={values.unlimitedCostPerDayXaf}
+              onChange={(e) => setValues((v) => ({ ...v, unlimitedCostPerDayXaf: e.target.value }))}
+            />
+            <FieldDescription>Base du plancher des forfaits illimités sur une durée.</FieldDescription>
+          </Field>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field>
             <FieldLabel htmlFor="p-margin">Marge plateforme (%)</FieldLabel>
             <Input
               id="p-margin"
@@ -95,6 +113,16 @@ export function PricingSettingsForm({ initialPricing }: { initialPricing: Pricin
               onChange={(e) => setValues((v) => ({ ...v, platformMarginPercent: e.target.value }))}
             />
             <FieldDescription>Pourcentage retenu par la plateforme (0 à 80 %).</FieldDescription>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="p-max-comm">Plafond de commission communauté (%)</FieldLabel>
+            <Input
+              id="p-max-comm"
+              value={values.maxCommissionPercent}
+              onChange={(e) => setValues((v) => ({ ...v, maxCommissionPercent: e.target.value }))}
+            />
+            <FieldDescription>Maximum autorisé lors du réglage d&apos;une communauté.</FieldDescription>
           </Field>
         </div>
 
@@ -127,16 +155,6 @@ export function PricingSettingsForm({ initialPricing }: { initialPricing: Pricin
             />
           </Field>
         </div>
-
-        <Field className="max-w-xs">
-          <FieldLabel htmlFor="p-max-comm">Plafond de commission communauté (%)</FieldLabel>
-          <Input
-            id="p-max-comm"
-            value={values.maxCommissionPercent}
-            onChange={(e) => setValues((v) => ({ ...v, maxCommissionPercent: e.target.value }))}
-          />
-          <FieldDescription>Maximum autorisé lors du réglage d&apos;une communauté.</FieldDescription>
-        </Field>
 
         <div className="flex justify-end border-t border-separator pt-4">
           <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -197,6 +215,15 @@ export function PricingSettingsForm({ initialPricing }: { initialPricing: Pricin
               +{formatXaf(nightOptionFloorXaf("20-04", previewSettings) ?? 0)}
             </dd>
           </div>
+          {[1, 7, 30].map((days) => {
+            const floor = unlimitedFloorXaf(days, previewSettings) ?? 0;
+            return (
+              <div key={`unlimited-${days}`} className="flex items-center justify-between px-4 py-2.5 text-subhead">
+                <dt className="text-muted-foreground">Illimité {days} {days > 1 ? "jours" : "jour"}</dt>
+                <dd className="font-semibold tabular-nums text-foreground">{formatXaf(floor)}</dd>
+              </div>
+            );
+          })}
         </dl>
       </div>
     </div>

@@ -22,8 +22,13 @@ export function createQueryClient(): QueryClient {
   });
 }
 
+// Instance inerte pour le prerender statique SSR (évite l'appel à Date.now() dans le constructeur pendant le rendu React).
+const ssrQueryClient = createQueryClient();
+
 /** Fournisseurs du dashboard côté client. Le cache n'est jamais persisté (pas de localStorage). */
 export function Providers({ children }: { children: ReactNode }) {
-  const [client] = useState(createQueryClient);
+  const [client] = useState(() =>
+    typeof window === "undefined" ? ssrQueryClient : createQueryClient(),
+  );
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }

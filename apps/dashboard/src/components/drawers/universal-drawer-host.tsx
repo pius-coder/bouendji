@@ -10,11 +10,71 @@ import { shortId } from "@/components/offline/offline-status";
 import { parseDrawer, type SearchParamsLike } from "@/lib/drawers";
 import { formatDateTime } from "@/lib/format";
 import { can, type RoleSource } from "@/lib/roles";
+import { getCommunities, getMe } from "@/server/context";
 import { getServices } from "@/server/services";
 import type { Build } from "@/server/services/builds/builds.service";
 import type { OfflineBundleState } from "@/server/services/devices/devices.schema";
 import type { Plan } from "@/server/services/plans/plans.schema";
 import type { PricingSettings } from "@/server/services/pricing/pricing.schema";
+
+/**
+ * Bloc serveur atomique à monter dans `<Suspense fallback={null}>` sur chaque page.
+ * Ne déclenche de lecture API que lorsqu'un paramètre de tiroir (`?abonne=`, `?appareil=`,
+ * `?commande=`, `?forfait=`, `?versement=`, `?build=`) est réellement présent dans l'URL.
+ */
+export async function UniversalDrawerSection({
+  params,
+  searchParams,
+  routeSegment,
+  pathname: explicitPathname,
+}: {
+  params?: Promise<{ communityId: string }>;
+  searchParams: SearchParamsLike | Promise<SearchParamsLike>;
+  routeSegment?: string;
+  pathname?: string;
+}) {
+  const resolvedSearch = await searchParams;
+  const open = parseDrawer(resolvedSearch);
+  if (!open) return null;
+
+  const resolvedParams = params ? await params : undefined;
+  const communityId = resolvedParams?.communityId;
+  const pathname =
+    explicitPathname ??
+    (communityId && routeSegment ? `/${communityId}/${routeSegment}` : routeSegment ? `/${routeSegment}` : "/");
+
+  const services = getServices();
+  const me = await getMe();
+
+  const needsBundles =
+    Boolean(communityId) &&
+    (open.kind === "abonne" || open.kind === "appareil") &&
+    can(me, "devices.offline", communityId ?? null);
+
+  const needsPricing = open.kind === "forfait";
+
+  const [offlineBundles, communities, pricing] = await Promise.all([
+    needsBundles && open.kind === "appareil"
+      ? services.devices.listOfflineBundles({ deviceId: open.id }).catch(() => [])
+      : Promise.resolve([]),
+    needsPricing ? getCommunities().catch(() => []) : Promise.resolve([]),
+    needsPricing ? services.pricing.getPricing().catch(() => undefined) : Promise.resolve(undefined),
+  ]);
+
+  const activeCommunity = communityId ? communities.find((c) => c.id === communityId) : communities[0];
+
+  return (
+    <UniversalDrawerHost
+      pathname={pathname}
+      searchParams={resolvedSearch}
+      me={me}
+      communityId={communityId}
+      commissionBps={activeCommunity?.commissionBps ?? 1500}
+      pricing={pricing}
+      offlineBundles={offlineBundles}
+    />
+  );
+}
 
 /**
  * Hôte universel des tiroirs (`?abonne=`, `?appareil=`, `?commande=`, `?forfait=`,

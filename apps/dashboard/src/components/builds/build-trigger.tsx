@@ -6,6 +6,7 @@ import { Icon } from "@/components/common/icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { useInvalidateAdmin } from "@/hooks/use-admin-query";
 import { requestBuildAction, triggerBuildAction } from "@/server/actions/builds.action";
 
 /**
@@ -21,6 +22,7 @@ export function BuildTrigger({
   brandReady: boolean;
   isOwner?: boolean;
 }) {
+  const invalidate = useInvalidateAdmin();
   const [versionName, setVersionName] = useState("");
   const [pending, startTransition] = useTransition();
   const inputId = useId();
@@ -34,6 +36,7 @@ export function BuildTrigger({
           description: "Le propriétaire de la plateforme est notifié pour lancer la compilation.",
         });
         setVersionName("");
+        await invalidate("/v1/admin/apps");
       } else {
         toast.error(result.message);
       }
@@ -46,6 +49,7 @@ export function BuildTrigger({
       if (result.ok) {
         toast.success("Build lancé", { description: "En file d'attente GitHub Actions." });
         setVersionName("");
+        await invalidate("/v1/admin/apps");
       } else {
         toast.error(result.message);
       }

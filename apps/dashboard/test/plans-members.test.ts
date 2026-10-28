@@ -256,6 +256,31 @@ describe("formulaires forfait et membre", () => {
     assert.deepEqual(update.nightOptions, [{ window: "20-24", priceXaf: 200, active: true }]);
   });
 
+  it("forfait illimité : quotaBytes nul, pas d'options de nuit, endpointTier free-labs", () => {
+    const unlimitedValid = {
+      code: "illimite-7j",
+      name: "Illimité 7 jours",
+      description: "",
+      priceXaf: "2500",
+      durationDays: "7",
+      deviceLimit: "1",
+      badge: "Illimité",
+      sortOrder: "1",
+      featured: true,
+      active: true,
+      endpointTier: "free-labs" as const,
+      family: "unlimited" as const,
+      quotaGb: "",
+      nightPrices: { "20-24": "", "24-04": "", "20-04": "" },
+      nightActive: { "20-24": true, "24-04": true, "20-04": true },
+    };
+    const body = planFormToBody(planFormSchema.parse(unlimitedValid));
+    assert.equal(body.family, "unlimited");
+    assert.equal(body.quotaBytes, null);
+    assert.deepEqual(body.nightOptions, []);
+    assert.equal(body.endpointTier, "free-labs");
+  });
+
   it("modification : seuls les champs fournis partent, pas de termes sans famille", () => {
     assert.deepEqual(planFormToUpdate({ name: "Nouveau nom" }), { name: "Nouveau nom" });
     assert.ok(!("quotaBytes" in planFormToUpdate({ priceXaf: "3000" })));

@@ -49,6 +49,11 @@ const pricingSchema = z
         "20-04": xafOrNull,
       })
       .strict(),
+    /**
+     * D132 : coût d'un jour d'illimité. Facultatif pour ne pas casser les
+     * clients qui ne le connaissent pas : absent = valeur actuelle conservée.
+     */
+    unlimitedCostPerDayXaf: xafOrNull.optional(),
     platformMarginBps: bpsOrNull,
     maxCommissionBps: bpsOrNull,
   })
@@ -66,6 +71,7 @@ function pricingDto(settings: PricingSettings) {
   return {
     costPerGbXaf: settings.costPerGbXaf,
     nightWindowCostXaf: settings.nightWindowCostXaf,
+    unlimitedCostPerDayXaf: settings.unlimitedCostPerDayXaf,
     platformMarginBps: settings.platformMarginBps,
     /** `null` tant que l'owner n'a rien réglé. */
     maxCommissionBps: settings.maxCommissionBps,
@@ -73,6 +79,8 @@ function pricingDto(settings: PricingSettings) {
     effectiveMaxCommissionBps: commissionCapBps(settings),
     /** Vrai quand le plancher peut être calculé (coût du Go et marge saisis). */
     floorConfigured: settings.costPerGbXaf !== null && settings.platformMarginBps !== null,
+    /** D132 : vrai quand le plancher des forfaits illimités peut être calculé. */
+    unlimitedFloorConfigured: settings.unlimitedCostPerDayXaf !== null && settings.platformMarginBps !== null,
     updatedAt: settings.updatedAt,
     updatedBy: settings.updatedBy,
   };
@@ -96,15 +104,19 @@ export function registerPricingRoutes(app: FastifyInstance, db: Database): void 
 
     const saved = await db.tx(async (q) => {
       const before = await currentSettings(q);
+      const unlimitedCost =
+        input.unlimitedCostPerDayXaf !== undefined ? input.unlimitedCostPerDayXaf : before.unlimitedCostPerDayXaf;
       await q.query(
         `INSERT INTO pricing_settings
-           (id, cost_per_gb_xaf, night_window_cost_xaf, platform_margin_bps, max_commission_bps, updated_at, updated_by)
-         VALUES ('current', $1, $2::jsonb, $3, $4, now(), $5)
+           (id, cost_per_gb_xaf, night_window_cost_xaf, platform_margin_bps, max_commission_bps, updated_at, updated_by,
+            unlimited_cost_per_day_xaf)
+         VALUES ('current', $1, $2::jsonb, $3, $4, now(), $5, $6)
          ON CONFLICT (id) DO UPDATE SET
            cost_per_gb_xaf       = EXCLUDED.cost_per_gb_xaf,
            night_window_cost_xaf = EXCLUDED.night_window_cost_xaf,
            platform_margin_bps   = EXCLUDED.platform_margin_bps,
            max_commission_bps    = EXCLUDED.max_commission_bps,
+           unlimited_cost_per_day_xaf = EXCLUDED.unlimited_cost_per_day_xaf,
            updated_at            = now(),
            updated_by            = EXCLUDED.updated_by`,
         [
@@ -113,6 +125,7 @@ export function registerPricingRoutes(app: FastifyInstance, db: Database): void 
           input.platformMarginBps,
           input.maxCommissionBps,
           admin.adminId,
+          unlimitedCost,
         ],
       );
       const after = await currentSettings(q);

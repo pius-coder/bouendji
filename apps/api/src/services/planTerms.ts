@@ -1,5 +1,5 @@
 /**
- * Termes d'un forfait : famille, quota, options de nuit (R6, D115).
+ * Termes d'un forfait : famille, quota, options de nuit (R6, D115, D132).
  *
  * Ce module porte ce qui est commun aux routes admin, catalogue et commande :
  * le schéma de saisie, la lecture SQL des options en une passe, le DTO et
@@ -63,6 +63,13 @@ export function checkTerms(terms: { family: PlanFamily; quotaBytes: number | nul
   if (terms.family === "limited" && terms.nightOptions.length > 0) {
     throw fail.validation({ nightOptions: "Les plages de nuit ne s'appliquent qu'à la famille limité + nuit." });
   }
+  // D132 : illimité = durée seule ; ni quota, ni plage de nuit.
+  if (terms.family === "unlimited" && terms.quotaBytes !== null) {
+    throw fail.validation({ quotaBytes: "Un forfait illimité n'a pas de quota." });
+  }
+  if (terms.family === "unlimited" && terms.nightOptions.length > 0) {
+    throw fail.validation({ nightOptions: "Les plages de nuit ne s'appliquent qu'à la famille limité + nuit." });
+  }
 }
 
 /**
@@ -103,7 +110,14 @@ export function planTermsDto(row: Row): {
 } {
   const list = Array.isArray(row.night_options) ? (row.night_options as NightOptionRow[]) : [];
   return {
-    family: row.family === "limited_night" ? "limited_night" : row.family === "custom" ? "custom" : "limited",
+    family:
+      row.family === "limited_night"
+        ? "limited_night"
+        : row.family === "custom"
+          ? "custom"
+          : row.family === "unlimited"
+            ? "unlimited"
+            : "limited",
     quotaBytes: row.quota_bytes === null || row.quota_bytes === undefined ? null : Number(row.quota_bytes),
     nightOptions: list
       .map((option) => ({

@@ -19,7 +19,7 @@
 import { env } from "../config.js";
 import { ApiFailure } from "./errors.js";
 
-export const BRAND_THEMES = ["billet", "halo", "mono", "vector", "otaku"] as const;
+export const BRAND_THEMES = ["billet", "halo", "mono", "vector", "otaku", "sahel", "nebula", "glacier"] as const;
 export type BrandTheme = (typeof BRAND_THEMES)[number];
 
 /**

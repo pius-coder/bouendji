@@ -246,3 +246,29 @@ test("connexion : mauvaise marque, mot de passe faux, email inconnu → même 40
   assert.equal(wrongBrand.body.error.message, wrongPassword.body.error.message);
   assert.equal(unknownEmail.body.error.message, wrongPassword.body.error.message);
 });
+
+test("D137 : inscription sans email, compte actif et connexion par numéro de téléphone", async () => {
+  const device = await enrollDevice({ deviceName: "Pixel No-Email" });
+  const phone = "+237 6 77 88 99 00";
+  const body = {
+    appId: brandA.appId,
+    password: PASSWORD,
+    name: "Sans Email",
+    phone,
+    locale: "fr",
+  };
+
+  const created = await post(device, "/v1/auth/register", body);
+  assert.equal(created.status, 201, `inscription sans email doit réussir : ${created.text}`);
+  assert.ok(created.body.accessToken);
+  assert.equal(created.body.user.phone, "+237677889900");
+
+  // Connexion avec le numéro de téléphone comme identifiant
+  const loginRes = await post(device, "/v1/auth/login", {
+    appId: brandA.appId,
+    identifier: "+237 6 77 88 99 00",
+    password: PASSWORD,
+  });
+  assert.equal(loginRes.status, 200, `connexion par téléphone doit réussir : ${loginRes.text}`);
+  assert.equal(loginRes.body.user.name, "Sans Email");
+});

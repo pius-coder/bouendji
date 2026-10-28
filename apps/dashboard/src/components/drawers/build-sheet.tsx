@@ -10,6 +10,7 @@ import { shortId } from "@/components/offline/offline-status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { useInvalidateAdmin } from "@/hooks/use-admin-query";
 import { formatDateTime, NO_VALUE } from "@/lib/format";
 import { approveBuildAction, rejectBuildAction } from "@/server/actions/builds.action";
 import type { Build } from "@/server/services/builds/builds.service";
@@ -28,6 +29,7 @@ export function BuildSheetBody({
   appName: string;
   isOwner?: boolean;
 }) {
+  const invalidate = useInvalidateAdmin();
   const [pending, startTransition] = React.useTransition();
   const [rejectReason, setRejectReason] = React.useState("");
   const [showRejectBox, setShowRejectBox] = React.useState(false);
@@ -37,6 +39,7 @@ export function BuildSheetBody({
       const res = await approveBuildAction(build.id);
       if (res.ok) {
         toast.success("Demande validée · Compilation Android lancée.");
+        await invalidate("/v1/admin/apps");
       } else {
         toast.error(res.message);
       }
@@ -53,6 +56,7 @@ export function BuildSheetBody({
       if (res.ok) {
         toast.success("Demande de build refusée.");
         setShowRejectBox(false);
+        await invalidate("/v1/admin/apps");
       } else {
         toast.error(res.message);
       }

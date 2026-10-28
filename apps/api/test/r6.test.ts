@@ -688,3 +688,76 @@ test("GET /v1/me/subscription : sans abonnement, état expiré et aucun quota", 
   assert.equal(none.body.entitlement.quotaBytes, null);
   assert.equal(none.body.entitlement.remainingBytes, null);
 });
+
+test("forfaits illimit�s (D132) : plancher au jour, cr�ation, catalogue et souscription", async () => {
+  // 1. R�glage du co�t journalier illimit�
+  const setPricing = await call("PUT", "/v1/admin/pricing", ownerToken, {
+    ...SETTINGS,
+    unlimitedCostPerDayXaf: 100,
+  });
+  assert.equal(setPricing.status, 200);
+  assert.equal(setPricing.body.unlimitedFloorConfigured, true);
+  assert.equal(setPricing.body.unlimitedCostPerDayXaf, 100);
+
+  // 7 jours * 100 XAF = 700 + 10% marge = 770 XAF plancher
+  const underFloor = await call("POST", `/v1/admin/apps/${APP}/plans`, ownerToken, {
+    code: "unlimited-cheap",
+    name: "Illimit� 7 jours pas cher",
+    priceXaf: 700,
+    durationDays: 7,
+    family: "unlimited",
+  });
+  assert.equal(underFloor.status, 409);
+  assert.equal(underFloor.body.error.details.reason, "BELOW_FLOOR");
+
+  // Rejet si quotaBytes ou options de nuit envoy�es
+  const badQuota = await call("POST", `/v1/admin/apps/${APP}/plans`, ownerToken, {
+    code: "unlimited-bad-quota",
+    name: "Illimit� avec quota",
+    priceXaf: 1000,
+    durationDays: 7,
+    family: "unlimited",
+    quotaBytes: 10_000_000,
+  });
+  assert.equal(badQuota.status, 400);
+
+  // Cr�ation valide au-dessus du plancher
+  const created = await call("POST", `/v1/admin/apps/${APP}/plans`, ownerToken, {
+    code: "unlimited-7d",
+    name: "Illimit� 7 jours",
+    priceXaf: 1500,
+    durationDays: 7,
+    family: "unlimited",
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.family, "unlimited");
+  assert.equal(created.body.quotaBytes, null);
+  assert.equal(created.body.endpointTier, "free-labs");
+  assert.deepEqual(created.body.nightOptions, []);
+
+  // Catalogue
+  const cat = await call("GET", `/v1/apps/${APP}/plans`, null);
+  assert.equal(cat.status, 200);
+  const found = cat.body.items.find((i: any) => i.code === "unlimited-7d");
+  assert.ok(found);
+  assert.equal(found.family, "unlimited");
+  assert.equal(found.quotaBytes, null);
+
+  // Commande et activation
+  const buyer = await seedUser();
+  const order = await createOrder(db, {
+    userId: buyer.userId,
+    planId: created.body.id,
+    planRevision: found.revision,
+  });
+  const saved = await db.one<any>("SELECT p.family FROM orders o JOIN plans p ON p.id = o.plan_id WHERE o.id = $1", [order.raw.orderId]); assert.equal(saved?.family, "unlimited"); setMockPaymentStatus(order.raw.providerRef, "paid");
+  await reconcilePayment(db, { orderId: order.raw.orderId });
+
+  // Vue abonn�
+  const me = await call("GET", "/v1/me/subscription", buyer.token, undefined, proofHeaders(buyer.pem, "GET", "/v1/me/subscription"));
+  assert.equal(me.status, 200);
+  assert.equal(me.body.entitlement.family, "unlimited");
+  assert.equal(me.body.entitlement.quotaBytes, null);
+  assert.equal(me.body.entitlement.remainingBytes, null);
+  assert.equal(me.body.entitlement.state, "active");
+});

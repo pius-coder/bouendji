@@ -15,7 +15,8 @@ export const PAYOUT_COLUMNS = [
   { id: "open", header: "", align: "right" },
 ] as const satisfies readonly TableColumn[];
 
-export function payoutCells(p: Payout, _caps: PayoutCaps) {
+export function payoutCells(p: Payout, _caps?: PayoutCaps) {
+  void _caps;
   const community = p.communityName ?? p.communityId.slice(0, 8);
   return {
     community: (

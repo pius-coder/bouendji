@@ -13,7 +13,11 @@ import { ApiFailure } from "../lib/errors.js";
 export const NIGHT_WINDOWS = ["20-24", "24-04", "20-04"] as const;
 export type NightWindow = (typeof NIGHT_WINDOWS)[number];
 
-export const PLAN_FAMILIES = ["limited", "limited_night"] as const;
+/**
+ * D132 : `unlimited` = data illimitée pendant une durée (jours), prix propre au
+ * forfait, servi par le pool partagé `free-labs` (pas de client 3x-ui).
+ */
+export const PLAN_FAMILIES = ["limited", "limited_night", "unlimited"] as const;
 export type PlanFamily = (typeof PLAN_FAMILIES)[number];
 
 /**
@@ -28,6 +32,8 @@ export const FALLBACK_MAX_COMMISSION_BPS = 3000;
 export interface PricingSettings {
   costPerGbXaf: number | null;
   nightWindowCostXaf: Record<NightWindow, number | null>;
+  /** D132 : coût d'un jour d'illimité, base du plancher des forfaits illimités. */
+  unlimitedCostPerDayXaf: number | null;
   platformMarginBps: number | null;
   maxCommissionBps: number | null;
   updatedAt: string | null;
@@ -44,6 +50,7 @@ export function settingsFromRow(row: Row | null): PricingSettings {
     return {
       costPerGbXaf: null,
       nightWindowCostXaf: emptyNightCosts(),
+      unlimitedCostPerDayXaf: null,
       platformMarginBps: null,
       maxCommissionBps: null,
       updatedAt: null,
@@ -56,6 +63,7 @@ export function settingsFromRow(row: Row | null): PricingSettings {
   return {
     costPerGbXaf: nullableInt(row.cost_per_gb_xaf),
     nightWindowCostXaf,
+    unlimitedCostPerDayXaf: nullableInt(row.unlimited_cost_per_day_xaf),
     platformMarginBps: nullableInt(row.platform_margin_bps),
     maxCommissionBps: nullableInt(row.max_commission_bps),
     updatedAt: row.updated_at ? new Date(row.updated_at as string | Date).toISOString() : null,
@@ -65,7 +73,8 @@ export function settingsFromRow(row: Row | null): PricingSettings {
 
 export async function loadPricingSettings(db: Queryable): Promise<PricingSettings> {
   const row = await db.one<Row>(
-    `SELECT cost_per_gb_xaf, night_window_cost_xaf, platform_margin_bps, max_commission_bps, updated_at, updated_by
+    `SELECT cost_per_gb_xaf, night_window_cost_xaf, unlimited_cost_per_day_xaf, platform_margin_bps, max_commission_bps,
+            updated_at, updated_by
        FROM pricing_settings WHERE id = 'current'`,
   );
   return settingsFromRow(row);
@@ -97,11 +106,23 @@ export function nightOptionFloorXaf(window: NightWindow, settings: PricingSettin
   return withMargin(cost, settings.platformMarginBps);
 }
 
+/**
+ * D132 : plancher d'un forfait illimité = coût d'un jour d'illimité × durée,
+ * plus la marge. `null` tant que ce coût ou la marge ne sont pas saisis.
+ */
+export function unlimitedFloorXaf(durationDays: number, settings: PricingSettings): number | null {
+  if (settings.unlimitedCostPerDayXaf === null || settings.platformMarginBps === null) return null;
+  return withMargin(durationDays * settings.unlimitedCostPerDayXaf, settings.platformMarginBps);
+}
+
 export interface FloorCheckInput {
-  /** `null` : offre sans quota (ancien comportement), aucun plancher. */
+  /** `null` : offre sans quota (ancien comportement), aucun plancher au Go. */
   quotaBytes: number | null;
   priceXaf: number;
   nightOptions: { window: NightWindow; priceXaf: number; active: boolean }[];
+  /** D132 : `unlimited` se contrôle à la durée, pas au Go. */
+  family?: PlanFamily | undefined;
+  durationDays?: number | undefined;
 }
 
 function belowFloor(field: string, floorXaf: number, window?: NightWindow): ApiFailure {
@@ -118,6 +139,12 @@ function belowFloor(field: string, floorXaf: number, window?: NightWindow): ApiF
  * la règle ne s'applique qu'une fois les coûts connus.
  */
 export function assertAboveFloor(settings: PricingSettings, input: FloorCheckInput): void {
+  if (input.family === "unlimited") {
+    if (input.durationDays === undefined) return;
+    const floor = unlimitedFloorXaf(input.durationDays, settings);
+    if (floor !== null && input.priceXaf < floor) throw belowFloor("priceXaf", floor);
+    return;
+  }
   if (input.quotaBytes === null) return;
   const base = baseFloorXaf(input.quotaBytes, settings);
   if (base !== null && input.priceXaf < base) throw belowFloor("priceXaf", base);

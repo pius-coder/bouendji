@@ -56,3 +56,4 @@ infra/endpoint/*.env
 .claude/
 .vercel
 .env*
+.agents/

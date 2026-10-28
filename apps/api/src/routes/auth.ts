@@ -87,7 +87,7 @@ const registerSchema = z
   .object({
     /** L'app le connaît (il est injecté au build) et il fixe la communauté. */
     appId: appIdSchema,
-    email: emailSchema,
+    email: emailSchema.optional(),
     password: passwordSchema,
     name: z.string().trim().min(2).max(60),
     phone: phoneSchema,
@@ -109,10 +109,16 @@ const loginSchema = z
      * mauvaise communauté.
      */
     appId: appIdSchema,
-    email: emailSchema,
+    email: emailSchema.optional(),
+    phone: phoneSchema.optional(),
+    identifier: z.string().trim().min(1).max(190).optional(),
     password: z.string().min(1).max(200),
   })
-  .strict();
+  .strict()
+  .refine((d) => d.email || d.phone || d.identifier, {
+    message: "Identifiant requis.",
+    path: ["identifier"],
+  });
 
 
 const refreshSchema = z
@@ -421,7 +427,8 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
   app.post("/v1/auth/register", authLimit, async (req: FastifyRequest, reply) => {
     const device = await requireBoundDevice(db, req);
     const input = parseBody(registerSchema, req.body);
-    const attemptKey = guardEmail(input.appId, input.email);
+    const userEmail = input.email ? input.email.toLowerCase() : `${input.phone.replace(/[\s.\-()]/g, "")}@${input.appId}.bouendji.internal`;
+    const attemptKey = guardEmail(input.appId, userEmail);
 
     if (device.user_id) throw fail.conflict("Cet appareil est déjà rattaché à un compte.");
 
@@ -437,7 +444,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
      */
     const taken = await db.one<Row>("SELECT id FROM users WHERE app_id = $1 AND lower(email) = lower($2)", [
       input.appId,
-      input.email,
+      userEmail,
     ]);
     if (taken) throw fail.conflict("Un compte existe déjà pour cette adresse email sur cette application.");
 
@@ -468,7 +475,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
             userId,
             input.appId,
             appRow.community_id,
-            input.email.toLowerCase(),
+            userEmail,
             input.phone,
             hashPassword(input.password),
             input.name,
@@ -523,12 +530,26 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
   app.post("/v1/auth/login", authLimit, async (req: FastifyRequest) => {
     const device = await requireBoundDevice(db, req);
     const input = parseBody(loginSchema, req.body);
-    const attemptKey = guardEmail(input.appId, input.email);
+    const idParam = (input.identifier || input.phone || input.email || "").trim();
+    const isPhoneLike = /^\+?[0-9\s.\-()]{8,20}$/.test(idParam);
+    const normalizedPhone = isPhoneLike ? idParam.replace(/[\s.\-()]/g, "") : "";
+    const attemptKey = guardEmail(input.appId, idParam);
 
-    const user = await db.one<Row>("SELECT * FROM users WHERE app_id = $1 AND lower(email) = lower($2)", [
-      input.appId,
-      input.email,
-    ]);
+    const user = await db.one<Row>(
+      `SELECT * FROM users
+       WHERE app_id = $1
+         AND (
+           lower(email) = lower($2)
+           OR ($3 <> '' AND phone = $3)
+           OR ($3 <> '' AND lower(email) = lower($4))
+         )`,
+      [
+        input.appId,
+        idParam,
+        normalizedPhone,
+        `${normalizedPhone}@${input.appId}.bouendji.internal`,
+      ],
+    );
     if (!user || user.deleted_at) throw fail.invalidCredentials();
     if (!verifyPassword(input.password, String(user.password_hash))) throw fail.invalidCredentials();
 

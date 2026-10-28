@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Icon } from "@/components/common/icon";
+import { useInvalidateAdmin } from "@/hooks/use-admin-query";
 import { PhonePreview } from "@/components/common/phone-preview";
 import { PriceIndicator } from "@/components/common/price-indicator";
 import { StatusBadge } from "@/components/common/status-badge";
@@ -127,7 +127,7 @@ export function OnboardingWizard({
   initialBuilds: readonly Build[];
   pricing: PricingSettings;
 }) {
-  const router = useRouter();
+  const invalidate = useInvalidateAdmin();
   const [pending, startTransition] = React.useTransition();
 
   const initialStep = Math.min(6, Math.max(1, onboarding.step || 1));
@@ -475,8 +475,8 @@ export function OnboardingWizard({
         ...prev,
       ]);
       await saveOnboardingStepAction({ step: 5 });
+      await invalidate(["/v1/admin/apps", "/v1/admin/onboarding", "/v1/admin/communities"]);
       toast.success("Demande d'application envoyée au propriétaire de la plateforme !");
-      router.refresh();
     });
   };
 

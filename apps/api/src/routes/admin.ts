@@ -1081,6 +1081,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     const input = parseBody(planCreateR6Schema, req.body);
     const terms = resolveTerms(input);
     checkTerms(terms);
+    // D132 / D97 : l'illimité est servi par le pool partagé `free-labs`, jamais par 3x-ui.
+    const createTier = terms.family === "unlimited" ? "free-labs" : (input.endpointTier ?? "free-labs");
     const id = newId();
 
     try {
@@ -1089,6 +1091,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
           quotaBytes: terms.quotaBytes,
           priceXaf: input.priceXaf,
           nightOptions: terms.nightOptions,
+          family: terms.family,
+          durationDays: input.durationDays,
         });
         await q.query(
           `INSERT INTO plans (id, app_id, code, name, description, price_xaf, duration_days,
@@ -1108,7 +1112,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
             input.featured ?? false,
             input.active ?? true,
             input.sortOrder ?? 0,
-            input.endpointTier ?? "free-labs",
+            createTier,
             terms.family,
             terms.quotaBytes,
           ],
@@ -1187,7 +1191,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       const updatedCustom = await db.one<Row>(`SELECT p.*, ${planTermsSql("p")} FROM plans p WHERE p.id = $1`, [req.params.planId]);
       return planDtoR6(updatedCustom as Row);
     }
-    const current = { ...currentTerms, family: currentTerms.family as "limited" | "limited_night" };
+    const current = { ...currentTerms, family: currentTerms.family as "limited" | "limited_night" | "unlimited" };
     const name = input.name ?? (before.name as string);
     const description = input.description ?? (before.description as string);
     const priceXaf = input.priceXaf ?? Number(before.price_xaf);
@@ -1197,22 +1201,26 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     const featured = input.featured ?? before.featured === true;
     const active = input.active ?? before.active === true;
     const sortOrder = input.sortOrder ?? Number(before.sort_order);
-    const endpointTier = input.endpointTier ?? ((before.endpoint_tier as string) || "free-labs");
 
-    // Passer en « limité » retire les options de nuit : elles n'ont pas de sens sans nuit.
+    // Passer en « limité » ou « illimité » retire les options de nuit : elles n'ont pas de sens sans nuit.
     const family = input.family ?? current.family;
-    const quotaBytes = input.quotaBytes !== undefined ? input.quotaBytes : current.quotaBytes;
+    // Passer en illimité retire le quota, sauf si l'appel en fournit un (refusé par checkTerms).
+    const quotaBytes =
+      input.quotaBytes !== undefined ? input.quotaBytes : family === "unlimited" ? null : current.quotaBytes;
     const terms = resolveTerms({
       family,
       quotaBytes,
-      nightOptions: input.nightOptions ?? (family === "limited" ? [] : current.nightOptions),
+      nightOptions: input.nightOptions ?? (family === "limited_night" ? current.nightOptions : []),
     });
     checkTerms(terms);
+    const endpointTier =
+      terms.family === "unlimited" ? "free-labs" : (input.endpointTier ?? ((before.endpoint_tier as string) || "free-labs"));
     const termsChanged =
       input.priceXaf !== undefined ||
       input.quotaBytes !== undefined ||
       input.family !== undefined ||
-      input.nightOptions !== undefined;
+      input.nightOptions !== undefined ||
+      (terms.family === "unlimited" && input.durationDays !== undefined);
 
     await db.tx(async (q) => {
       if (termsChanged) {
@@ -1220,6 +1228,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
           quotaBytes: terms.quotaBytes,
           priceXaf,
           nightOptions: terms.nightOptions,
+          family: terms.family,
+          durationDays,
         });
       }
       await q.query(

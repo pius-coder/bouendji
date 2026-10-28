@@ -214,7 +214,7 @@ class ApiClient(
     /** Inscription. Exige un appareil enrôlé (jeton + preuve). */
     suspend fun register(
         appId: String,
-        email: String,
+        email: String? = null,
         password: String,
         name: String,
         phone: String,
@@ -239,8 +239,8 @@ class ApiClient(
     }
 
     /** D53 : `appId` lève l'ambiguïté d'une même adresse sur deux marques. */
-    suspend fun login(appId: String, email: String, password: String): SessionResponse {
-        val body = json.encodeToString(LoginRequest.serializer(), LoginRequest(appId = appId, email = email, password = password))
+    suspend fun login(appId: String, identifier: String, password: String): SessionResponse {
+        val body = json.encodeToString(LoginRequest.serializer(), LoginRequest(appId = appId, identifier = identifier.trim(), password = password))
         val session = decode(authed("POST", ApiPaths.LOGIN, body, bearer = null), "connexion", SessionResponse.serializer())
         saveSession(session)
         return session
@@ -549,7 +549,8 @@ class ApiClient(
     @Serializable
     data class RegisterRequest(
         val appId: String,
-        val email: String,
+        val email: String? = null,
+        val phone: String? = null,
         val password: String,
         val name: String,
         /** D53 : obligatoire, normalisé côté serveur (8 à 15 chiffres, `+` optionnel). */
@@ -581,7 +582,7 @@ class ApiClient(
     data class TelemetryRequest(val usage: UsageDto? = null, val reports: List<ConfigReportDto>? = null)
 
     @Serializable
-    data class LoginRequest(val appId: String, val email: String, val password: String)
+    data class LoginRequest(val appId: String, val identifier: String? = null, val email: String? = null, val phone: String? = null, val password: String)
 
     @Serializable
     data class RefreshRequest(val refreshToken: String)
@@ -589,7 +590,8 @@ class ApiClient(
     @Serializable
     data class UserDto(
         val id: String,
-        val email: String,
+        val email: String? = null,
+        val phone: String? = null,
         val name: String,
         val locale: String = "fr",
         val emailVerified: Boolean = false,
@@ -702,6 +704,7 @@ class ApiClient(
         val custom: CustomTermsDto? = null,
     ) {
         val isCustom: Boolean get() = family == "custom" && custom != null
+        val isUnlimited: Boolean get() = family == "unlimited"
     }
 
     @Serializable

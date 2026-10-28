@@ -19,6 +19,7 @@ import cm.bouendji.vpn.vpn.ServerStatus
 import cm.bouendji.vpn.vpn.TunnelState
 import cm.bouendji.vpn.vpn.TunnelStateBus
 import cm.bouendji.vpn.vpn.VpnTunnelService
+import kotlinx.serialization.Serializable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -53,16 +54,20 @@ interface Platform {
 }
 
 /** Formulaire d'inscription du prototype : pays, nom, prénoms, WhatsApp, plus e-mail et mot de passe. */
+@Serializable
 data class AuthForm(
     val register: Boolean = true,
     val countryIndex: Int = 0,
-    val lastName: String = "",
-    val firstNames: String = "",
+    val fullName: String = "",
     val phone: String = "",
-    val email: String = "",
     val password: String = "",
     val referral: String = "",
-)
+    val lastName: String = "",
+    val firstNames: String = "",
+    val email: String = "",
+) {
+    val effectiveName: String get() = fullName.ifBlank { "$firstNames $lastName".trim() }
+}
 
 /** Pays proposés à l'inscription (prototype `COUNTRIES`), indicatif compris. */
 val COUNTRIES = listOf(
@@ -137,6 +142,7 @@ class AppController(
     var hasConfiguration by mutableStateOf(false); private set
 
     var busy by mutableStateOf(false); private set
+    var syncing by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null)
     var toast by mutableStateOf<String?>(null); private set
     var authForm by mutableStateOf(AuthForm())
@@ -173,6 +179,7 @@ class AppController(
 
     /** Montant affiché avant la commande ; le serveur refait le calcul et fait foi. */
     fun estimateXaf(plan: ApiClient.PlanDto): Int {
+        if (plan.isUnlimited) return plan.priceXaf
         val night = plan.nightOptions.firstOrNull { it.window == nightWindow }?.priceXaf ?: 0
         val choice = customChoice(plan)
         val base = if (choice != null) plan.custom!!.priceXaf(choice.gb, choice.days) else plan.priceXaf
@@ -208,7 +215,22 @@ class AppController(
                 dnsProtection = store.getString(VpnTunnelService.PREF_DNS_PROTECTION) != "0"
                 favorites = store.getString(KEY_FAVORITES).orEmpty().split(',').filter { it.isNotBlank() }.toSet()
                 preferredServer = store.getString(VpnTunnelService.PREF_SERVER) ?: ServerBus.AUTO
-                Pair(store.getString(KEY_ONBOARDED) == "1", runCatching { container.api.hasSession() }.getOrDefault(false))
+                val cachedMe = store.getString(KEY_CACHED_ME)
+                if (cachedMe != null) {
+                    runCatching {
+                        container.api.json.decodeFromString(ApiClient.MeResponse.serializer(), cachedMe)
+                    }.getOrNull()?.let { me = it }
+                }
+                val cachedPlans = store.getString(KEY_CACHED_PLANS)
+                if (cachedPlans != null) {
+                    runCatching {
+                        container.api.json.decodeFromString(
+                            kotlinx.serialization.builtins.ListSerializer(ApiClient.PlanDto.serializer()),
+                            cachedPlans
+                        )
+                    }.getOrNull()?.let { plans = it }
+                }
+                Pair(store.getString(KEY_ONBOARDED) == "1", runCatching { container.api.hasSession() }.getOrDefault(false) || me != null)
             }
             signedIn = restored.second
             // Fichier de secours reçu avant ou pendant le lancement : traité dès qu'il arrive.
@@ -239,16 +261,30 @@ class AppController(
     fun refreshAll(refreshOrder: Boolean = false) {
         scope.launch {
             busy = true
+            syncing = true
             runCatching {
                 withContext(Dispatchers.IO) {
-                    plans = container.api.plans(BrandTokens.appId).items
+                    syncPendingRegistration()
+                    runCatching {
+                        val fetchedPlans = container.api.plans(BrandTokens.appId).items
+                        if (fetchedPlans.isNotEmpty()) {
+                            plans = fetchedPlans
+                            store.putString(
+                                KEY_CACHED_PLANS,
+                                container.api.json.encodeToString(
+                                    kotlinx.serialization.builtins.ListSerializer(ApiClient.PlanDto.serializer()),
+                                    fetchedPlans
+                                )
+                            )
+                        }
+                    }
                     if (selectedPlanId == null) selectedPlanId = plans.firstOrNull { it.featured }?.id ?: plans.firstOrNull()?.id
                     if (signedIn) refreshPrivate()
                     if (refreshOrder) order = order?.let { container.api.order(it.orderId, true) }
                     if (order?.activationStatus == "active") refreshPrivate()
                 }
             }.onFailure { failure ->
-                if (failure is ApiException && failure.status == 401 && signedIn) {
+                if (failure is ApiException && failure.status == 401 && signedIn && store.getString(KEY_PENDING_REGISTRATION) == null) {
                     signedIn = false
                     screen = Screen.AUTH
                 } else if (!(failure is ApiException && (failure.isDeviceRevoked || failure.needsSubscription))) {
@@ -256,23 +292,48 @@ class AppController(
                 }
             }
             busy = false
+            syncing = false
         }
+    }
+
+    private suspend fun syncPendingRegistration() {
+        val pendingJson = store.getString(KEY_PENDING_REGISTRATION)?.takeIf { it.isNotBlank() } ?: return
+        val form = runCatching {
+            container.api.json.decodeFromString(AuthForm.serializer(), pendingJson)
+        }.getOrNull() ?: return
+        val (_, dial) = COUNTRIES[form.countryIndex.coerceIn(COUNTRIES.indices)]
+        val phone = "+$dial" + form.phone.filter(Char::isDigit).trimStart('0')
+        val api = container.api
+        if (container.deviceAuth.deviceToken() == null) api.enroll(android.os.Build.MODEL, BrandTokens.appVersion)
+        api.register(
+            appId = BrandTokens.appId,
+            password = form.password,
+            name = form.effectiveName,
+            phone = phone,
+            locale = BrandTokens.defaultLocale,
+            referralCode = form.referral,
+        )
+        store.putString(KEY_PENDING_REGISTRATION, "")
+        showToast("Compte synchronisé avec succès !")
     }
 
     private suspend fun refreshPrivate() {
         val api = container.api
         reportConsumedBundles()
-        me = api.me()
-        devices = api.devices().items
-        // Quota du forfait (R6/D127) ; une API plus ancienne n'a pas ces champs.
+        val freshMe = runCatching { api.me() }.getOrNull()
+        if (freshMe != null) {
+            me = freshMe
+            store.putString(KEY_CACHED_ME, container.api.json.encodeToString(ApiClient.MeResponse.serializer(), freshMe))
+        }
+        runCatching { devices = api.devices().items }
         quota = runCatching { api.subscription().entitlement }.getOrNull()
         if (me?.entitlement?.active == true) {
-            when (val bundle = api.fetchBundle()) {
+            when (val bundle = runCatching { api.fetchBundle() }.getOrNull()) {
                 is BundleFetch.Fresh -> {
-                    // D61 : un bundle vide n'écrase pas la liste locale.
                     if (bundle.payload.configs.isNotEmpty()) container.vault.save(bundle.payload)
                 }
                 BundleFetch.NotModified -> Unit
+                null -> Unit
             }
         }
         hasConfiguration = !container.vault.isEmpty()
@@ -300,34 +361,37 @@ class AppController(
     fun authenticate() {
         val form = authForm
         val (_, dial) = COUNTRIES[form.countryIndex.coerceIn(COUNTRIES.indices)]
+        val name = form.effectiveName
+        val phone = "+$dial" + form.phone.filter(Char::isDigit).trimStart('0')
+
         error = when {
-            form.register && form.lastName.isBlank() -> "Indique ton nom."
-            form.register && form.firstNames.isBlank() -> "Indique tes prénoms."
-            form.register && form.phone.filter(Char::isDigit).length < 6 -> "Numéro WhatsApp incomplet."
-            !form.email.contains('@') -> "Adresse e-mail invalide."
+            form.register && name.isBlank() -> "Indique ton nom."
+            form.phone.filter(Char::isDigit).length < 6 -> "Numéro de téléphone incomplet."
             form.password.length < 8 -> "Huit caractères minimum pour le mot de passe."
             else -> null
         }
         if (error != null) return
+
         scope.launch {
             busy = true
+            syncing = true
             runCatching {
                 withContext(Dispatchers.IO) {
                     val api = container.api
-                    if (container.deviceAuth.deviceToken() == null) api.enroll(android.os.Build.MODEL, BrandTokens.appVersion)
+                    if (container.deviceAuth.deviceToken() == null) {
+                        api.enroll(android.os.Build.MODEL, BrandTokens.appVersion)
+                    }
                     if (form.register) {
-                        val phone = "+$dial" + form.phone.filter(Char::isDigit).trimStart('0')
                         api.register(
-                            BrandTokens.appId,
-                            form.email.trim(),
-                            form.password,
-                            "${form.firstNames.trim()} ${form.lastName.trim()}",
-                            phone,
-                            BrandTokens.defaultLocale,
-                            form.referral,
+                            appId = BrandTokens.appId,
+                            password = form.password,
+                            name = name,
+                            phone = phone,
+                            locale = BrandTokens.defaultLocale,
+                            referralCode = form.referral,
                         )
                     } else {
-                        api.login(BrandTokens.appId, form.email.trim(), form.password)
+                        api.login(BrandTokens.appId, phone, form.password)
                     }
                 }
             }.onSuccess {
@@ -337,8 +401,37 @@ class AppController(
                 stack.clear()
                 screen = if (platform.needsVpnConsent()) Screen.VPN_AUTH else Screen.HOME
                 refreshAll()
-            }.onFailure { error = friendly(it) }
+            }.onFailure { ex ->
+                if (form.register && (ex is java.io.IOException || ex !is ApiException)) {
+                    val offlineUser = ApiClient.UserDto(
+                        id = "local-" + java.util.UUID.randomUUID().toString().take(8),
+                        email = "${phone.filter(Char::isDigit)}@${BrandTokens.appId}.bouendji.internal",
+                        name = name,
+                        phone = phone,
+                        locale = BrandTokens.defaultLocale,
+                    )
+                    val offlineMe = ApiClient.MeResponse(
+                        user = offlineUser,
+                        community = ApiClient.CommunityDto(id = "offline", name = BrandTokens.appName, slug = BrandTokens.appName.lowercase()),
+                        entitlement = ApiClient.EntitlementDto(active = false, state = "none", expiresAt = null, endpointTier = "free-labs"),
+                        roles = emptyList(),
+                    )
+                    me = offlineMe
+                    signedIn = true
+                    scope.launch(Dispatchers.IO) {
+                        store.putString(KEY_CACHED_ME, container.api.json.encodeToString(ApiClient.MeResponse.serializer(), offlineMe))
+                        store.putString(KEY_PENDING_REGISTRATION, container.api.json.encodeToString(AuthForm.serializer(), form))
+                    }
+                    authForm = authForm.copy(password = "")
+                    stack.clear()
+                    screen = Screen.HOME
+                    showToast("Compte créé en local. Synchronisation automatique dès connexion.")
+                } else {
+                    error = friendly(ex)
+                }
+            }
             busy = false
+            syncing = false
         }
     }
 
@@ -428,7 +521,7 @@ class AppController(
             val nodes = withContext(Dispatchers.IO) {
                 container.vault.read()?.let { SingBoxConfig.nodesOf(it) }.orEmpty()
             }
-            ServerBus.setServers(nodes.map { ServerStatus(it.configId, it.tag, it.label, it.region) })
+            ServerBus.setServers(nodes.map { ServerStatus(it.configId, it.tag, it.label, it.region, startsAt = it.startsAt, endpointTier = it.endpointTier) })
         }
     }
 
@@ -585,5 +678,8 @@ class AppController(
         const val KEY_AUTO_CONNECT = "ui.autoConnect"
         const val KEY_FAVORITES = "ui.favorites"
         const val KEY_ONBOARDED = "ui.onboarded"
+        const val KEY_CACHED_ME = "cache.me"
+        const val KEY_CACHED_PLANS = "cache.plans"
+        const val KEY_PENDING_REGISTRATION = "offline.pending_reg"
     }
 }

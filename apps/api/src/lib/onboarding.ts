@@ -73,6 +73,7 @@ export function slugFromName(name: string): string | null {
 export function packageNameForCommunity(communitySlug: string): string {
   let segment = communitySlug.replace(/-/g, "_");
   if (!/^[a-z]/.test(segment)) segment = `c${segment}`;
+  if (segment === "bouendji") return "com.bouendji.vpn";
   return `cm.${segment}.vpn`;
 }
 

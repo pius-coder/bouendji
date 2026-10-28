@@ -364,7 +364,7 @@ export function registerAdminOnboardingRoutes(app: FastifyInstance, db: Database
     // (paquet de référence) reste refusée à la modification, avec le champ nommé.
     const brand = validateBrandSpec({
       appName: input.name ?? (current.name as string),
-      packageName: current.package_name as string,
+      packageName: (current.package_name as string) === "cm.bouendji.vpn" ? "com.bouendji.vpn" : (current.package_name as string),
       theme: input.theme ?? (current.theme as string),
       supportUrl: input.supportUrl ?? (current.support_url as string | null) ?? "",
       accent: input.accent !== undefined ? input.accent : ((current.accent as string | null) ?? null),
@@ -376,9 +376,9 @@ export function registerAdminOnboardingRoutes(app: FastifyInstance, db: Database
     await db.tx(async (q) => {
       await q.query(
         `UPDATE apps SET name = $2, theme = $3, accent = $4, support_url = $5,
-                         support_email = $6, privacy_url = $7, terms_url = $8
+                         support_email = $6, privacy_url = $7, terms_url = $8, package_name = $9
           WHERE id = $1`,
-        [current.id, brand.appName, brand.theme, brand.accent, brand.supportUrl, supportEmail, privacyUrl, termsUrl],
+        [current.id, brand.appName, brand.theme, brand.accent, brand.supportUrl, supportEmail, privacyUrl, termsUrl, brand.packageName],
       );
       await appendAudit(q, admin, req, {
         action: "app.update",

@@ -56,6 +56,7 @@ import cm.bouendji.vpn.ui.kit.GroupHeader
 import cm.bouendji.vpn.ui.kit.Guil
 import cm.bouendji.vpn.ui.kit.Guilloche
 import cm.bouendji.vpn.ui.kit.Ic
+import cm.bouendji.vpn.ui.kit.Icon
 import cm.bouendji.vpn.ui.kit.LargeTitle
 import cm.bouendji.vpn.ui.kit.Lead
 import cm.bouendji.vpn.ui.kit.ListRow
@@ -123,12 +124,33 @@ fun PlansScreen(ctx: ShellContext) {
                     Segmented(TIER_ORDER.map(::tierLabel), tierIndex, { tierIndex = it })
                     GroupFooter(tierHint(TIER_ORDER[tierIndex]))
                 }
-                // D127 : l'offre sur mesure passe avant les billets classiques.
-                c.plans.firstOrNull { it.isCustom }?.let { custom ->
-                    GroupHeader("Compose ton forfait")
-                    CustomBuilder(c, custom, selected = custom.id == c.selectedPlan?.id) { c.selectedPlanId = custom.id }
+                // D132/D133 : l'offre illimitée est attachée au curseur ou proposée en cartes dédiées
+                val unlimitedPlans = c.plans.filter { it.isUnlimited }
+                val customPlan = c.plans.firstOrNull { it.isCustom }
+
+                if (customPlan != null) {
+                    GroupHeader("Compose ton forfait ou passe à l'illimité")
+                    CustomBuilder(
+                        c = c,
+                        plan = customPlan,
+                        unlimitedPlans = unlimitedPlans,
+                        selected = customPlan.id == c.selectedPlan?.id,
+                        onSelect = { c.selectedPlanId = customPlan.id },
+                    )
+                } else if (unlimitedPlans.isNotEmpty()) {
+                    GroupHeader("Forfaits illimités")
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        unlimitedPlans.forEach { plan ->
+                            UnlimitedCard(
+                                plan = plan,
+                                selected = plan.id == c.selectedPlan?.id,
+                                onSelect = { c.selectedPlanId = plan.id },
+                            )
+                        }
+                    }
                 }
-                val classic = c.plans.filter { !it.isCustom && (shownTier == null || it.endpointTier == shownTier) }
+
+                val classic = c.plans.filter { !it.isCustom && !it.isUnlimited && (shownTier == null || it.endpointTier == shownTier) }
                 if (classic.isNotEmpty() || c.plans.isEmpty()) GroupHeader("Choisis ton billet")
                 if (c.plans.isEmpty()) {
                     Group { T(if (c.busy) "Chargement des forfaits…" else "Aucun forfait disponible pour le moment.", color = t.label2, size = 15.sp, modifier = Modifier.padding(16.dp, 30.dp)) }
@@ -169,7 +191,13 @@ fun PlansScreen(ctx: ShellContext) {
  * Le prix affiché suit la formule du serveur ; la commande le recalcule et fait foi.
  */
 @Composable
-private fun CustomBuilder(c: AppController, plan: ApiClient.PlanDto, selected: Boolean, onSelect: () -> Unit) {
+private fun CustomBuilder(
+    c: AppController,
+    plan: ApiClient.PlanDto,
+    unlimitedPlans: List<ApiClient.PlanDto> = emptyList(),
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
     val t = LocalTokens.current
     val terms = plan.custom ?: return
     val choice = c.customChoice(plan) ?: return
@@ -222,6 +250,68 @@ private fun CustomBuilder(c: AppController, plan: ApiClient.PlanDto, selected: B
                 size = 12.sp,
             )
             if (plan.deviceLimit > 1) T("Jusqu'à ${plan.deviceLimit} appareils.", color = t.label3, size = 12.sp)
+        }
+
+        // D133 : Cartes des forfaits illimités attachées au curseur
+        if (unlimitedPlans.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Divider(16.dp)
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                T("Ou choisis une formule illimitée :", color = t.label2, size = 13.sp, weight = FontWeight.Medium)
+                unlimitedPlans.forEach { unlim ->
+                    val isUnlimSelected = unlim.id == c.selectedPlan?.id
+                    UnlimitedCard(
+                        plan = unlim,
+                        selected = isUnlimSelected,
+                        onSelect = { c.selectedPlanId = unlim.id },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UnlimitedCard(plan: ApiClient.PlanDto, selected: Boolean, onSelect: () -> Unit) {
+    val t = LocalTokens.current
+    val shape = cm.bouendji.vpn.ui.kit.cardShape()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .then(if (t.dark) Modifier else Modifier.shadow(2.dp, shape))
+            .clip(shape)
+            .background(if (selected) t.accentSoft else t.surface)
+            .border(if (selected) 2.dp else 1.dp, if (selected) t.accent else t.separator, shape)
+            .clickable(role = Role.RadioButton, onClick = onSelect)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(if (selected) t.accent else t.accentSoft),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Ic.Infinity, if (selected) t.accentText else t.accent, size = 20.dp)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                T(plan.name, size = 16.sp, weight = FontWeight.SemiBold, color = t.ink)
+                plan.badge?.let { b ->
+                    Box(
+                        Modifier.clip(RoundedCornerShape(4.dp)).background(t.accentSoft).padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        T(b, size = 11.sp, weight = FontWeight.SemiBold, color = t.accentText)
+                    }
+                }
+            }
+            T("${durationLabel(plan.durationDays)} · Data illimitée", size = 13.sp, color = t.label2)
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            T(fcfa(plan.priceXaf), size = 20.sp, weight = FontWeight.Bold, family = Fonts.display, color = t.ink)
+            T("FCFA", size = 11.sp, family = Fonts.mono, color = t.label3)
         }
     }
 }

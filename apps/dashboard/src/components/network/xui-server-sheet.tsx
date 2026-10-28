@@ -11,6 +11,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
+import { useInvalidateAdmin } from "@/hooks/use-admin-query";
 import { createXuiServerAction, testXuiServerAction } from "@/server/actions/network.action";
 import { xuiServerFormSchema, type XuiServerFormValues } from "@/server/services/network/xui.schema";
 
@@ -33,11 +34,13 @@ const EMPTY: XuiServerFormValues = {
 /** Ajout d'un panneau 3x-ui. Le jeton est saisi ici par l'owner, scellé par l'API et jamais réaffiché. */
 export function XuiServerSheet() {
   const [open, setOpen] = useState(false);
+  const invalidate = useInvalidateAdmin();
   const form = useForm<XuiServerFormValues>({ resolver: zodResolver(xuiServerFormSchema), defaultValues: EMPTY });
 
   async function submit(values: XuiServerFormValues) {
     const result = await createXuiServerAction(values);
     if (result.ok) {
+      await invalidate("/v1/admin/xui-servers");
       toast.success("Serveur 3x-ui ajouté. Lancez « Tester » pour vérifier la connexion.");
       form.reset(EMPTY);
       setOpen(false);

@@ -55,6 +55,19 @@ import cm.bouendji.vpn.vpn.ServerBus
 import cm.bouendji.vpn.vpn.ServerStatus
 import cm.bouendji.vpn.vpn.TunnelState
 
+/** Heure de Douala (UTC+1, pas d'heure d'été) pour activer les serveurs de nuit (D136). */
+fun isDoualaNight(window: String?): Boolean {
+    if (window == null) return false
+    val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("GMT+1"))
+    val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
+    return when (window) {
+        "20-24" -> hour in 20..23
+        "24-04" -> hour in 0..3
+        "20-04" -> hour >= 20 || hour < 4
+        else -> false
+    }
+}
+
 @Composable
 fun ServersScreen(ctx: ShellContext) {
     val c = ctx.c
@@ -67,7 +80,19 @@ fun ServersScreen(ctx: ShellContext) {
     val testing = c.directTesting || servers.any { it.probe == ProbeState.TESTING }
     val running = ctx.tunnel != TunnelState.STOPPED
 
+    val entitlement = c.me?.entitlement
+    val userTier = entitlement?.endpointTier ?: "free-labs"
+    val isNightActive = isDoualaNight(c.quota?.nightWindow)
+
     val visible = servers
+        .filter { s ->
+            // D136 : filtrage dynamique conditionné par la formule souscrite
+            if (userTier == "free-labs") {
+                s.endpointTier == "free-labs"
+            } else {
+                s.endpointTier == "paid-gcp" || (s.startsAt != null && isNightActive)
+            }
+        }
         .filter { s ->
             query.isBlank() ||
                 s.label.contains(query, ignoreCase = true) ||
@@ -116,21 +141,43 @@ fun ServersScreen(ctx: ShellContext) {
                 height = 34.dp,
             )
 
-            if (servers.isEmpty()) {
+            if (!c.accessActive) {
                 Spacer(Modifier.height(18.dp))
                 Group {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 30.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        Modifier.padding(horizontal = 20.dp, vertical = 30.dp).fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(Ic.Lock, t.accent, size = 36.dp)
+                        Spacer(Modifier.height(12.dp))
+                        T("Aucun forfait actif", size = 18.sp, weight = androidx.compose.ui.text.font.FontWeight.Bold, color = t.ink)
+                        Spacer(Modifier.height(6.dp))
+                        T(
+                            "Choisis un forfait pour débloquer l'accès aux serveurs et te connecter.",
+                            color = t.label2,
+                            size = 14.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Btn("Voir les forfaits", { c.go(Screen.PLANS) }, kind = BtnKind.PRIMARY, height = 42.dp)
+                    }
+                }
+                return@ScreenColumn
+            }
+
+            if (servers.isEmpty() || visible.isEmpty()) {
+                Spacer(Modifier.height(18.dp))
+                Group {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 30.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Ic.Globe, t.label3, size = 30.dp)
                         Spacer(Modifier.height(10.dp))
                         T(
-                            if (c.accessActive) "La liste des serveurs arrive avec ta configuration." else "Active un forfait pour recevoir tes serveurs.",
+                            if (servers.isEmpty()) "La liste des serveurs arrive avec ta configuration."
+                            else "Aucun serveur disponible pour les critères choisis.",
                             color = t.label2,
                             size = 15.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
-                        if (!c.accessActive) {
-                            Spacer(Modifier.height(14.dp))
-                            Btn("Voir les forfaits", { c.go(Screen.PLANS) }, kind = BtnKind.TINTED, height = 40.dp)
-                        }
                     }
                 }
                 return@ScreenColumn

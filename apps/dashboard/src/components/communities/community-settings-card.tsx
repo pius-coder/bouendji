@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { useInvalidateAdmin } from "@/hooks/use-admin-query";
 import { formatBps } from "@/lib/format";
 import { updateCommunityAction } from "@/server/actions/communities.action";
 import type { Community } from "@/server/services/communities/communities.schema";
@@ -19,6 +20,7 @@ export function CommunitySettingsCard({
   community: Community;
   isOwner?: boolean;
 }) {
+  const invalidate = useInvalidateAdmin();
   const [pending, startTransition] = React.useTransition();
   const [name, setName] = React.useState(community.name);
   const [whatsappGroupUrl, setWhatsappGroupUrl] = React.useState(community.whatsappGroupUrl ?? "");
@@ -57,6 +59,7 @@ export function CommunitySettingsCard({
       const res = await updateCommunityAction(community.id, payload);
       if (res.ok) {
         toast.success("Réglages de la communauté enregistrés.");
+        await invalidate("/v1/admin/communities");
       } else {
         toast.error(res.message);
       }

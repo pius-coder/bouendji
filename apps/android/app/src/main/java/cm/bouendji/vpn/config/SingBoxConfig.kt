@@ -34,6 +34,8 @@ data class BundleConfig(
     val expiresAt: String,
     val region: String = "",
     val maxSessionSeconds: Int = DEFAULT_MAX_SESSION_SECONDS,
+    val startsAt: String? = null,
+    val endpointTier: String? = null,
 ) {
     override fun toString(): String =
         "BundleConfig(id=$id, label=$label, region=$region, expiresAt=$expiresAt, uri=<masqué>)"
@@ -138,6 +140,8 @@ object SingBoxConfig {
         val region: String,
         val host: String,
         val port: Int,
+        val startsAt: String? = null,
+        val endpointTier: String = "free-labs",
     ) {
         override fun toString(): String = "PlanNode(tag=$tag, configId=$configId, label=$label, region=$region)"
     }
@@ -380,7 +384,8 @@ object SingBoxConfig {
      */
     fun nodesOf(payload: BundlePayload, nowMs: Long = System.currentTimeMillis()): List<PlanNode> =
         usableConfigs(payload, nowMs).mapIndexed { index, (config, endpoint, _) ->
-            PlanNode("$NODE_PREFIX${index + 1}", config.id, config.label, config.region, endpoint.host, endpoint.port)
+            val tier = config.endpointTier ?: if (config.id.startsWith("xui-")) "paid-gcp" else "free-labs"
+            PlanNode("$NODE_PREFIX${index + 1}", config.id, config.label, config.region, endpoint.host, endpoint.port, config.startsAt, tier)
         }
 
     private fun usableConfigs(payload: BundlePayload, nowMs: Long): List<Triple<BundleConfig, VlessEndpoint, Long>> =

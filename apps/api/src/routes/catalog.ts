@@ -58,7 +58,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: Database): void 
           sortOrder: Number(row.sort_order),
           /** D45 : `free-labs` = illimité (Cloud Run), `paid-gcp` = limité (3x-ui, quota). */
           endpointTier: row.endpoint_tier === "paid-gcp" ? "paid-gcp" : "free-labs",
-          /** D115 : `limited` ou `limited_night`. */
+          /** D115/D132 : `limited`, `limited_night`, `unlimited` (durée seule, prix propre) ou `custom`. */
           family: terms.family,
           /** Octets. `null` : offre sans quota (ancien comportement). */
           quotaBytes: terms.quotaBytes,

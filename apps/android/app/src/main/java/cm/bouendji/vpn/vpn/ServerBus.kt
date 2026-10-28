@@ -24,6 +24,8 @@ data class ServerStatus(
     val latencyMs: Int? = null,
     val probe: ProbeState = ProbeState.UNKNOWN,
     val method: ProbeMethod? = null,
+    val startsAt: String? = null,
+    val endpointTier: String = "free-labs",
 )
 
 /** Débit cumulé du tunnel, lu dans l'API de contrôle de sing-box. */

@@ -10,6 +10,7 @@ import {
   baseFloorXaf,
   breakdownBasePrice,
   nightOptionFloorXaf,
+  unlimitedFloorXaf,
   type NightWindow,
   type PricingSettings,
 } from "@/server/services/pricing/pricing.schema";
@@ -30,6 +31,8 @@ export function PriceIndicator({
   priceXaf,
   commissionBps,
   pricing,
+  isUnlimited = false,
+  durationDays = 1,
   hasNightOption = false,
   nightWindowHours = "20-04",
   nightPriceXaf,
@@ -41,6 +44,8 @@ export function PriceIndicator({
   priceXaf: number;
   commissionBps: number;
   pricing: PricingSettings;
+  isUnlimited?: boolean;
+  durationDays?: number;
   hasNightOption?: boolean;
   nightWindowHours?: string;
   nightPriceXaf?: number;
@@ -51,15 +56,32 @@ export function PriceIndicator({
   const safeQuota = Number.isFinite(quotaGb) && quotaGb > 0 ? quotaGb : 0;
   const safePrice = Number.isFinite(priceXaf) && priceXaf >= 0 ? priceXaf : 0;
   const quotaBytes = Math.round(safeQuota * BYTES_PER_GB);
-  const floorXaf = baseFloorXaf(quotaBytes, pricing) ?? 0;
-  const breakdown = breakdownBasePrice(safeQuota, safePrice, pricing) ?? {
-    costXaf: 0,
-    platformMarginXaf: 0,
-    floorXaf,
-    priceXaf: safePrice,
-    aboveFloor: safePrice >= floorXaf,
-    gainXaf: Math.max(0, safePrice - floorXaf),
-  };
+  const floorXaf = isUnlimited
+    ? (unlimitedFloorXaf(durationDays, pricing) ?? 0)
+    : (baseFloorXaf(quotaBytes, pricing) ?? 0);
+
+  const breakdown = isUnlimited
+    ? (() => {
+        const costXaf = (pricing.unlimitedCostPerDayXaf ?? 0) * durationDays;
+        const platformMarginXaf = Math.max(0, floorXaf - costXaf);
+        const gainXaf = Math.max(0, safePrice - floorXaf);
+        return {
+          costXaf,
+          platformMarginXaf,
+          floorXaf,
+          priceXaf: safePrice,
+          aboveFloor: safePrice >= floorXaf,
+          gainXaf,
+        };
+      })()
+    : (breakdownBasePrice(safeQuota, safePrice, pricing) ?? {
+        costXaf: 0,
+        platformMarginXaf: 0,
+        floorXaf,
+        priceXaf: safePrice,
+        aboveFloor: safePrice >= floorXaf,
+        gainXaf: Math.max(0, safePrice - floorXaf),
+      });
   const belowFloor = !breakdown.aboveFloor;
   const totalBase = Math.max(1, safePrice, floorXaf);
   const serverPct = Math.min(100, Math.round((breakdown.costXaf / totalBase) * 100));
@@ -83,8 +105,9 @@ export function PriceIndicator({
               </span>
             </TooltipTrigger>
             <TooltipContent>
-              Prix minimum qui couvre l&apos;infrastructure ({formatXaf(pricing.costPerGbXaf ?? 0)}/Go) et la marge plateforme (
-              {((pricing.platformMarginBps ?? 0) / 100).toFixed(0)} %).
+              {isUnlimited
+                ? `Prix minimum qui couvre l'infrastructure (${formatXaf(pricing.unlimitedCostPerDayXaf ?? 0)}/j) et la marge plateforme (${(((pricing.platformMarginBps ?? 0) / 100)).toFixed(0)} %).`
+                : `Prix minimum qui couvre l'infrastructure (${formatXaf(pricing.costPerGbXaf ?? 0)}/Go) et la marge plateforme (${(((pricing.platformMarginBps ?? 0) / 100)).toFixed(0)} %).`}
             </TooltipContent>
           </Tooltip>
         </div>

@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { PencilIcon, PlusIcon } from "@/components/common/icon-compat";
 import { PriceIndicator } from "@/components/common/price-indicator";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,8 +18,6 @@ import { formatXaf } from "@/lib/format";
 import { createPlanAction, updatePlanAction } from "@/server/actions/plans.action";
 import {
   BYTES_PER_GB,
-  ENDPOINT_TIER_LABEL,
-  type EndpointTier,
   NIGHT_WINDOW_LABEL,
   NIGHT_WINDOWS,
   planFormSchema,
@@ -36,13 +34,9 @@ const DURATION_PRESETS = [1, 7, 15, 30, 60, 90] as const;
 const QUOTA_PRESETS = [5, 10, 20, 50] as const;
 /** Badges proposés d'un clic ; « Aucun » vide le champ. */
 const BADGE_PRESETS = ["Populaire", "Nouveau", "Meilleur prix"] as const;
-const TIER_OPTIONS = (["free-labs", "paid-gcp"] as const).map((value) => ({ value, label: ENDPOINT_TIER_LABEL[value] }));
-const TIER_HINT: Record<EndpointTier, string> = {
-  "free-labs": "Serveurs gratuits partagés, sans limite de données.",
-  "paid-gcp": "Serveurs payants dédiés à l'abonné, avec un quota de données.",
-};
 const FAMILY_OPTIONS = [
   { value: "limited", label: "Limité" },
+  { value: "unlimited", label: "Illimité sur durée" },
   { value: "limited_night", label: "Limité + nuit" },
 ] as const;
 
@@ -87,7 +81,7 @@ function initialValues(props: Props): PlanFormValues {
     sortOrder: "0",
     featured: false,
     active: true,
-    endpointTier: "free-labs",
+    endpointTier: "paid-gcp",
     nightPrices: { "20-24": "", "24-04": "", "20-04": "" },
     nightActive: { "20-24": true, "24-04": true, "20-04": true },
   };
@@ -175,6 +169,18 @@ export function PlanSheet(props: Props) {
   const nightCount = NIGHT_WINDOWS.filter((w) => values.nightPrices?.[w]).length;
   const commissionBps = props.commissionBps ?? 1500;
 
+  useEffect(() => {
+    if (family === "unlimited") {
+      if (form.getValues("endpointTier") !== "free-labs") {
+        form.setValue("endpointTier", "free-labs", { shouldDirty: true });
+      }
+    } else {
+      if (form.getValues("endpointTier") !== "paid-gcp") {
+        form.setValue("endpointTier", "paid-gcp", { shouldDirty: true });
+      }
+    }
+  }, [family, form]);
+
   const title = editing
     ? `Modifier « ${props.plan.name} »`
     : duplicating
@@ -257,14 +263,18 @@ export function PlanSheet(props: Props) {
               control={form.control}
               render={({ field }) => (
                 <>
-                  <SegmentedControl<"limited" | "limited_night">
+                  <SegmentedControl<"limited" | "unlimited" | "limited_night">
                     label="Famille du forfait"
                     options={FAMILY_OPTIONS}
                     value={field.value}
                     onValueChange={field.onChange}
                   />
                   <FieldDescription>
-                    {field.value === "limited_night" ? "Quota de données, plus des plages de nuit à prix propre." : "Quota de données, sans plage de nuit."}
+                    {field.value === "unlimited"
+                      ? "Data illimitée sur une durée en jours (serveurs partagés, sans quota)."
+                      : field.value === "limited_night"
+                        ? "Quota de données, plus des plages de nuit à prix propre."
+                        : "Quota de données, sans plage de nuit."}
                   </FieldDescription>
                 </>
               )}
@@ -272,44 +282,46 @@ export function PlanSheet(props: Props) {
           </section>
 
           {/* 2. Quota */}
-          <section className="flex flex-col gap-2">
-            <h3 className="text-subhead font-semibold">2. Quota de données</h3>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Quotas courants">
-              {QUOTA_PRESETS.map((g) => (
-                <Button
-                  key={g}
-                  type="button"
-                  size="sm"
-                  variant={quota === g ? "default" : "outline"}
-                  aria-pressed={quota === g}
-                  onClick={() => form.setValue("quotaGb", String(g), { shouldDirty: true, shouldValidate: true })}
-                  className="min-h-11 min-w-16 sm:min-h-8"
-                >
-                  {g} Go
-                </Button>
-              ))}
-            </div>
-            <Controller
-              name="quotaGb"
-              control={form.control}
-              render={({ field, fieldState }) => (
-                <Field data-invalid={fieldState.invalid}>
-                  <div className="flex items-center gap-2">
-                    <Button type="button" variant="outline" className="size-11" aria-label="Un Go de moins" onClick={() => bump("quotaGb", -1, 1, 10_000)}>
-                      −
-                    </Button>
-                    <Input {...field} id="plan-quotaGb" aria-label="Quota en Go" inputMode="numeric" className="h-11 text-center" aria-invalid={fieldState.invalid} />
-                    <Button type="button" variant="outline" className="size-11" aria-label="Un Go de plus" onClick={() => bump("quotaGb", 1, 1, 10_000)}>
-                      +
-                    </Button>
-                    <span className="text-subhead text-muted-foreground">Go</span>
-                  </div>
-                  <FieldDescription>Volume de données inclus, en Go.</FieldDescription>
-                  {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
-                </Field>
-              )}
-            />
-          </section>
+          {family !== "unlimited" ? (
+            <section className="flex flex-col gap-2">
+              <h3 className="text-subhead font-semibold">2. Quota de données</h3>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Quotas courants">
+                {QUOTA_PRESETS.map((g) => (
+                  <Button
+                    key={g}
+                    type="button"
+                    size="sm"
+                    variant={quota === g ? "default" : "outline"}
+                    aria-pressed={quota === g}
+                    onClick={() => form.setValue("quotaGb", String(g), { shouldDirty: true, shouldValidate: true })}
+                    className="min-h-11 min-w-16 sm:min-h-8"
+                  >
+                    {g} Go
+                  </Button>
+                ))}
+              </div>
+              <Controller
+                name="quotaGb"
+                control={form.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" variant="outline" className="size-11" aria-label="Un Go de moins" onClick={() => bump("quotaGb", -1, 1, 10_000)}>
+                        −
+                      </Button>
+                      <Input {...field} id="plan-quotaGb" aria-label="Quota en Go" inputMode="numeric" className="h-11 text-center" aria-invalid={fieldState.invalid} />
+                      <Button type="button" variant="outline" className="size-11" aria-label="Un Go de plus" onClick={() => bump("quotaGb", 1, 1, 10_000)}>
+                        +
+                      </Button>
+                      <span className="text-subhead text-muted-foreground">Go</span>
+                    </div>
+                    <FieldDescription>Volume de données inclus, en Go.</FieldDescription>
+                    {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
+                  </Field>
+                )}
+              />
+            </section>
+          ) : null}
 
           {/* 3. Durée */}
           <section className="flex flex-col gap-2">
@@ -379,6 +391,8 @@ export function PlanSheet(props: Props) {
                 priceXaf={hasPrice ? priceNumber : 0}
                 commissionBps={commissionBps}
                 pricing={props.pricing}
+                isUnlimited={family === "unlimited"}
+                durationDays={days || 1}
                 onUseFloor={(floor) =>
                   form.setValue("priceXaf", String(floor), { shouldDirty: true, shouldValidate: true })
                 }
@@ -483,16 +497,33 @@ export function PlanSheet(props: Props) {
             />
           </section>
 
-          {/* Serveurs et options */}
+          {/* Serveurs conditionnés par la famille (D135) et options */}
           <section className="flex flex-col gap-3 rounded-xl border border-border p-4">
             <Controller
               name="endpointTier"
               control={form.control}
-              render={({ field }) => (
+              render={() => (
                 <div className="flex flex-col gap-2">
-                  <span className="text-subhead">Serveurs</span>
-                  <SegmentedControl<EndpointTier> label="Serveurs du forfait" options={TIER_OPTIONS} value={field.value} onValueChange={field.onChange} />
-                  <FieldDescription>{TIER_HINT[field.value]}</FieldDescription>
+                  <span className="text-subhead font-medium">Serveurs</span>
+                  <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-footnote">
+                    <span className="font-semibold text-foreground">
+                      {family === "unlimited"
+                        ? "Serveurs Illimités (free-labs)"
+                        : family === "limited_night"
+                          ? "Limité le jour (paid-gcp) + Illimité la nuit (free-labs)"
+                          : "Serveurs Limités (paid-gcp)"}
+                    </span>
+                    <span className="rounded bg-accent/15 px-2 py-0.5 text-caption font-medium text-accent">
+                      {family === "unlimited" ? "Illimité" : "Limité"}
+                    </span>
+                  </div>
+                  <FieldDescription>
+                    {family === "unlimited"
+                      ? "Serveurs partagés sans quota de données, assignés automatiquement à l'offre illimitée."
+                      : family === "limited_night"
+                        ? "Serveurs dédiés avec quota en journée, complétés par les serveurs illimités activés sur la plage horaire nocturne."
+                        : "Serveurs dédiés à l'abonné avec suivi strict du quota de données."}
+                  </FieldDescription>
                 </div>
               )}
             />
@@ -560,11 +591,21 @@ export function PlanSheet(props: Props) {
           <div className="rounded-xl bg-muted/40 p-4 text-footnote" aria-live="polite">
             <p className="font-semibold text-foreground">{values.name || "Sans nom"}</p>
             <p className="text-muted-foreground">
-              {family === "limited_night" ? "Limité + nuit" : "Limité"} · {quota || "—"} Go · {days || "—"} {days > 1 ? "jours" : "jour"} · {values.deviceLimit || 1}{" "}
+              {family === "unlimited"
+                ? "Illimité"
+                : family === "limited_night"
+                  ? "Limité + nuit"
+                  : "Limité"}{" "}
+              · {family === "unlimited" ? "Data illimitée" : `${quota || "—"} Go`} · {days || "—"}{" "}
+              {days > 1 ? "jours" : "jour"} · {values.deviceLimit || 1}{" "}
               {Number(values.deviceLimit) > 1 ? "appareils" : "appareil"}
               {hasPrice ? ` · ${formatXaf(priceNumber)}` : ""}
             </p>
-            <p className="text-muted-foreground">Quota exact : {quota ? `${(quota * BYTES_PER_GB).toLocaleString("fr-FR")} octets` : "—"}</p>
+            {family !== "unlimited" ? (
+              <p className="text-muted-foreground">
+                Quota exact : {quota ? `${(quota * BYTES_PER_GB).toLocaleString("fr-FR")} octets` : "—"}
+              </p>
+            ) : null}
           </div>
 
           <SheetFooter className="px-0">

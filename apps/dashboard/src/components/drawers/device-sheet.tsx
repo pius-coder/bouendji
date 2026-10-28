@@ -11,6 +11,7 @@ import { OfflineStatusBadge } from "@/components/offline/offline-status-badge";
 import { offlineFileStatus, shortId } from "@/components/offline/offline-status";
 import { ConfirmDialog } from "@/components/page/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { useInvalidateAdmin } from "@/hooks/use-admin-query";
 import { formatDateTime, NO_VALUE } from "@/lib/format";
 import { revokeDeviceAction } from "@/server/actions/devices.action";
 import type { DeviceDetail, OfflineBundleState } from "@/server/services/devices/devices.schema";
@@ -35,6 +36,7 @@ export function DeviceSheetBody({
   caps: DeviceSheetCaps;
 }) {
   const { reports24h } = detail;
+  const invalidate = useInvalidateAdmin();
   const [showOffline, setShowOffline] = React.useState(false);
   const [revokeOpen, setRevokeOpen] = React.useState(false);
   const [pending, startTransition] = React.useTransition();
@@ -54,6 +56,7 @@ export function DeviceSheetBody({
         const n = result.data.sessionsRevoked;
         toast.success(`Appareil révoqué · ${n} session${n > 1 ? "s" : ""} fermée${n > 1 ? "s" : ""}`);
         setRevokeOpen(false);
+        await invalidate(["/v1/admin/devices", "/v1/admin/users"]);
       } else {
         toast.error(result.message);
       }

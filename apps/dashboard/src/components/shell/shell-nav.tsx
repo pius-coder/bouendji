@@ -4,26 +4,26 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/common/icon";
 import { RoleGuideSheet, type GuideRoleKey } from "@/components/guide/role-guide";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { platformRolesOf, ROLE_LABEL, roleIn } from "@/lib/roles";
+import { platformRolesOf, roleIn } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import type { AdminMe } from "@/server/services/admin-auth/admin-auth.schema";
 import { BottomBar } from "./bottom-bar";
 import { triggerCommandPalette } from "./command-palette";
 import { CommunitySwitcher, type CommunityOption } from "./community-switcher";
 import { NavGlyph } from "./nav-icon";
-import { allSections, buildNav, resolveSection, type NavSection } from "./nav-model";
+import { allSections, buildNav, isActivePath, resolveSection } from "./nav-model";
 import { useActiveCommunityId } from "./use-active-community";
 import { UserMenu } from "./user-menu";
 
+/**
+ * Navigation du shell (D106) : architecture conservée — rail de sections,
+ * sous-menu, bande de section ; mobile : puces de section, barre basse.
+ * Rendu Chariow (D108) : posé sur le fond gris, sans bordure ; l'actif = fond
+ * gris `#e5e7e8` + icône pleine dans la couleur du thème (là où Chariow met son jaune).
+ * Client uniquement pour lire l'URL (`usePathname`, `useParams`) : les données
+ * arrivent en props depuis les blocs serveur de `shell-nav-section.tsx`.
+ */
 interface ShellNavProps {
   me: AdminMe;
   communities: readonly CommunityOption[];
@@ -42,216 +42,204 @@ function resolveGuideRole(me: AdminMe, activeId: string | null): GuideRoleKey {
 function useShellNav({ me, communities }: ShellNavProps) {
   const pathname = usePathname();
   const activeId = useActiveCommunityId(communities.map((c) => c.id));
-  const activeCommunity = communities.find((c) => c.id === activeId) ?? communities[0] ?? null;
   const nav = buildNav(me, activeId);
   const sections = allSections(nav);
   const { section, item } = resolveSection(sections, pathname);
   const role = roleIn(me, activeId);
   const guideRole = resolveGuideRole(me, activeId);
-  return { pathname, activeId, activeCommunity, nav, sections, section, item, role, guideRole };
+  return { pathname, activeId, nav, sections, section, item, role, guideRole };
 }
 
-/**
- * Barre latérale unique (Refonte v2, ≥ 1024 px) :
- * - Une seule entrée par sujet (Accueil, Abonnés, Offres, Argent, Communauté ;
- *   groupe Plateforme & Réseau pour l'owner / membre Réseau).
- * - Les sous-vues vivent dans les onglets horizontaux (`PageTabs`) de chaque page sujet,
- *   jamais dans un second sous-menu latéral.
- */
+/** Barre latérale unique (≥ 1024 px) : logo, sélecteur de communauté, 5 sections (ou avec groupe plateforme pour l'owner), compte en bas. */
 export function ShellSidebar(props: ShellNavProps) {
-  const { pathname, activeId, sections, section, role } = useShellNav(props);
-  const communitySections = sections.filter(
-    (s) => s.key === "accueil" || s.key === "abonnes" || s.key === "offres" || s.key === "argent" || s.key === "communaute",
-  );
+  const { activeId, sections, section, role } = useShellNav(props);
+  const platform = platformRolesOf(props.me);
+  const isOwner = platform.includes("owner");
+
+  const communitySections = sections.filter((s) => s.key !== "plateforme" && s.key !== "reseau");
   const platformSections = sections.filter((s) => s.key === "plateforme" || s.key === "reseau");
-  const isOnboarding = pathname.startsWith("/onboarding");
 
   return (
-    <aside
-      aria-label="Navigation principale"
-      className="hidden h-full w-64 shrink-0 flex-col justify-between gap-4 border-e border-separator/60 px-3.5 py-4 lg:flex"
-    >
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-        {/* Identité Bouendji */}
-        <div className="flex items-center justify-between gap-2 px-1">
+    <aside aria-label="Navigation principale" className="hidden h-full w-60 shrink-0 flex-col gap-3 py-3 ps-3 pe-2 lg:flex">
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center gap-2.5 px-2">
           <Link
             href="/"
-            className="flex items-center gap-2.5 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Accueil de la console"
+            className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-xs">
-              <NavGlyph name="shield" className="size-5" active />
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-subhead font-bold tracking-tight text-foreground">
-                Bouendji
-              </p>
-              <p className="truncate text-caption text-muted-foreground">
-                {role ? ROLE_LABEL[role] : "Console Admin"}
-              </p>
-            </div>
+            <NavGlyph name="shield" className="size-5" active />
           </Link>
+          <div className="min-w-0 flex-1">
+            <span className="block truncate text-subhead font-bold tracking-tight text-foreground">Bouendji</span>
+            <span className="block truncate text-caption-2 text-muted-foreground">Console d&apos;administration</span>
+          </div>
         </div>
-
-        {/* Sélecteur de communauté */}
-        {props.communities.length > 0 ? (
-          <CommunitySwitcher communities={props.communities} activeId={activeId} role={role} />
-        ) : null}
-
-        {/* Groupe Sujets Communauté */}
-        {communitySections.length > 0 ? (
-          <nav aria-label="Sujets de la communauté" className="flex flex-col gap-1">
-            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Espace communauté
-            </p>
-            {communitySections.map((s) => (
-              <SidebarSubjectLink
-                key={s.key}
-                section={s}
-                active={!isOnboarding && s.key === section?.key}
-              />
-            ))}
-          </nav>
-        ) : null}
-
-        {/* Groupe Plateforme & Réseau */}
-        {platformSections.length > 0 ? (
-          <nav aria-label="Plateforme et exploitation" className="flex flex-col gap-1">
-            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Plateforme & Réseau
-            </p>
-            {platformSections.map((s) => (
-              <SidebarSubjectLink
-                key={s.key}
-                section={s}
-                active={!isOnboarding && s.key === section?.key}
-              />
-            ))}
-          </nav>
-        ) : null}
-
-        {/* Accès direct à l'assistant de configuration 6 étapes */}
-        <div className="mt-auto pt-2">
-          <Link
-            href="/onboarding"
-            aria-current={isOnboarding ? "page" : undefined}
-            className={cn(
-              "flex items-center gap-3 rounded-xl border px-3 py-2.5 text-subhead transition-colors",
-              isOnboarding
-                ? "border-foreground bg-foreground text-background font-semibold"
-                : "border-separator bg-surface/70 text-foreground hover:bg-group-strong",
-            )}
-          >
-            <Icon name="tag" className="size-4 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-footnote font-semibold">Assistant 6 étapes</p>
-              <p className={cn("truncate text-[11px]", isOnboarding ? "text-background/80" : "text-muted-foreground")}>
-                Marque, thème, forfaits & APK
-              </p>
-            </div>
-          </Link>
-        </div>
+        <CommunitySwitcher communities={props.communities} activeId={activeId} role={role} />
       </div>
 
-      {/* Compte en bas */}
-      <div className="border-t border-separator/60 pt-3">
-        <div className="flex items-center justify-between gap-2 px-1">
-          <UserMenu name={props.me.name} email={props.me.email} side="right" />
-          <Link
-            href="/compte"
-            className="min-w-0 flex-1 truncate text-start text-footnote font-medium text-muted-foreground hover:text-foreground"
-          >
-            <p className="truncate font-semibold text-foreground">{props.me.name || "Mon compte"}</p>
-            <p className="truncate text-caption text-muted-foreground">Profil, sécurité & sessions</p>
-          </Link>
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto pe-1">
+        <div className="flex flex-col gap-0.5">
+          {communitySections.map((s) => {
+            const active = s.key === section?.key;
+            return (
+              <Link
+                key={s.key}
+                href={s.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex h-[40px] items-center gap-3 rounded-xl px-3 text-callout outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                  active
+                    ? "bg-group-strong font-semibold text-foreground shadow-xs"
+                    : "text-muted-foreground hover:bg-group-strong/60 hover:text-foreground",
+                )}
+              >
+                <NavGlyph name={s.icon} active={active} className={cn("size-5 shrink-0", active ? "text-accent-text" : "text-muted-foreground")} />
+                <span className="truncate">{s.label}</span>
+              </Link>
+            );
+          })}
         </div>
+
+        {platformSections.length > 0 ? (
+          <div className="mt-3 flex flex-col gap-0.5 border-t border-separator/50 pt-3">
+            {isOwner ? (
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                Plateforme
+              </p>
+            ) : null}
+            {platformSections.map((s) => {
+              const active = s.key === section?.key;
+              return (
+                <Link
+                  key={s.key}
+                  href={s.href}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "flex h-[40px] items-center gap-3 rounded-xl px-3 text-callout outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                    active
+                      ? "bg-group-strong font-semibold text-foreground shadow-xs"
+                      : "text-muted-foreground hover:bg-group-strong/60 hover:text-foreground",
+                  )}
+                >
+                  <NavGlyph name={s.icon} active={active} className={cn("size-5 shrink-0", active ? "text-accent-text" : "text-muted-foreground")} />
+                  <span className="truncate">{s.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        ) : null}
+      </nav>
+
+      <div className="border-t border-separator/50 pt-2 px-1">
+        <UserMenu name={props.me.name} email={props.me.email} side="right" />
       </div>
     </aside>
   );
 }
 
-function SidebarSubjectLink({ section, active }: { section: NavSection; active: boolean }) {
+/** Rail de sections (≥ 1024 px) : conservé pour compatibilité. */
+export function ShellRail(props: ShellNavProps) {
+  const { sections, section } = useShellNav(props);
   return (
-    <Link
-      href={section.href}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "flex h-10 items-center gap-3 rounded-xl px-3 text-subhead outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-        active
-          ? "bg-group-strong font-semibold text-foreground"
-          : "text-sidebar-foreground hover:bg-group-strong/60 hover:text-foreground",
-      )}
-    >
-      <NavGlyph
-        name={section.icon}
-        active={active}
-        className={cn("size-5 shrink-0", active ? "text-accent-text" : "text-muted-foreground")}
-      />
-      <span className="truncate">{section.label}</span>
-    </Link>
+    <aside aria-label="Sections" className="hidden h-full w-[5.25rem] shrink-0 flex-col items-center gap-2 py-3 lg:flex">
+      <Link
+        href="/"
+        aria-label="Accueil de la console"
+        className="mb-2 grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <NavGlyph name="shield" className="size-6" active />
+      </Link>
+      <nav className="flex flex-1 flex-col items-center gap-1">
+        {sections.map((s) => {
+          const active = s.key === section?.key;
+          return (
+            <Link
+              key={s.key}
+              href={s.href}
+              aria-current={active ? "true" : undefined}
+              className={cn(
+                "group flex w-[4.5rem] flex-col items-center gap-1 rounded-2xl py-2 text-caption-2 font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                active ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <span
+                className={cn(
+                  "grid h-9 w-12 place-items-center rounded-xl transition-colors",
+                  active ? "bg-group-strong text-accent-text" : "group-hover:bg-group-strong",
+                )}
+              >
+                <NavGlyph name={s.icon} className="size-[1.375rem]" active={active} />
+              </span>
+              {s.label}
+            </Link>
+          );
+        })}
+      </nav>
+      <UserMenu name={props.me.name} email={props.me.email} side="right" />
+    </aside>
   );
 }
 
-/** Compatibilité d'export si référencé ailleurs. */
-export const ShellRail = ShellSidebar;
-export function ShellSubmenu(_props: ShellNavProps) {
-  return null;
-}
-export function ShellSectionChips(_props: ShellNavProps) {
-  return null;
-}
-
-/**
- * En-tête supérieur (Refonte v2, ≥ 1024 px) :
- * Fil d'Ariane (`Breadcrumb`) + Barre de recherche globale (`Ctrl K`) + Guide par rôle (`RoleGuideSheet`).
- */
-export function ShellSectionBand(props: ShellNavProps) {
-  const { pathname, section, activeId, activeCommunity, guideRole } = useShellNav(props);
-  const isOnboarding = pathname.startsWith("/onboarding");
-  const isAccount = pathname.startsWith("/compte");
-
-  const currentLabel = isOnboarding
-    ? "Assistant de configuration"
-    : isAccount
-      ? "Mon compte"
-      : (section?.label ?? "Accueil");
-
+/** Sous-menu (≥ 1024 px) : communauté active (carte), puis les écrans de la section. */
+export function ShellSubmenu(props: ShellNavProps) {
+  const { pathname, activeId, section, role } = useShellNav(props);
   return (
-    <div className="hidden h-13 shrink-0 items-center justify-between gap-4 px-2 pe-4 lg:flex">
+    <aside aria-label="Écrans de la section" className="hidden h-full w-[15.5rem] shrink-0 flex-col gap-4 overflow-y-auto py-3 pe-4 lg:flex">
+      <CommunitySwitcher communities={props.communities} activeId={activeId} role={role} />
+      {section ? (
+        <nav className="flex flex-col gap-0.5">
+          <p className="px-3 pb-1.5 text-caption-1 font-semibold text-tertiary">{section.label}</p>
+          {section.items.map((item) => {
+            const active = isActivePath(pathname, item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex h-[38px] items-center gap-3 rounded-md px-3 text-callout outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                  active ? "bg-group-strong font-medium text-foreground" : "text-sidebar-foreground hover:bg-group-strong/70 hover:text-foreground",
+                )}
+              >
+                <NavGlyph name={item.icon} active={active} className={cn("size-5", active ? "text-accent-text" : "text-muted-foreground")} />
+                <span className="truncate">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      ) : null}
+    </aside>
+  );
+}
+
+/** Bande de section (≥ 1024 px), sur le fond gris au-dessus de la feuille : nom et rôle de la section + Ctrl K + Guide. */
+export function ShellSectionBand(props: ShellNavProps) {
+  const { section, item, activeId, guideRole } = useShellNav(props);
+  if (!section) return null;
+  return (
+    <div className="hidden h-12 shrink-0 items-center justify-between gap-4 pe-4 lg:flex">
       <div className="flex min-w-0 items-center gap-3">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink href="/">Bouendji</BreadcrumbLink>
-            </BreadcrumbItem>
-            {activeCommunity ? (
-              <>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <span className="text-footnote font-medium text-muted-foreground">
-                    {activeCommunity.name}
-                  </span>
-                </BreadcrumbItem>
-              </>
-            ) : null}
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>{currentLabel}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-group-strong text-accent-text">
+          <NavGlyph name={item?.icon ?? section.icon} className="size-[1.125rem]" active />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-subhead font-semibold text-foreground">{item?.label ?? section.label}</p>
+          <p className="truncate text-caption-1 text-muted-foreground">{section.description}</p>
+        </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2.5">
+      <div className="flex shrink-0 items-center gap-2">
         <Button
           type="button"
           variant="outline"
           size="sm"
           onClick={triggerCommandPalette}
-          className="h-9 min-w-64 justify-between gap-3 bg-surface text-muted-foreground hover:text-foreground"
+          className="h-8 min-w-56 justify-between gap-3 bg-surface text-muted-foreground hover:text-foreground"
         >
           <span className="flex items-center gap-2 truncate">
-            <Icon name="search" className="size-4 shrink-0" />
-            <span className="truncate">Rechercher abonné, appareil, commande…</span>
+            <Icon name="search" className="size-3.5 shrink-0" />
+            <span className="truncate text-footnote">Rechercher abonné, appareil, commande…</span>
           </span>
           <kbd className="rounded border border-separator bg-muted px-1.5 py-0.5 font-mono text-[10px]">
             Ctrl K
@@ -260,6 +248,35 @@ export function ShellSectionBand(props: ShellNavProps) {
         <RoleGuideSheet defaultRole={guideRole} communityId={activeId} />
       </div>
     </div>
+  );
+}
+
+/** Onglets de la section active (desktop et mobile) : les écrans sous le titre, défilement horizontal. */
+export function ShellSectionChips(props: ShellNavProps) {
+  const { pathname, section } = useShellNav(props);
+  if (!section || section.items.length < 2) return null;
+  return (
+    <nav aria-label={section.label} className="mx-2 mb-2 flex gap-1.5 overflow-x-auto px-2 py-1 [scrollbar-width:none] lg:mx-0 lg:me-2">
+      {section.items.map((item) => {
+        const active = isActivePath(pathname, item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-footnote font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+              active
+                ? "bg-group-strong font-semibold text-foreground shadow-xs border border-separator/40"
+                : "bg-surface/80 text-muted-foreground hover:bg-group-strong/60 hover:text-foreground",
+            )}
+          >
+            <NavGlyph name={item.icon} active={active} className={cn("size-3.5 shrink-0", active ? "text-accent-text" : "text-muted-foreground")} />
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 

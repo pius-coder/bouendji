@@ -120,6 +120,7 @@ export interface UserDto {
   email: string;
   name: string;
   locale: string;
+  phone?: string | null;
   emailVerified: boolean;
   communityId: string;
   createdAt: string;
@@ -141,6 +142,7 @@ export function toUserDto(user: Row): UserDto {
     email: String(user.email),
     name: String(user.name),
     locale: String(user.locale),
+    phone: user.phone ? String(user.phone) : null,
     emailVerified: user.email_verified_at != null,
     communityId: String(user.community_id),
     createdAt: iso(user.created_at as Date | string),
@@ -250,7 +252,7 @@ export async function loadSubscriptionView(db: Database, userId: string) {
   const base = await loadEntitlement(db, userId);
   const sub = base.subscription;
 
-  let family: "limited" | "limited_night" | null = null;
+  let family: "limited" | "limited_night" | "unlimited" | null = null;
   let quotaBytes: number | null = null;
   let nightWindow: string | null = null;
   let usedBytes = 0;
@@ -264,11 +266,13 @@ export async function loadSubscriptionView(db: Database, userId: string) {
       [sub.id],
     );
     if (detail) {
-      // Sur mesure (D127) : la plage achetée en option fait la famille.
+      // Sur mesure (D127) : la plage achetée en option fait la famille. Illimité : D132.
       family =
-        detail.family === "limited_night" || (detail.family === "custom" && detail.night_window)
-          ? "limited_night"
-          : "limited";
+        detail.family === "unlimited"
+          ? "unlimited"
+          : detail.family === "limited_night" || (detail.family === "custom" && detail.night_window)
+            ? "limited_night"
+            : "limited";
       quotaBytes = detail.quota_bytes === null || detail.quota_bytes === undefined ? null : Number(detail.quota_bytes);
       nightWindow = (detail.night_window as string | null) ?? null;
     }

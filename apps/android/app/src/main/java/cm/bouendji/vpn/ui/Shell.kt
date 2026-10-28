@@ -318,3 +318,27 @@ fun androidx.compose.foundation.layout.BoxScope.CtaBar(aboveTabs: Boolean = fals
         content = content,
     )
 }
+
+@Composable
+private fun SyncLoaderPill() {
+    val t = LocalTokens.current
+    androidx.compose.material3.Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = t.surface.copy(alpha = 0.94f),
+        shadowElevation = 4.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, t.separator),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            androidx.compose.material3.CircularProgressIndicator(
+                Modifier.size(13.dp),
+                strokeWidth = 2.dp,
+                color = t.accent,
+            )
+            T("Synchronisation…", size = 12.sp, color = t.ink, weight = androidx.compose.ui.text.font.FontWeight.Medium)
+        }
+    }
+}

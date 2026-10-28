@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { PageTabs, type PageTabItem } from "@/components/common/page-tabs";
+import { AdminCacheSeed } from "@/components/common/admin-cache-seed";
 import { StatusBadge } from "@/components/common/status-badge";
 import { ManualEndpointAction } from "@/components/network/manual-endpoint-action";
 import { NETWORK_COLUMNS } from "@/components/network/network-columns";
@@ -10,6 +10,7 @@ import { TelegramTestButton } from "@/components/network/telegram-test-button";
 import { XuiServersSection } from "@/components/network/xui-servers";
 import { EmptyBlock, ForbiddenBlock } from "@/components/page/empty";
 import { PageContent, PageHeader } from "@/components/page/page";
+import { Section } from "@/components/page/section";
 import { TableCard, TableMessage, TableRows, TableRowsSkeleton, type TableColumn } from "@/components/page/table";
 import { formatDateTime } from "@/lib/format";
 import { can } from "@/lib/roles";
@@ -17,14 +18,6 @@ import { getMe, withSession } from "@/server/context";
 import { getServices } from "@/server/services";
 
 export const metadata: Metadata = { title: "Réseau" };
-
-export type NetworkTab = "ce-soir" | "jour" | "historique";
-
-const TABS: readonly PageTabItem[] = [
-  { id: "ce-soir", label: "Ce soir (Nuit)" },
-  { id: "jour", label: "Jour (3x-ui & Pool)" },
-  { id: "historique", label: "Historique" },
-];
 
 const HISTORY_COLUMNS = [
   { id: "window", header: "Créneau", mobile: "primary" },
@@ -34,12 +27,12 @@ const HISTORY_COLUMNS = [
   { id: "status", header: "Statut", mobile: "trailing" },
 ] as const satisfies readonly TableColumn[];
 
-export default async function NetworkPage({ searchParams }: PageProps<"/network">) {
-  const resolved = await searchParams;
-  const rawTab = Array.isArray(resolved.tab) ? resolved.tab[0] : resolved.tab;
-  const activeTab: NetworkTab =
-    rawTab === "ce-soir" || rawTab === "jour" || rawTab === "historique" ? rawTab : "ce-soir";
-
+/**
+ * Page Réseau synchrone et atomiquement suspendue (D104) :
+ * aucun `await searchParams` hors `<Suspense>`, chaque section charge sa donnée
+ * indépendamment.
+ */
+export default function NetworkPage() {
   return (
     <PageContent>
       <PageHeader
@@ -55,61 +48,43 @@ export default async function NetworkPage({ searchParams }: PageProps<"/network"
         }
       />
 
-      <Suspense fallback={null}>
-        <PageTabs tabs={TABS} activeTab={activeTab} />
+      <Section
+        title="Créneaux de nuit (20h00 et 00h00)"
+        description="Prenez en charge un créneau, générez une clé de déploiement à usage unique (D124) et suivez le rappel Telegram (D119)."
+      >
+        <Suspense fallback={<div className="h-44 animate-pulse rounded-xl bg-fill" />}>
+          <TonightSlotsLoaded />
+        </Suspense>
+      </Section>
+
+      <TableCard
+        label="Nœuds du pool"
+        columns={NETWORK_COLUMNS}
+        footer={
+          <Suspense fallback={<span className="h-5" />}>
+            <NetworkFooter />
+          </Suspense>
+        }
+      >
+        <Suspense fallback={<TableRowsSkeleton columns={NETWORK_COLUMNS} />}>
+          <NetworkRows />
+        </Suspense>
+      </TableCard>
+
+      <Suspense fallback={<div className="h-24 animate-pulse rounded-2xl border border-border bg-muted/40" />}>
+        <XuiServersSection />
       </Suspense>
 
-      {activeTab === "ce-soir" ? (
-        <div className="flex flex-col gap-5">
-          <Suspense fallback={<div className="h-52 animate-pulse rounded-section bg-muted/40" />}>
-            <TonightSlotsLoaded />
-          </Suspense>
-
-          <TableCard
-            label="Nœuds actifs du pool"
-            columns={NETWORK_COLUMNS}
-            footer={
-              <Suspense fallback={<span className="h-5" />}>
-                <NetworkFooter />
-              </Suspense>
-            }
-          >
-            <Suspense fallback={<TableRowsSkeleton columns={NETWORK_COLUMNS} />}>
-              <NetworkRows />
-            </Suspense>
-          </TableCard>
-        </div>
-      ) : null}
-
-      {activeTab === "jour" ? (
-        <div className="flex flex-col gap-5">
-          <Suspense fallback={<div className="h-28 animate-pulse rounded-2xl border border-border bg-muted/40" />}>
-            <XuiServersSection />
-          </Suspense>
-
-          <TableCard
-            label="Nœuds du pool"
-            columns={NETWORK_COLUMNS}
-            footer={
-              <Suspense fallback={<span className="h-5" />}>
-                <NetworkFooter />
-              </Suspense>
-            }
-          >
-            <Suspense fallback={<TableRowsSkeleton columns={NETWORK_COLUMNS} />}>
-              <NetworkRows />
-            </Suspense>
-          </TableCard>
-        </div>
-      ) : null}
-
-      {activeTab === "historique" ? (
+      <Section
+        title="Historique des créneaux de nuit"
+        description="Suivi des prises en charge et des nœuds enregistrés sur les créneaux précédents."
+      >
         <TableCard label="Historique des créneaux de nuit" columns={HISTORY_COLUMNS}>
           <Suspense fallback={<TableRowsSkeleton columns={HISTORY_COLUMNS} rows={4} />}>
             <NightHistoryRows />
           </Suspense>
         </TableCard>
-      ) : null}
+      </Section>
     </PageContent>
   );
 }
@@ -128,7 +103,12 @@ async function TonightSlotsLoaded() {
       />
     );
   }
-  return <NightSlotsClient slots={slots} />;
+  return (
+    <>
+      <AdminCacheSeed path="/v1/admin/night-slots" data={data} />
+      <NightSlotsClient slots={slots} />
+    </>
+  );
 }
 
 async function NightHistoryRows() {
@@ -153,17 +133,20 @@ async function NightHistoryRows() {
     );
   }
   return (
-    <TableRows
-      rows={slots}
-      columns={HISTORY_COLUMNS}
-      getKey={(s) => s.slotId}
-      cells={(s) => ({
-        window: s.label || (s.slot.includes("20") ? "20h00 – 00h00" : "00h00 – 04h00"),
-        startsAt: formatDateTime(s.startsAt),
-        operator: s.claimedBy?.name || "Non assigné",
-        endpoints: s.endpoint ? s.endpoint.label : "—",
-        status: <StatusBadge status={s.state} />,
-      })}
-    />
+    <>
+      <AdminCacheSeed path="/v1/admin/night-slots/history" data={slots} />
+      <TableRows
+        rows={slots}
+        columns={HISTORY_COLUMNS}
+        getKey={(s) => s.slotId}
+        cells={(s) => ({
+          window: s.label || (s.slot.includes("20") ? "20h00 – 00h00" : "00h00 – 04h00"),
+          startsAt: formatDateTime(s.startsAt),
+          operator: s.claimedBy?.name || "Non assigné",
+          endpoints: s.endpoint ? s.endpoint.label : "—",
+          status: <StatusBadge status={s.state} />,
+        })}
+      />
+    </>
   );
 }

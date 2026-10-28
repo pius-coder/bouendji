@@ -11,8 +11,9 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { useAdminQuery } from "@/hooks/use-admin-query";
 import type { AdminMe } from "@/server/services/admin-auth/admin-auth.schema";
-import { searchResult, type SearchResult } from "@/server/services/subscribers/subscribers.schema";
+import { searchResult } from "@/server/services/subscribers/subscribers.schema";
 import { allSections, buildNav } from "./nav-model";
 import { NavGlyph } from "./nav-icon";
 import { useActiveCommunityId } from "./use-active-community";
@@ -31,17 +32,23 @@ export function triggerCommandPalette() {
 
 /**
  * Palette de commandes et recherche globale (Ctrl K / Cmd K).
- * Interroge `/api/bff/search?q=...` dès 2 caractères pour afficher les abonnés,
- * appareils et commandes correspondants, et ouvre directement leur tiroir.
+ * Utilise `useAdminQuery` (`/api/bff/v1/admin/search?q=...`, `staleTime = 30s`) dès 2 caractères
+ * pour afficher les abonnés, appareils et commandes avec mise en cache côté client.
  */
 export function CommandPalette({ me, communities }: { me: AdminMe; communities: readonly CommunityOption[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResult | null>(null);
-  const [loading, setLoading] = useState(false);
   const activeId = useActiveCommunityId(communities.map((c) => c.id));
   const nav = buildNav(me, activeId);
+
+  const trimmed = query.trim();
+  const searchEnabled = open && trimmed.length >= 2;
+  const { data: results, isFetching: loading } = useAdminQuery("/v1/admin/search", {
+    query: { q: trimmed },
+    schema: searchResult,
+    enabled: searchEnabled,
+  });
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -61,37 +68,6 @@ export function CommandPalette({ me, communities }: { me: AdminMe; communities: 
     };
   }, []);
 
-  useEffect(() => {
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setResults(null);
-      setLoading(false);
-      return;
-    }
-    const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/bff/search?q=${encodeURIComponent(trimmed)}`, {
-          signal: controller.signal,
-        });
-        if (res.ok) {
-          const json = await res.json();
-          const parsed = searchResult.safeParse(json);
-          if (parsed.success) setResults(parsed.data);
-        }
-      } catch {
-        // Requête annulée ou hors-ligne
-      } finally {
-        setLoading(false);
-      }
-    }, 180);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [query]);
-
   function go(href: string) {
     setOpen(false);
     router.push(href);
@@ -109,7 +85,7 @@ export function CommandPalette({ me, communities }: { me: AdminMe; communities: 
       <CommandList>
         <CommandEmpty>{loading ? "Recherche en cours…" : EMPTY}</CommandEmpty>
 
-        {results && results.subscribers.length > 0 ? (
+        {searchEnabled && results && results.subscribers.length > 0 ? (
           <CommandGroup heading="Abonnés">
             {results.subscribers.map((s) => {
               const cid = s.communityId || fallbackCommunityId;
@@ -129,11 +105,11 @@ export function CommandPalette({ me, communities }: { me: AdminMe; communities: 
           </CommandGroup>
         ) : null}
 
-        {results && results.devices.length > 0 ? (
+        {searchEnabled && results && results.devices.length > 0 ? (
           <CommandGroup heading="Appareils">
             {results.devices.map((d) => {
               const cid = d.communityId || fallbackCommunityId;
-              const href = cid ? `/${cid}/subscribers?tab=appareils&appareil=${d.deviceId}` : `/?appareil=${d.deviceId}`;
+              const href = cid ? `/${cid}/devices?appareil=${d.deviceId}` : `/?appareil=${d.deviceId}`;
               return (
                 <CommandItem
                   key={`device-${d.deviceId}`}
@@ -151,11 +127,11 @@ export function CommandPalette({ me, communities }: { me: AdminMe; communities: 
           </CommandGroup>
         ) : null}
 
-        {results && results.orders.length > 0 ? (
+        {searchEnabled && results && results.orders.length > 0 ? (
           <CommandGroup heading="Commandes">
             {results.orders.map((o) => {
               const cid = o.communityId || fallbackCommunityId;
-              const href = cid ? `/${cid}/subscribers?tab=commandes&commande=${o.id}` : `/?commande=${o.id}`;
+              const href = cid ? `/${cid}/orders?commande=${o.id}` : `/?commande=${o.id}`;
               return (
                 <CommandItem
                   key={`order-${o.id}`}

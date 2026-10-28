@@ -20,6 +20,9 @@ export const PLAN_COLUMNS = [
 
 /** Résumé d'une ligne : famille, quota et plages de nuit proposées. */
 function familySummary(p: Plan): string {
+  if (p.family === "unlimited") {
+    return "Illimité · Data illimitée";
+  }
   const quota = p.quotaBytes ? `${Math.round(p.quotaBytes / BYTES_PER_GB)} Go` : "sans quota";
   const nights = (p.nightOptions ?? []).filter((o) => o.active).length;
   const family = p.family ? PLAN_FAMILY_LABEL[p.family] : "—";

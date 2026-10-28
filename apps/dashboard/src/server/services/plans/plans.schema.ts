@@ -18,9 +18,10 @@ export const endpointTier = z.enum(["free-labs", "paid-gcp"]);
 export type EndpointTier = z.infer<typeof endpointTier>;
 export const ENDPOINT_TIER_LABEL: Record<EndpointTier, string> = { "free-labs": "Illimité", "paid-gcp": "Limité" };
 
-/** R6 : famille du forfait. `custom` (offre sur mesure) se règle à part. */
+/** R6 / D132 : famille du forfait. `custom` (offre sur mesure) se règle à part. */
 export const PLAN_FAMILY_LABEL = {
   limited: "Limité",
+  unlimited: "Illimité",
   limited_night: "Limité + nuit",
   custom: "Sur mesure",
 } as const;
@@ -57,7 +58,7 @@ export const plan = z.object({
   sortOrder: z.number(),
   endpointTier: endpointTier,
   revision: z.number().int(),
-  family: z.enum(["limited", "limited_night", "custom"]).optional(),
+  family: z.enum(["limited", "limited_night", "unlimited", "custom"]).optional(),
   /** Quota en octets (1 Go = 1 000 000 000). `null` pour une offre sans quota. */
   quotaBytes: z.number().nullable().optional(),
   nightOptions: z.array(nightOption).optional(),
@@ -86,7 +87,7 @@ export const planCreateBody = z.object({
   active: z.boolean().optional(),
   sortOrder: z.number().int().min(0).max(1000).optional(),
   endpointTier: endpointTier.optional(),
-  family: z.enum(["limited", "limited_night"]).optional(),
+  family: z.enum(["limited", "limited_night", "unlimited"]).optional(),
   quotaBytes: z.number().int().min(1).nullable().optional(),
   nightOptions: z.array(nightOption.pick({ window: true, priceXaf: true, active: true })).optional(),
 });
@@ -119,8 +120,8 @@ export const planFormSchema = z.object({
   code: planCreateBody.shape.code,
   name: planCreateBody.shape.name,
   description: z.string().trim().max(500, "500 caractères max."),
-  family: z.enum(["limited", "limited_night"]),
-  quotaGb: wholeNumber("Quota", 1, 10_000),
+  family: z.enum(["limited", "limited_night", "unlimited"]),
+  quotaGb: wholeNumber("Quota", 1, 10_000, true),
   priceXaf: wholeNumber("Prix", 1, 10_000_000),
   durationDays: wholeNumber("Durée", 1, 3650),
   deviceLimit: wholeNumber("Appareils", 1, 10, true),
@@ -154,17 +155,23 @@ export function planFormToUpdate(values: Partial<Omit<z.output<typeof planFormSc
   if (values.featured !== undefined) body.featured = values.featured;
   if (values.active !== undefined) body.active = values.active;
   if (values.endpointTier !== undefined) body.endpointTier = values.endpointTier;
-  if (values.family !== undefined && values.quotaGb !== undefined && values.nightPrices && values.nightActive) {
+  if (values.family !== undefined) {
     body.family = values.family;
-    body.quotaBytes = Number(values.quotaGb) * BYTES_PER_GB;
-    body.nightOptions =
-      values.family === "limited_night"
-        ? NIGHT_WINDOWS.filter((w) => values.nightPrices?.[w]).map((w) => ({
-            window: w,
-            priceXaf: Number(values.nightPrices?.[w]),
-            active: values.nightActive?.[w] ?? true,
-          }))
-        : [];
+    if (values.family === "unlimited") {
+      body.quotaBytes = null;
+      body.nightOptions = [];
+      body.endpointTier = "free-labs";
+    } else if (values.quotaGb !== undefined && values.nightPrices && values.nightActive) {
+      body.quotaBytes = values.quotaGb ? Number(values.quotaGb) * BYTES_PER_GB : null;
+      body.nightOptions =
+        values.family === "limited_night"
+          ? NIGHT_WINDOWS.filter((w) => values.nightPrices?.[w]).map((w) => ({
+              window: w,
+              priceXaf: Number(values.nightPrices?.[w]),
+              active: values.nightActive?.[w] ?? true,
+            }))
+          : [];
+    }
   }
   return body;
 }
@@ -187,7 +194,7 @@ export function planToFormValues(p: Plan): z.output<typeof planFormSchema> {
     code: p.code,
     name: p.name,
     description: p.description,
-    family: p.family === "limited_night" ? "limited_night" : "limited",
+    family: p.family === "limited_night" ? "limited_night" : p.family === "unlimited" ? "unlimited" : "limited",
     quotaGb: p.quotaBytes ? String(Math.round(p.quotaBytes / BYTES_PER_GB)) : "",
     priceXaf: String(p.priceXaf),
     durationDays: String(p.durationDays),
