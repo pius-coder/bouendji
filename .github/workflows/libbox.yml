@@ -83,15 +83,16 @@ jobs:
         run: |
           set -euo pipefail
           java --version
-          go run ./cmd/internal/build_libbox -target android -platform android/arm64
+          go run ./cmd/internal/build_libbox -target android -platform android/arm,android/arm64,android/amd64
           ls -la libbox*.aar
 
       - name: Vérifier l'archive
         working-directory: sing-box
         run: |
           set -euo pipefail
-          # Un .aar sans jni/arm64-v8a se compile dans l'app et plante au démarrage.
+          # L'archive doit contenir les architectures 32-bit et 64-bit pour être universelle
           unzip -l libbox.aar | grep -q 'jni/arm64-v8a/libbox.so'
+          unzip -l libbox.aar | grep -q 'jni/armeabi-v7a/libbox.so'
           sha256sum libbox.aar | cut -d' ' -f1 > libbox.aar.sha256
           echo "sha256=$(cat libbox.aar.sha256)"
           echo "### libbox ${{ env.VERSION }}" >> "$GITHUB_STEP_SUMMARY"
@@ -106,6 +107,6 @@ jobs:
           set -euo pipefail
           TAG="${TAG/libbox-v/libbox-}"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 || \
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "libbox ${{ env.VERSION }} (arm64-v8a)" \
-              --notes "libbox.aar construit par le workflow libbox (sing-box ${{ env.VERSION }}, gomobile v0.1.13). Licence GPL-3.0-or-later."
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "libbox ${{ env.VERSION }} (universal: arm64, armv7, x86_64)" \
+              --notes "libbox.aar universel (sing-box ${{ env.VERSION }}, gomobile v0.1.13, architectures arm64-v8a, armeabi-v7a, x86_64). Licence GPL-3.0-or-later."
           gh release upload "$TAG" libbox.aar libbox.aar.sha256 --repo "$GITHUB_REPOSITORY" --clobber

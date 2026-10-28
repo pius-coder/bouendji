@@ -184,6 +184,7 @@ jobs:
           echo "$(cat apps/android/app/libs/libbox.aar.sha256)  apps/android/app/libs/libbox.aar" | sha256sum -c -
           rm apps/android/app/libs/libbox.aar.sha256
           unzip -l apps/android/app/libs/libbox.aar | grep -q 'jni/arm64-v8a/libbox.so'
+          unzip -l apps/android/app/libs/libbox.aar | grep -q 'jni/armeabi-v7a/libbox.so'
           ls -la apps/android/app/libs/libbox.aar
 
       - name: Générer le wrapper Gradle
