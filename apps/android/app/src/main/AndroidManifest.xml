@@ -57,6 +57,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Retour de paiement Fapshi / Mobile Money -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cm.bouendji.vpn" android:host="pay" />
+            </intent-filter>
             <!--
               Fichier de secours `.bvpn` (offline-bundle). Les gestionnaires de
               fichiers et WhatsApp le présentent en `application/octet-stream`

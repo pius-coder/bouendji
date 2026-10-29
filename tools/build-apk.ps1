@@ -17,8 +17,8 @@
 param(
     [int]    $Attempts = 10,
     [string] $Task     = ':app:assembleDebug',
-    [string] $Jdk      = 'C:\Users\HP\android-toolchain\jdk17',
-    [string] $Gradle   = 'C:\Users\HP\android-toolchain\gradle-8.7'
+    [string] $Jdk      = 'C:\Users\lenovo\android-toolchain\jdk17',
+    [string] $Gradle   = 'C:\Users\lenovo\android-toolchain\gradle-8.7'
 )
 
 # Pas de 'Stop' : les outils natifs ecrivent sur stderr en permanence (avertissements
@@ -91,3 +91,4 @@ try {
 Write-Host ''
 Write-Host ("ECHEC apres {0} tentatives - journal complet : {1}" -f $Attempts, $log)
 exit 1
+

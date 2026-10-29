@@ -3,9 +3,9 @@ import { Suspense } from "react";
 import { AdminCacheSeed } from "@/components/common/admin-cache-seed";
 import { StatusBadge } from "@/components/common/status-badge";
 import { ManualEndpointAction } from "@/components/network/manual-endpoint-action";
-import { NETWORK_COLUMNS } from "@/components/network/network-columns";
-import { NetworkFooter, NetworkRows } from "@/components/network/network-table";
+import { NetworkEndpointsSection } from "@/components/network/network-table";
 import { NightSlotsClient } from "@/components/network/night-slots-section";
+import { PurgeExpiredButton } from "@/components/network/purge-button";
 import { TelegramTestButton } from "@/components/network/telegram-test-button";
 import { XuiServersSection } from "@/components/network/xui-servers";
 import { EmptyBlock, ForbiddenBlock } from "@/components/page/empty";
@@ -41,6 +41,7 @@ export default function NetworkPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <TelegramTestButton />
+            <PurgeExpiredButton />
             <Suspense fallback={null}>
               <ManualEndpointAction />
             </Suspense>
@@ -57,19 +58,9 @@ export default function NetworkPage() {
         </Suspense>
       </Section>
 
-      <TableCard
-        label="Nœuds du pool"
-        columns={NETWORK_COLUMNS}
-        footer={
-          <Suspense fallback={<span className="h-5" />}>
-            <NetworkFooter />
-          </Suspense>
-        }
-      >
-        <Suspense fallback={<TableRowsSkeleton columns={NETWORK_COLUMNS} />}>
-          <NetworkRows />
-        </Suspense>
-      </TableCard>
+      <Suspense fallback={<div className="h-64 animate-pulse rounded-2xl border border-border bg-muted/40" />}>
+        <NetworkEndpointsSection />
+      </Suspense>
 
       <Suspense fallback={<div className="h-24 animate-pulse rounded-2xl border border-border bg-muted/40" />}>
         <XuiServersSection />

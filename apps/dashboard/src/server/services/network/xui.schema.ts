@@ -23,6 +23,7 @@ export type XuiServer = z.infer<typeof xuiServer>;
 export const xuiServerList = z.object({ servers: z.array(xuiServer) });
 export const xuiServerOne = z.object({ server: xuiServer });
 export const xuiTestResult = z.object({ ok: z.boolean(), message: z.string(), inboundRemark: z.string().nullable() });
+export const xuiDeleteResult = z.object({ ok: z.boolean(), serverId: z.string() });
 export const xuiServerIdParams = z.object({ serverId: z.string().min(1) });
 
 export const xuiServerBody = z.object({
@@ -39,6 +40,22 @@ export const xuiServerBody = z.object({
   wsHost: z.string().trim().min(1).max(253).nullable().optional(),
 });
 export type XuiServerBody = z.input<typeof xuiServerBody>;
+
+export const xuiServerPatchBody = z.object({
+  label: z.string().trim().min(2).max(80).optional(),
+  panelUrl: z.string().trim().url().max(300).optional(),
+  apiToken: z.string().trim().min(16).max(300).optional(),
+  inboundId: z.number().int().min(1).max(1_000_000).optional(),
+  capacity: z.number().int().min(1).max(5_000).optional(),
+  active: z.boolean().optional(),
+  publicHost: z.string().trim().min(3).max(253).optional(),
+  publicPort: z.number().int().min(1).max(65_535).optional(),
+  security: z.enum(["tls", "none"]).optional(),
+  sni: z.string().trim().min(1).max(253).nullable().optional(),
+  wsPath: z.string().trim().startsWith("/").max(200).optional(),
+  wsHost: z.string().trim().min(1).max(253).nullable().optional(),
+});
+export type XuiServerPatchBody = z.input<typeof xuiServerPatchBody>;
 
 const whole = (label: string, min: number, max: number, optional = false) =>
   z

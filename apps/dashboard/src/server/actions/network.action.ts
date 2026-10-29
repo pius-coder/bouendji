@@ -67,3 +67,38 @@ export async function testTelegramAction(): Promise<ActionResult<TelegramTestRes
     return getServices().network.testTelegram();
   });
 }
+
+/** Purge de tous les serveurs expirés du pool. */
+export async function purgeExpiredEndpointsAction(): Promise<ActionResult<{ purgedCount: number }>> {
+  return runAction(async () => {
+    const res = await getServices().network.purgeExpiredEndpoints();
+    return { purgedCount: res.purgedCount };
+  });
+}
+
+/** Changement de statut d'un endpoint (active, draining, expired). */
+export async function setEndpointStatusAction(
+  endpointId: string,
+  status: "active" | "draining" | "expired",
+): Promise<ActionResult<{ status: string }>> {
+  return runAction(async () => {
+    const res = await getServices().network.setEndpointStatus({ endpointId: String(endpointId), status });
+    return { status: res.endpoint.status };
+  });
+}
+
+/** Suppression manuelle d'un endpoint par l'administrateur. */
+export async function deleteEndpointAction(endpointId: string): Promise<ActionResult<{ ok: boolean; endpointId: string }>> {
+  return runAction(async () => {
+    const res = await getServices().network.deleteEndpoint(String(endpointId));
+    return { ok: res.ok, endpointId: res.endpointId };
+  });
+}
+
+/** Suppression d'un serveur 3x-ui (vérifie qu'aucun client actif n'est présent). */
+export async function deleteXuiServerAction(serverId: string): Promise<ActionResult<{ ok: boolean; serverId: string }>> {
+  return runAction(async () => {
+    const res = await getServices().network.deleteXuiServer(String(serverId));
+    return { ok: res.ok, serverId: res.serverId };
+  });
+}

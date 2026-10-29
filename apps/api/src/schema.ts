@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS devices (
   integrity_ok      boolean NOT NULL DEFAULT false,
   push_token        text,
   last_seen_at      timestamptz,
+  last_active_server_id text,
   revoked_at        timestamptz,
   created_at        timestamptz NOT NULL DEFAULT now()
 );

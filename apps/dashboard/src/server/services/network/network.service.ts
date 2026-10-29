@@ -16,8 +16,20 @@ import {
   pool,
   slotIdParams,
   telegramTestResponse,
+  purgeExpiredResponse,
+  endpointStatusBody,
+  endpointStatusChange,
+  deleteEndpointResponse,
 } from "./network.schema";
-import { type XuiServerBody, xuiServerBody, xuiServerIdParams, xuiServerList, xuiServerOne, xuiTestResult } from "./xui.schema";
+import {
+  type XuiServerBody,
+  xuiServerBody,
+  xuiServerIdParams,
+  xuiServerList,
+  xuiServerOne,
+  xuiTestResult,
+  xuiDeleteResult,
+} from "./xui.schema";
 
 export type SetEndpointHealthInput = { endpointId: string } & EndpointHealth;
 export type AddManualEndpointsInput = ManualEndpoint;
@@ -45,6 +57,13 @@ export class NetworkService extends BaseService {
     xuiList: endpoint({ method: "GET", path: "/xui/servers", response: xuiServerList }),
     xuiCreate: endpoint({ method: "POST", path: "/xui/servers", body: xuiServerBody, response: xuiServerOne, refreshAfter: true }),
     xuiTest: endpoint({ method: "POST", path: "/xui/servers/:serverId/test", params: xuiServerIdParams, response: xuiTestResult }),
+    deleteXui: endpoint({
+      method: "DELETE",
+      path: "/xui/servers/:serverId",
+      params: xuiServerIdParams,
+      response: xuiDeleteResult,
+      refreshAfter: true,
+    }),
     nightSlots: endpoint({ method: "GET", path: "/night-slots", response: nightSlotsResponse }),
     nightHistory: endpoint({ method: "GET", path: "/night-slots/history", response: nightSlotsHistoryResponse }),
     claimNightSlot: endpoint({
@@ -66,6 +85,27 @@ export class NetworkService extends BaseService {
       method: "POST",
       path: "/telegram/test",
       response: telegramTestResponse,
+    }),
+    purgeExpired: endpoint({
+      method: "POST",
+      path: "/endpoints/purge-expired",
+      response: purgeExpiredResponse,
+      refreshAfter: true,
+    }),
+    setStatus: endpoint({
+      method: "POST",
+      path: "/endpoints/:endpointId/status",
+      params: endpointIdParams,
+      body: endpointStatusBody,
+      response: endpointStatusChange,
+      refreshAfter: true,
+    }),
+    deleteEndpoint: endpoint({
+      method: "DELETE",
+      path: "/endpoints/:endpointId",
+      params: endpointIdParams,
+      response: deleteEndpointResponse,
+      refreshAfter: true,
     }),
   } as const;
 
@@ -98,6 +138,10 @@ export class NetworkService extends BaseService {
     return this.call(NetworkService.endpoints.xuiTest, { params: { serverId } });
   }
 
+  deleteXuiServer(serverId: string) {
+    return this.call(NetworkService.endpoints.deleteXui, { params: { serverId } });
+  }
+
   getNightSlots() {
     return this.call(NetworkService.endpoints.nightSlots);
   }
@@ -116,5 +160,18 @@ export class NetworkService extends BaseService {
 
   testTelegram() {
     return this.call(NetworkService.endpoints.testTelegram);
+  }
+
+  purgeExpiredEndpoints() {
+    return this.call(NetworkService.endpoints.purgeExpired);
+  }
+
+  setEndpointStatus(input: { endpointId: string; status: "active" | "draining" | "expired" }) {
+    const { endpointId, status } = input;
+    return this.call(NetworkService.endpoints.setStatus, { params: { endpointId }, body: { status } });
+  }
+
+  deleteEndpoint(endpointId: string) {
+    return this.call(NetworkService.endpoints.deleteEndpoint, { params: { endpointId } });
   }
 }

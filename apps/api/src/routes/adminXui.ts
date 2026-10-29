@@ -231,4 +231,35 @@ export function registerAdminXuiRoutes(app: FastifyInstance, db: Database): void
       return { ok: false, message, inboundRemark: null };
     }
   });
+
+  /**
+   * Suppression d'un serveur 3x-ui (D140).
+   * Vérifie qu'aucun abonnement actif n'y est assigné.
+   */
+  app.delete<{ Params: { serverId: string } }>(`${PREFIX}/:serverId`, async (req) => {
+    const admin = await requireOwner(db, req);
+    const serverId = req.params.serverId;
+    const server = await loadServer(db, serverId);
+
+    const assigned = await db.scalar<number>(
+      "SELECT count(*)::int FROM subscriptions WHERE xui_server_id = $1 AND status = 'active'",
+      [serverId],
+    );
+    if (assigned && assigned > 0) {
+      throw fail.conflict(`Impossible de supprimer : ${assigned} abonnement(s) actif(s) sont assigné(s) à ce serveur. Désactivez-le d'abord.`);
+    }
+
+    await db.tx(async (q) => {
+      await q.query("DELETE FROM xui_clients WHERE subscription_id IN (SELECT id FROM subscriptions WHERE xui_server_id = $1)", [serverId]);
+      await q.query("DELETE FROM xui_servers WHERE id = $1", [serverId]);
+      await appendAudit(q, admin, req, {
+        action: "xui_server.delete",
+        targetType: "xui_server",
+        targetId: serverId,
+        before: { label: server.label, publicHost: server.public_host },
+      });
+    });
+
+    return { ok: true, serverId };
+  });
 }

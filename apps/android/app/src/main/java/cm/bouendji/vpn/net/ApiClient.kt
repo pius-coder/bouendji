@@ -276,8 +276,8 @@ class ApiClient(
      * Usage du jour (total, pas un delta : le serveur garde le maximum) et rapports
      * par configuration (tÃ©moin diffÃ©rentiel, D63). 20 rapports au plus (D64).
      */
-    suspend fun telemetry(usage: UsageDto?, reports: List<ConfigReportDto>) {
-        val body = json.encodeToString(TelemetryRequest.serializer(), TelemetryRequest(usage, reports.take(20).ifEmpty { null }))
+    suspend fun telemetry(usage: UsageDto?, reports: List<ConfigReportDto>, activeConfigId: String? = null) {
+        val body = json.encodeToString(TelemetryRequest.serializer(), TelemetryRequest(activeConfigId, usage, reports.take(20).ifEmpty { null }))
         authed("POST", ApiPaths.TELEMETRY, body)
     }
 
@@ -552,10 +552,10 @@ class ApiClient(
         val email: String? = null,
         val password: String,
         val name: String,
-        /** D53 : obligatoire, normalisé côté serveur (8 à 15 chiffres, `+` optionnel). */
+        /** D53 : obligatoire, normalisï¿½ cï¿½tï¿½ serveur (8 ï¿½ 15 chiffres, `+` optionnel). */
         val phone: String,
         val locale: String? = null,
-        /** Code parrain facultatif ; inconnu = 400 côté serveur. */
+        /** Code parrain facultatif ; inconnu = 400 cï¿½tï¿½ serveur. */
         val referralCode: String? = null,
     )
 
@@ -578,7 +578,7 @@ class ApiClient(
     data class ConfigReportDto(val configId: String, val ok: Boolean, val latencyMs: Int? = null)
 
     @Serializable
-    data class TelemetryRequest(val usage: UsageDto? = null, val reports: List<ConfigReportDto>? = null)
+    data class TelemetryRequest(val activeConfigId: String? = null, val usage: UsageDto? = null, val reports: List<ConfigReportDto>? = null)
 
     @Serializable
     data class LoginRequest(val appId: String, val identifier: String? = null, val email: String? = null, val phone: String? = null, val password: String)

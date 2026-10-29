@@ -2,7 +2,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { platformRolesOf } from "@/lib/roles";
 import { getMe, withSession } from "@/server/context";
 import { getServices } from "@/server/services";
-import { XuiServerSheet, XuiTestButton } from "./xui-server-sheet";
+import { XuiDeleteButton, XuiServerSheet, XuiTestButton } from "./xui-server-sheet";
 
 /**
  * Serveurs 3x-ui du forfait limité et du forfait sur mesure (D113, D127). Un
@@ -44,7 +44,10 @@ export async function XuiServersSection() {
                   {s.tokenSet ? "jeton enregistré" : "jeton manquant"}
                 </p>
               </div>
-              <XuiTestButton serverId={s.id} />
+              <div className="flex items-center gap-1.5">
+                <XuiTestButton serverId={s.id} />
+                <XuiDeleteButton serverId={s.id} label={s.label} assigned={s.assigned} />
+              </div>
             </li>
           ))}
         </ul>

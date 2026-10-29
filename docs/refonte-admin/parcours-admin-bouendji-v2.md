@@ -583,15 +583,14 @@ owner · onglets Admins · Communautés · Demandes de build · Tarifs · Équip
 
 ### Réseau
 
-owner, membre Réseau · seul espace visible pour le rôle Réseau · onglets Ce soir · Jour · Historique
+owner, membre Réseau · seul espace visible pour le rôle Réseau · gestion unifiée de l'infrastructure (D140 : les connexions de nuit utilisent les mêmes serveurs illimités, aucune infrastructure distincte artificielle)
 
 | Bloc | Composants | Contenu | Clic | API |
 | --- | --- | --- | --- | --- |
-| Ce soir | Card Badge | deux créneaux (20 h, minuit) : à prévoir, rappelé, en retard, actif, expiré ; compte à rebours ; abonnés concernés | Voir la marche à suivre ; Je m'en occupe (prévient les autres sur Telegram) | GET /v1/admin/night-slots |
-| Marche à suivre | Sheet Collapsible | étapes de déploiement sur Google Cloud, valeurs à copier, nom de nœud tiré au hasard | Copier chaque valeur | — |
-| Jour | Table Sheet | VM 3x-ui permanentes : charge, clients actifs, santé | ligne : tiroir du nœud ; Forcer la santé | GET /v1/admin/pool POST …/health |
-| Ajouter un nœud | Dialog Textarea Field | lien VLESS collé : hôte, port, chemin, SNI remplis tout seuls et affichés en lecture ; seul le type (jour ou nuit) se choisit ; nom généré | Ajouter | POST /v1/admin/endpoints/manual |
-| Historique | Table | créneaux passés, qui a déployé, retard éventuel | — | GET /v1/admin/night-slots?past |
+| Serveurs 3x-ui | Table Sheet Badge | VM 3x-ui permanentes (forfaits à quota) : hôte, port, capacité, abonnés assignés, état actif/inactif | Ajouter un serveur ; Modifier le panneau ; Activer / Désactiver ; Tester la connexion | GET/POST/PATCH /v1/admin/xui/servers POST …/:id/test |
+| Nœuds du pool | Table Sheet Badge ToggleGroup | Nœuds VLESS (forfaits illimités et trafic de nuit) : séparation Actifs / Expirés, région, statut, santé, occupation, latence | Ligne : tiroir du nœud (Forcer la santé, Vidanger, Retirer) ; Bouton « Nettoyer les expirés » | GET /v1/admin/pool POST …/health POST …/purge-expired |
+| Ajouter un nœud | Dialog Textarea Field | Lien VLESS collé : hôte, port, chemin, SNI remplis tout seuls en lecture seule ; sélection du tier (illimité ou relais) ; nom généré automatiquement | Ajouter | POST /v1/admin/endpoints/manual |
+| Exploitation | Card Button | État global du réseau, révision du pool, diffusion Telegram de test | Tester Telegram | POST /v1/admin/telegram/test |
 
 ### Mon compte
 

@@ -15,6 +15,7 @@ export const STATUS: Record<string, { label: string; tone: StatusTone }> = {
   processing: { label: "En cours", tone: "info" },
   needs_review: { label: "À vérifier", tone: "danger" },
   active: { label: "Actif", tone: "success" },
+  draining: { label: "En vidange", tone: "warning" },
   inactive: { label: "Inactif", tone: "neutral" },
   disabled: { label: "Désactivé", tone: "neutral" },
   enrolled: { label: "Enregistré", tone: "success" },

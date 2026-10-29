@@ -12,7 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
 import { useInvalidateAdmin } from "@/hooks/use-admin-query";
-import { createXuiServerAction, testXuiServerAction } from "@/server/actions/network.action";
+import { createXuiServerAction, testXuiServerAction, deleteXuiServerAction } from "@/server/actions/network.action";
+import { ConfirmDialog } from "@/components/page/confirm-dialog";
+import { Icon } from "@/components/common/icon";
 import { xuiServerFormSchema, type XuiServerFormValues } from "@/server/services/network/xui.schema";
 
 type FieldName = Exclude<keyof XuiServerFormValues, "security">;
@@ -168,5 +170,49 @@ export function XuiTestButton({ serverId }: { serverId: string }) {
       {busy && <Spinner />}
       Tester
     </Button>
+  );
+}
+
+/** Suppression d'un serveur 3x-ui (réservé à l'owner, vérifie l'absence d'abonnés). */
+export function XuiDeleteButton({ serverId, label, assigned }: { serverId: string; label: string; assigned: number }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function handleDelete() {
+    setBusy(true);
+    const result = await deleteXuiServerAction(serverId);
+    setBusy(false);
+    if (!result.ok) {
+      toast.error(result.message);
+    } else {
+      setOpen(false);
+      toast.success(`Serveur « ${label} » supprimé`);
+    }
+  }
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="min-h-11 text-destructive hover:bg-destructive/10 hover:text-destructive sm:min-h-9"
+        onClick={() => setOpen(true)}
+      >
+        <Icon name="trash" className="size-4" />
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Supprimer le serveur « ${label} » ?`}
+        description={
+          assigned > 0
+            ? `Attention : ${assigned} abonné(s) sont assignés à ce serveur. Vous ne pouvez pas le supprimer tant que des abonnements actifs existent.`
+            : "Le serveur sera retiré définitivement du catalogue 3x-ui."
+        }
+        confirmLabel="Supprimer"
+        pending={busy}
+        onConfirm={handleDelete}
+      />
+    </>
   );
 }

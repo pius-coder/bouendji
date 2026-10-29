@@ -2412,6 +2412,107 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     };
   });
 
+  /**
+   * Purge manuelle des nœuds expirés (D140).
+   * Supprime de la base tous les endpoints dans l'état 'expired' ou dont l'expiration est passée.
+   */
+  app.post(`${PREFIX}/endpoints/purge-expired`, async (req) => {
+    const admin = await requireAdmin(db, req);
+    authorize(admin, "endpoint.write", null);
+
+    let count = 0;
+    let revision = 0;
+    await db.tx(async (q) => {
+      const deleted = await q.query<Row>(
+        `DELETE FROM endpoints
+          WHERE status = 'expired' OR expires_at < now()
+          RETURNING id`,
+      );
+      count = deleted.length;
+      if (count > 0) {
+        revision = await bumpPoolRevision(q);
+        await appendAudit(q, admin, req, {
+          action: "endpoint.purge_expired",
+          targetType: "endpoint",
+          targetId: "pool",
+          after: { purgedCount: count },
+        });
+      } else {
+        revision = await poolRevision(q);
+      }
+    });
+
+    return { purgedCount: count, poolRevision: revision };
+  });
+
+  /**
+   * Modification du statut d'un nœud (active, draining, expired) (D140).
+   */
+  app.post<{ Params: { endpointId: string } }>(`${PREFIX}/endpoints/:endpointId/status`, async (req) => {
+    const admin = await requireAdmin(db, req);
+    authorize(admin, "endpoint.write", null);
+    const body = parseBody(
+      z.object({ status: z.enum(["active", "draining", "expired"]) }).strict(),
+      req.body,
+    );
+
+    const before = await db.one<Row>(
+      "SELECT id, label, tier, status FROM endpoints WHERE id = $1",
+      [req.params.endpointId],
+    );
+    if (!before) throw fail.notFound("Nœud introuvable.");
+
+    let revision = 0;
+    await db.tx(async (q) => {
+      await q.query(
+        `UPDATE endpoints
+            SET status = $2,
+                updated_at = now()
+          WHERE id = $1`,
+        [req.params.endpointId, body.status],
+      );
+      revision = await bumpPoolRevision(q);
+      await appendAudit(q, admin, req, {
+        action: "endpoint.status",
+        targetType: "endpoint",
+        targetId: String(before.id),
+        before: { status: before.status },
+        after: { status: body.status },
+      });
+    });
+
+    const updated = await db.one<Row>("SELECT * FROM endpoints WHERE id = $1", [req.params.endpointId]);
+    return { endpoint: endpointDto(updated!), poolRevision: revision };
+  });
+
+  /**
+   * Suppression unitaire d'un nœud (D140).
+   */
+  app.delete<{ Params: { endpointId: string } }>(`${PREFIX}/endpoints/:endpointId`, async (req) => {
+    const admin = await requireAdmin(db, req);
+    authorize(admin, "endpoint.write", null);
+
+    const before = await db.one<Row>(
+      "SELECT id, label FROM endpoints WHERE id = $1",
+      [req.params.endpointId],
+    );
+    if (!before) throw fail.notFound("Nœud introuvable.");
+
+    let revision = 0;
+    await db.tx(async (q) => {
+      await q.query("DELETE FROM endpoints WHERE id = $1", [req.params.endpointId]);
+      revision = await bumpPoolRevision(q);
+      await appendAudit(q, admin, req, {
+        action: "endpoint.delete",
+        targetType: "endpoint",
+        targetId: String(before.id),
+        before: { label: before.label },
+      });
+    });
+
+    return { ok: true, endpointId: String(before.id), poolRevision: revision };
+  });
+
   /* ------------------------------------------------------------ audit log */
 
   app.get(`${PREFIX}/audit-log`, async (req) => {

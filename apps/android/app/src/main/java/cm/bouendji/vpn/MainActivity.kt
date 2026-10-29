@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowCompat
 import cm.bouendji.vpn.brand.BrandTokens
+import cm.bouendji.vpn.net.DeepLinkBus
 import cm.bouendji.vpn.offline.ImportInbox
 import cm.bouendji.vpn.ui.VpnApp
 import cm.bouendji.vpn.vpn.TunnelState
@@ -34,6 +35,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleDeepLink(intent)
         if (savedInstanceState == null) receiveFile(intent)
 
         setContent {
@@ -64,7 +66,7 @@ class MainActivity : ComponentActivity() {
                 systemDark = isSystemInDarkTheme(),
                 onTunnelToggle = {
                     when (state) {
-                        TunnelState.CONNECTED, TunnelState.CONNECTING, TunnelState.RECONNECTING -> VpnTunnelService.stop(this@MainActivity)
+                        TunnelState.CONNECTED, TunnelState.CONNECTING, TunnelState.RECONNECTING, TunnelState.NO_CONNECTION -> VpnTunnelService.stop(this@MainActivity)
                         else -> {
                             val request = VpnTunnelService.consentIntent(this@MainActivity)
                             if (request == null) VpnTunnelService.start(this@MainActivity) else vpnConsent.launch(request)
@@ -91,7 +93,16 @@ class MainActivity : ComponentActivity() {
     /** `singleTop` : un fichier ouvert pendant que l'app tourne arrive ici. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        handleDeepLink(intent)
         receiveFile(intent)
+    }
+
+    private fun handleDeepLink(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "cm.bouendji.vpn" && uri.host == "pay") {
+            val orderId = uri.getQueryParameter("orderId")
+            DeepLinkBus.emitPaymentReturn(orderId)
+        }
     }
 
     /** Fichier de secours `.bvpn` reçu par « Ouvrir avec » ou « Partager vers ». */

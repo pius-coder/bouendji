@@ -28,6 +28,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withTimeoutOrNull
+import cm.bouendji.vpn.net.DeepLinkBus
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.net.InetSocketAddress
@@ -230,11 +232,25 @@ class AppController(
                         )
                     }.getOrNull()?.let { plans = it }
                 }
+                val cachedQuota = store.getString(KEY_CACHED_QUOTA)
+                if (cachedQuota != null) {
+                    runCatching {
+                        container.api.json.decodeFromString(ApiClient.EntitlementDto.serializer(), cachedQuota)
+                    }.getOrNull()?.let { quota = it }
+                }
                 Pair(store.getString(KEY_ONBOARDED) == "1", runCatching { container.api.hasSession() }.getOrDefault(false) || me != null)
             }
             signedIn = restored.second
             // Fichier de secours reçu avant ou pendant le lancement : traité dès qu'il arrive.
             scope.launch { ImportInbox.pending.collect { if (it != null) importOffline() } }
+            // Écoute du retour de paiement profond (Fapshi)
+            scope.launch {
+                DeepLinkBus.paymentReturn.collect {
+                    refreshAll(refreshOrder = true)
+                    showToast("Paiement vérifié avec succès !")
+                    go(Screen.HOME)
+                }
+            }
             syncServersFromVault()
             // Le splash reste visible le temps d'une respiration, comme le prototype.
             val refresh = scope.launch { refreshAll() }
@@ -262,37 +278,42 @@ class AppController(
         scope.launch {
             busy = true
             syncing = true
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    syncPendingRegistration()
+            try {
+                withTimeoutOrNull(4_000L) {
                     runCatching {
-                        val fetchedPlans = container.api.plans(BrandTokens.appId).items
-                        if (fetchedPlans.isNotEmpty()) {
-                            plans = fetchedPlans
-                            store.putString(
-                                KEY_CACHED_PLANS,
-                                container.api.json.encodeToString(
-                                    kotlinx.serialization.builtins.ListSerializer(ApiClient.PlanDto.serializer()),
-                                    fetchedPlans
-                                )
-                            )
+                        withContext(Dispatchers.IO) {
+                            syncPendingRegistration()
+                            runCatching {
+                                val fetchedPlans = container.api.plans(BrandTokens.appId).items
+                                if (fetchedPlans.isNotEmpty()) {
+                                    plans = fetchedPlans
+                                    store.putString(
+                                        KEY_CACHED_PLANS,
+                                        container.api.json.encodeToString(
+                                            kotlinx.serialization.builtins.ListSerializer(ApiClient.PlanDto.serializer()),
+                                            fetchedPlans
+                                        )
+                                    )
+                                }
+                            }
+                            if (selectedPlanId == null) selectedPlanId = plans.firstOrNull { it.featured }?.id ?: plans.firstOrNull()?.id
+                            if (signedIn) refreshPrivate()
+                            if (refreshOrder) order = order?.let { container.api.order(it.orderId, true) }
+                            if (order?.activationStatus == "active") refreshPrivate()
+                        }
+                    }.onFailure { failure ->
+                        if (failure is ApiException && failure.status == 401 && signedIn && store.getString(KEY_PENDING_REGISTRATION) == null) {
+                            signedIn = false
+                            screen = Screen.AUTH
+                        } else if (!(failure is ApiException && (failure.isDeviceRevoked || failure.needsSubscription))) {
+                            error = friendly(failure)
                         }
                     }
-                    if (selectedPlanId == null) selectedPlanId = plans.firstOrNull { it.featured }?.id ?: plans.firstOrNull()?.id
-                    if (signedIn) refreshPrivate()
-                    if (refreshOrder) order = order?.let { container.api.order(it.orderId, true) }
-                    if (order?.activationStatus == "active") refreshPrivate()
                 }
-            }.onFailure { failure ->
-                if (failure is ApiException && failure.status == 401 && signedIn && store.getString(KEY_PENDING_REGISTRATION) == null) {
-                    signedIn = false
-                    screen = Screen.AUTH
-                } else if (!(failure is ApiException && (failure.isDeviceRevoked || failure.needsSubscription))) {
-                    error = friendly(failure)
-                }
+            } finally {
+                busy = false
+                syncing = false
             }
-            busy = false
-            syncing = false
         }
     }
 
@@ -326,7 +347,13 @@ class AppController(
             store.putString(KEY_CACHED_ME, container.api.json.encodeToString(ApiClient.MeResponse.serializer(), freshMe))
         }
         runCatching { devices = api.devices().items }
-        quota = runCatching { api.subscription().entitlement }.getOrNull()
+        val freshQuota = runCatching { api.subscription().entitlement }.getOrNull()
+        if (freshQuota != null) {
+            quota = freshQuota
+            runCatching {
+                store.putString(KEY_CACHED_QUOTA, container.api.json.encodeToString(ApiClient.EntitlementDto.serializer(), freshQuota))
+            }
+        }
         if (me?.entitlement?.active == true) {
             when (val bundle = runCatching { api.fetchBundle() }.getOrNull()) {
                 is BundleFetch.Fresh -> {
@@ -680,6 +707,7 @@ class AppController(
         const val KEY_ONBOARDED = "ui.onboarded"
         const val KEY_CACHED_ME = "cache.me"
         const val KEY_CACHED_PLANS = "cache.plans"
+        const val KEY_CACHED_QUOTA = "cache.quota"
         const val KEY_PENDING_REGISTRATION = "offline.pending_reg"
     }
 }

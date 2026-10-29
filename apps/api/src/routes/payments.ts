@@ -15,7 +15,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { env } from "../config.js";
 import type { Database } from "../db.js";
 import { ApiFailure, fail } from "../lib/errors.js";
-import { handleWebhookEvent, payloadHash } from "../services/payments.js";
+import { handleWebhookEvent, payloadHash, reconcilePayment, loadOrder, loadOrderByProviderRef } from "../services/payments.js";
 import { getMockPaymentStatus, setMockPaymentStatus, type MockPaymentStatus } from "../services/mockPayments.js";
 
 /* ------------------------------------------------------------------ utils */
@@ -66,11 +66,160 @@ function html(body: string): string {
 </html>`;
 }
 
-/** Page de retour après paiement : aucune donnée, aucun jeton. */
-function returnPage(): string {
-  return html(`<h1>Paiement terminé</h1>
-<p>Revenez à l'application : elle vérifie le statut auprès du serveur.</p>
-<p class="muted">Cette page ne confirme rien par elle-même.</p>`);
+interface ReturnPageProps {
+  orderId: string;
+  status: "success" | "pending" | "failed";
+  amountXaf: number;
+  transId?: string;
+}
+
+function renderReturnPage({ orderId, status, amountXaf, transId }: ReturnPageProps): string {
+  const safeOrderId = escapeHtml(orderId);
+  const safeTransId = transId ? escapeHtml(transId) : "";
+  const shortId = safeOrderId.slice(0, 8);
+  const deepLink = `cm.bouendji.vpn://pay/return?orderId=${encodeURIComponent(orderId)}&status=${status}`;
+  const intentUrl = `intent://pay/return?orderId=${encodeURIComponent(orderId)}&status=${status}#Intent;scheme=cm.bouendji.vpn;package=cm.bouendji.nevpn;end`;
+
+  const isSuccess = status === "success";
+  const isPending = status === "pending";
+
+  const iconSvg = isSuccess
+    ? `<div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(16, 185, 129, 0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem;">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </div>`
+    : isPending
+    ? `<div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(245, 158, 11, 0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem;">
+        <div style="width: 28px; height: 28px; border: 3px solid rgba(245, 158, 11, 0.3); border-top-color: #F59E0B; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+      </div>`
+    : `<div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(239, 68, 68, 0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem;">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </div>`;
+
+  const title = isSuccess
+    ? "Paiement réussi !"
+    : isPending
+    ? "Vérification en cours..."
+    : "Paiement non complété";
+
+  const subtitle = isSuccess
+    ? "Votre forfait est immédiatement activé. Vous pouvez reprendre votre navigation sécurisée."
+    : isPending
+    ? "Nous attendons la confirmation de l'opérateur mobile money."
+    : "La transaction a été annulée ou n'a pas pu aboutir.";
+
+  return `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+${isPending ? '<meta http-equiv="refresh" content="3">' : ""}
+<title>${title} — Bouendji VPN</title>
+<style>
+  @keyframes spin { to { transform: rotate(360deg); } }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    padding: 2rem 1.25rem;
+    background: #090D16;
+    color: #F8FAFC;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    background: #111827;
+    border: 1px solid #1F2937;
+    border-radius: 1.25rem;
+    padding: 2rem 1.75rem;
+    max-width: 24rem;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  }
+  h1 { font-size: 1.5rem; margin: 0 0 0.5rem; font-weight: 700; }
+  p { margin: 0 0 1.25rem; color: #9CA3AF; font-size: 0.925rem; line-height: 1.5; }
+  .details {
+    background: #1A2234;
+    border: 1px solid #243048;
+    border-radius: 0.75rem;
+    padding: 1rem;
+    margin: 1.25rem 0;
+    text-align: left;
+    font-size: 0.875rem;
+  }
+  .row { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
+  .row:last-child { margin-bottom: 0; }
+  .row span:first-child { color: #9CA3AF; }
+  .row span:last-child { color: #F3F4F6; font-weight: 600; }
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 0.875rem 1rem;
+    background: #10B981;
+    color: #022C22;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 1rem;
+    border-radius: 0.75rem;
+    border: none;
+    cursor: pointer;
+    margin-top: 1.25rem;
+    text-align: center;
+    transition: background 0.15s ease;
+  }
+  .btn:hover { background: #059669; color: #FFFFFF; }
+  .btn-alt {
+    background: transparent;
+    border: 1px solid #374151;
+    color: #D1D5DB;
+    margin-top: 0.75rem;
+    font-weight: 600;
+  }
+  .btn-alt:hover { background: #1F2937; color: #FFFFFF; }
+</style>
+${isSuccess ? `<script>
+  // Essai de redirection automatique vers l'application
+  setTimeout(function() {
+    window.location.href = "${intentUrl}";
+  }, 1000);
+</script>` : ""}
+</head>
+<body>
+  <div class="card">
+    ${iconSvg}
+    <h1>${title}</h1>
+    <p>${subtitle}</p>
+
+    <div class="details">
+      <div class="row">
+        <span>Montant</span>
+        <span style="color: #34D399; font-size: 1.05rem;">${amountXaf} FCFA</span>
+      </div>
+      <div class="row">
+        <span>Commande</span>
+        <code>#${shortId}</code>
+      </div>
+      ${safeTransId ? `<div class="row"><span>Transaction</span><code>${safeTransId}</code></div>` : ""}
+      <div class="row">
+        <span>Statut</span>
+        <span style="color: ${isSuccess ? '#34D399' : isPending ? '#FBBF24' : '#F87171'}; font-weight: 700;">
+          ${isSuccess ? "Confirmé" : isPending ? "En attente" : "Échoué"}
+        </span>
+      </div>
+    </div>
+
+    <a href="${intentUrl}" class="btn">Ouvrir l'application</a>
+    <a href="${deepLink}" class="btn btn-alt">Lien direct application</a>
+  </div>
+</body>
+</html>`;
 }
 
 function mockPage(providerRef: string): string {
@@ -197,6 +346,45 @@ export function registerPaymentRoutes(app: FastifyInstance, db: Database): void 
     },
   );
 
+  /* --------------------------------------------------------- retour paiement */
+
+  app.get("/pay/return/:orderId", async (req: FastifyRequest<{ Params: { orderId: string } }>, reply) => {
+    const orderId = String(req.params.orderId ?? "").trim();
+    const query = (req.query ?? {}) as Record<string, unknown>;
+    const transId = typeof query.transId === "string" ? query.transId.trim() : undefined;
+    const qStatus = typeof query.status === "string" ? query.status.trim().toUpperCase() : undefined;
+
+    let order = await loadOrder(db, orderId);
+    if (!order && transId) {
+      order = await loadOrderByProviderRef(db, transId);
+    }
+
+    if (order && (order.status === "created" || order.status === "pending")) {
+      try {
+        await reconcilePayment(db, {
+          orderId: order.id,
+          providerRef: transId ?? (order.provider_ref ? String(order.provider_ref) : undefined),
+        });
+        order = (await loadOrder(db, order.id)) ?? order;
+      } catch (err) {
+        req.log.warn({ err, orderId }, "reconcile on return failed");
+      }
+    }
+
+    const isSuccess = order?.status === "paid" || qStatus === "SUCCESSFUL";
+    const isFailed = order?.status === "failed" || qStatus === "FAILED" || qStatus === "EXPIRED";
+    const amountXaf = order?.amount_xaf ?? 300;
+
+    return reply.type("text/html; charset=utf-8").send(
+      renderReturnPage({
+        orderId: order?.id ?? orderId,
+        status: isSuccess ? "success" : isFailed ? "failed" : "pending",
+        amountXaf,
+        transId,
+      }),
+    );
+  });
+
   /* --------------------------------------------------------- page simulée */
 
   // La page n'existe qu'avec PAYMENT_PROVIDER=mock : en production, la route
@@ -221,8 +409,4 @@ export function registerPaymentRoutes(app: FastifyInstance, db: Database): void 
       return reply.type("text/html; charset=utf-8").send(mockPage(ref));
     },
   );
-
-  app.get("/pay/return/:orderId", async (_req, reply) => {
-    return reply.type("text/html; charset=utf-8").send(returnPage());
-  });
 }

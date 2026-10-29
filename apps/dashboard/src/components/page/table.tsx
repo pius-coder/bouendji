@@ -59,7 +59,7 @@ export function TableCard({
 }) {
   return (
     <div className="flex flex-col">
-      <div>
+      <div className="overflow-x-auto">
         <table aria-label={label} className="w-full border-collapse text-start">
           <thead className="sticky z-10 hidden bg-surface shadow-[inset_0_-1px_0_var(--border)] md:table-header-group" style={{ top: stickyTop }}>
             <tr>

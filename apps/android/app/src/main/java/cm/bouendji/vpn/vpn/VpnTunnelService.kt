@@ -381,10 +381,11 @@ class VpnTunnelService : VpnService() {
         trafficJob?.cancel()
         if (lastPlan != null) {
             val api = runCatching { container.api }.getOrNull()
-            if (api != null) CoroutineScope(Dispatchers.IO).launch { meter.flush(api) }
+            if (api != null) CoroutineScope(Dispatchers.IO).launch { meter.flush(api, null) }
         }
         ServerBus.setActive(null)
         ServerBus.setTraffic(null)
+        ServerBus.setRates(0.0, 0.0)
         ServerBus.setNotice(null)
         // Moteur d'abord, TUN ensuite : le TUN ne disparaît pas sous un moteur vivant.
         runCatching { container.tunnelEngine.stop() }
@@ -414,14 +415,22 @@ class VpnTunnelService : VpnService() {
         meter.resetSession()
         trafficJob = scope.launch {
             var ticks = 0
+            var lastTraffic: TrafficTotals? = null
             while (isActive) {
                 container.tunnelEngine.trafficTotals().onSuccess {
                     ServerBus.setTraffic(it)
+                    val prev = lastTraffic
+                    if (prev != null) {
+                        val down = (it.downloadBytes - prev.downloadBytes).coerceAtLeast(0) * 8 / 1_000_000.0
+                        val up = (it.uploadBytes - prev.uploadBytes).coerceAtLeast(0) * 8 / 1_000_000.0
+                        ServerBus.setRates(down, up)
+                    }
+                    lastTraffic = it
                     // Le temps en ligne ne compte que lorsque le trafic passe vraiment.
                     meter.onTotals(it, if (TunnelStateBus.state.value == TunnelState.CONNECTED) 1 else 0)
                 }
                 ticks++
-                if (ticks % TELEMETRY_EVERY_TICKS == 0) meter.flush(container.api)
+                if (ticks % TELEMETRY_EVERY_TICKS == 0) meter.flush(container.api, ServerBus.active.value)
                 delay(1_000)
             }
         }

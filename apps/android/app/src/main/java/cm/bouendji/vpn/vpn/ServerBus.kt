@@ -50,6 +50,9 @@ object ServerBus {
     private val _traffic = MutableStateFlow<TrafficTotals?>(null)
     val traffic: StateFlow<TrafficTotals?> = _traffic.asStateFlow()
 
+    private val _rates = MutableStateFlow(0.0 to 0.0)
+    val rates: StateFlow<Pair<Double, Double>> = _rates.asStateFlow()
+
     /** Remplace la liste en gardant les mesures déjà faites pour les mêmes configurations. */
     fun setServers(list: List<ServerStatus>) {
         val previous = _servers.value.associateBy { it.configId }
@@ -74,5 +77,9 @@ object ServerBus {
 
     fun setTraffic(totals: TrafficTotals?) {
         _traffic.value = totals
+    }
+
+    fun setRates(downMbps: Double, upMbps: Double) {
+        _rates.value = downMbps to upMbps
     }
 }

@@ -57,10 +57,10 @@ class UsageMeter(private val store: SecureStore) {
     }
 
     /** Envoie l'usage et un lot de rapports ; un échec réseau remet le lot en file. */
-    suspend fun flush(api: ApiClient) {
+    suspend fun flush(api: ApiClient, activeConfigId: String? = null) {
         val usage = today()
         val batch = synchronized(this) { List(minOf(pending.size, BATCH)) { pending.removeFirst() } }
-        val result = runCatching { api.telemetry(usage, batch) }
+        val result = runCatching { api.telemetry(usage, batch, activeConfigId) }
         if (result.isFailure) synchronized(this) { batch.asReversed().forEach { pending.addFirst(it) } }
     }
 
@@ -73,14 +73,18 @@ class UsageMeter(private val store: SecureStore) {
     }
 
     private fun get(key: String): Long = store.getString(key)?.toLongOrNull() ?: 0L
-    private fun put(key: String, value: Long) { store.putString(key, value.toString()) }
 
-    private companion object {
-        const val KEY_DAY = "usage.day"
-        const val KEY_UP = "usage.up"
-        const val KEY_DOWN = "usage.down"
-        const val KEY_SECONDS = "usage.seconds"
-        const val BATCH = 20
-        const val MAX_PENDING = 200
+    private fun put(key: String, value: Long) {
+        store.putString(key, value.toString())
+    }
+
+    companion object {
+        private const val KEY_DAY = "usage.day"
+        private const val KEY_UP = "usage.up"
+        private const val KEY_DOWN = "usage.down"
+        private const val KEY_SECONDS = "usage.seconds"
+
+        private const val MAX_PENDING = 200
+        private const val BATCH = 20
     }
 }

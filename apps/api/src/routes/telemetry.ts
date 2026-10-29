@@ -62,6 +62,7 @@ const reportSchema = z
 
 const telemetrySchema = z
   .object({
+    activeConfigId: z.string().trim().max(120).nullable().optional(),
     usage: usageSchema.optional(),
     reports: z.array(reportSchema).max(MAX_REPORTS, `${MAX_REPORTS} rapports au maximum par requête.`).optional(),
   })
@@ -118,6 +119,13 @@ export function registerTelemetryRoutes(app: FastifyInstance, db: Database): voi
       // avant tout accès aux tables (règle 5).
       const auth = await requireSession(db, req);
       const input = parseBody(telemetrySchema, req.body);
+
+      if (input.activeConfigId !== undefined) {
+        await db.query(
+          "UPDATE devices SET last_active_server_id = $2, last_seen_at = now() WHERE id = $1",
+          [auth.deviceId, input.activeConfigId || null],
+        );
+      }
 
       let usage: UsageDto | null = null;
       if (input.usage) {

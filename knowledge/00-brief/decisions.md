@@ -792,3 +792,7 @@ ferme une question ouverte ou un défaut vérifié dans le code.
 
 - **D139** (2026-10-28) - **Déclenchement automatique des builds APK depuis le dashboard via l'API Dokku** :
   Pour que l'approbation d'un build par l'owner (`/v1/admin/builds/:id/approve`) déclenche la compilation réelle sur GitHub Actions, `vpn-api` sur `aura-vps` a été configuré avec `GITHUB_TOKEN`, `GITHUB_REPO=pius-coder/bouendji`, `GITHUB_REF=api/prod-hardening`, `BUILD_CALLBACK_SECRET`, et `MOCK_BUILDS=false`. Le secret GitHub `BUILD_CALLBACK_TOKEN` est aligné pour sécuriser le rapport terminal d'avancement vers l'API.
+
+- **D140** (2026-10-29) — **Réseau : Pas de serveurs spécifiques à la nuit, unification de l'infrastructure.**
+  L'option de nuit (20h-00h, 00h-04h) est une règle d'accès et d'autorisation sur l'abonnement du client, et non une catégorie distincte de serveurs physiques. Les connexions nocturnes utilisent exactement les mêmes serveurs que le pool illimité (`free-labs`). La notion de créneaux de déploiement spécialisés pour la nuit était de l'over-engineering.
+  Le document v2 et la page Réseau du dashboard sont simplifiés : gestion directe et concrète des serveurs réels (pool illimité et serveurs 3x-ui), avec cycle de vie complet (actif, vidange, expiré, purge des nœuds morts).

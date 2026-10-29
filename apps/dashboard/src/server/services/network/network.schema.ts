@@ -46,6 +46,27 @@ export const endpointHealthChange = z.object({
   poolRevision: z.number(),
 });
 
+export const purgeExpiredResponse = z.object({
+  purgedCount: z.number(),
+  poolRevision: z.number(),
+});
+
+export const endpointStatusBody = z.object({
+  status: z.enum(["active", "draining", "expired"]),
+});
+export type EndpointStatusInput = z.input<typeof endpointStatusBody>;
+
+export const endpointStatusChange = z.object({
+  endpoint: poolEndpoint,
+  poolRevision: z.number(),
+});
+
+export const deleteEndpointResponse = z.object({
+  ok: z.boolean(),
+  endpointId: z.string(),
+  poolRevision: z.number(),
+});
+
 /** Recopiés de `apps/api/src/routes/admin.ts` (l. 142-143). */
 const HOSTNAME_RE = /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/i;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
