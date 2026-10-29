@@ -506,7 +506,7 @@ export async function servedEndpoints(
   return db.query<EndpointRow>(
     `SELECT * FROM endpoints
       WHERE status = 'active'
-        AND tier = $2
+        AND ($2 = 'paid-gcp' OR tier = $2)
         AND health <> 'down'
         AND expires_at > now() + ($3::int * interval '1 second')
       ORDER BY CASE health WHEN 'healthy' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END,
