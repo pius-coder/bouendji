@@ -116,7 +116,7 @@ fun Mascot(modifier: Modifier = Modifier, float: Boolean = true, alt: Boolean = 
     } else {
         0f
     }
-    Image(painterResource(if (alt && BrandTokens.themeId == "nebula") R.drawable.brand_mascot_alt else R.drawable.brand_mascot), contentDescription = null, modifier = modifier.graphicsLayer { translationY = offset * density })
+    Image(painterResource(if (alt) R.drawable.brand_mascot_alt else R.drawable.brand_mascot), contentDescription = null, modifier = modifier.graphicsLayer { translationY = offset * density })
 }
 
 /* -------------------------------------------------------------- onboarding */
