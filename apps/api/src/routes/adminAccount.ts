@@ -44,7 +44,7 @@ const meUpdateSchema = z
 const passwordChangeSchema = z
   .object({
     currentPassword: z.string().min(1).max(256),
-    newPassword: z.string().min(12).max(256),
+    newPassword: z.string().min(1).max(256),
   })
   .strict();
 

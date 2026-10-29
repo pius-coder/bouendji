@@ -139,7 +139,7 @@ function Strength({ id, score, label, length }: { id: string; score: number; lab
   if (length === 0) {
     return (
       <p id={id} className="text-footnote text-muted-foreground">
-        {PASSWORD_MIN_LENGTH} caractères minimum.
+        Mot de passe libre.
       </p>
     );
   }

@@ -15,7 +15,7 @@ const membershipRef = z.object({ communityId: z.string(), role: z.string() });
 export const PASSWORD_CHANGE_REQUIRED = "PASSWORD_CHANGE_REQUIRED";
 
 /** Longueur minimale du nouveau mot de passe (chantier §6). */
-export const PASSWORD_MIN_LENGTH = 12;
+export const PASSWORD_MIN_LENGTH = 1;
 export const PASSWORD_MAX_LENGTH = 200;
 
 /** Numéro WhatsApp camerounais : 9 chiffres, préfixe +237 retiré avant validation. */

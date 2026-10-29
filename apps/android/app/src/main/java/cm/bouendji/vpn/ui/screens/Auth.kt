@@ -91,7 +91,7 @@ fun AuthScreen(ctx: ShellContext) {
                             prefix = "+${COUNTRIES[form.countryIndex].second}",
                         )
                         Divider()
-                        FormRow("Mot de passe", form.password, { c.authForm = c.authForm.copy(password = it) }, "8 caractères minimum", KeyboardType.Password, password = true)
+                        FormRow("Mot de passe", form.password, { c.authForm = c.authForm.copy(password = it) }, "Mot de passe", KeyboardType.Password, password = true)
                     }
 
                     GroupHeader("Parrainage")

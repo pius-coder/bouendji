@@ -394,7 +394,7 @@ class AppController(
         error = when {
             form.register && name.isBlank() -> "Indique ton nom."
             form.phone.filter(Char::isDigit).length < 6 -> "Numéro de téléphone incomplet."
-            form.password.length < 8 -> "Huit caractères minimum pour le mot de passe."
+            form.password.isBlank() -> "Saisis un mot de passe."
             else -> null
         }
         if (error != null) return

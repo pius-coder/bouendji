@@ -187,6 +187,32 @@ export async function loadEntitlement(db: Queryable, userId: string): Promise<En
   ) > 0;
 
   if (!row) {
+    const userRole = await db.scalar<string>("SELECT role FROM users WHERE id = $1", [userId]);
+    if (userRole === "owner") {
+      const farFuture = new Date(Date.now() + 3650 * 86400 * 1000).toISOString();
+      return {
+        subscription: {
+          id: "owner-lifetime",
+          planId: "owner-plan",
+          planCode: "owner-unlimited",
+          planName: "Accès Propriétaire (Illimité)",
+          startsAt: new Date().toISOString(),
+          endsAt: farFuture,
+          deviceLimit: 99,
+        },
+        entitlement: {
+          active: true,
+          planCode: "owner-unlimited",
+          planName: "Accès Propriétaire (Illimité)",
+          endpointTier: "paid-gcp",
+          startsAt: new Date().toISOString(),
+          endsAt: farFuture,
+          daysRemaining: 3650,
+          deviceLimit: 99,
+          activationPending: false,
+        },
+      };
+    }
     return {
       subscription: null,
       entitlement: {

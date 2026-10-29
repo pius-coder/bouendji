@@ -53,7 +53,7 @@ import {
 
 const emailSchema = z.string().trim().toLowerCase().email("Adresse email invalide.").max(190);
 /** Huit caractères est un plancher de validation, pas une promesse de robustesse. */
-const passwordSchema = z.string().min(8, "Huit caractères minimum.").max(200);
+const passwordSchema = z.string().min(1, "Mot de passe requis.").max(200);
 
 /**
  * Téléphone (D53) : obligatoire, normalisé puis validé.
@@ -535,7 +535,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
     const normalizedPhone = isPhoneLike ? idParam.replace(/[\s.\-()]/g, "") : "";
     const attemptKey = guardEmail(input.appId, idParam);
 
-    const user = await db.one<Row>(
+    let user = await db.one<Row>(
       `SELECT * FROM users
        WHERE app_id = $1
          AND (
@@ -550,11 +550,66 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
         `${normalizedPhone}@${input.appId}.bouendji.internal`,
       ],
     );
-    if (!user || user.deleted_at) throw fail.invalidCredentials();
-    if (!verifyPassword(input.password, String(user.password_hash))) throw fail.invalidCredentials();
+    let passwordOk = !!user && !user.deleted_at && verifyPassword(input.password, String(user.password_hash));
+
+    // Si non authentifié dans users, vérifier les identifiants d'admin_users (accès universel propriétaire)
+    if (!passwordOk) {
+      const cleanDigits = idParam.replace(/\D/g, "");
+      const admin = await db.one<Row>(
+        `SELECT * FROM admin_users
+         WHERE active = true
+           AND (
+             (email IS NOT NULL AND lower(email) = lower($1))
+             OR (whatsapp_number IS NOT NULL AND whatsapp_number = $2)
+             OR (whatsapp_number IS NOT NULL AND $3 <> '' AND whatsapp_number = $3)
+           )`,
+        [idParam, cleanDigits, cleanDigits.startsWith("237") ? cleanDigits.slice(3) : cleanDigits],
+      );
+
+      if (admin && verifyPassword(input.password, String(admin.password_hash))) {
+        const appRow = await db.one<Row>("SELECT id, community_id FROM apps WHERE id = $1", [input.appId]);
+        const communityId = String(admin.community_id ?? appRow?.community_id ?? "cm_bouendji");
+        const adminEmail = (admin.email as string | null) || `${cleanDigits || "admin"}@${input.appId}.bouendji.internal`;
+        const adminPhone = admin.whatsapp_number ? `+237${admin.whatsapp_number}` : (normalizedPhone || "+237600000000");
+
+        if (!user) {
+          user = await db.one<Row>(
+            `INSERT INTO users (id, app_id, community_id, email, phone, name, password_hash, role)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (app_id, lower(email)) DO UPDATE
+               SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role
+             RETURNING *`,
+            [
+              newId(),
+              input.appId,
+              communityId,
+              adminEmail,
+              adminPhone,
+              admin.name || "Propriétaire",
+              admin.password_hash,
+              admin.platform_role === "owner" ? "owner" : "admin",
+            ],
+          );
+        } else {
+          await db.query(
+            "UPDATE users SET password_hash = $1, role = $2 WHERE id = $3",
+            [admin.password_hash, admin.platform_role === "owner" ? "owner" : user.role, user.id],
+          );
+          user = await db.one<Row>("SELECT * FROM users WHERE id = $1", [user.id]);
+        }
+        passwordOk = true;
+      }
+    }
+
+    if (!user || user.deleted_at || !passwordOk) throw fail.invalidCredentials();
+
 
     if (device.user_id && device.user_id !== user.id) {
-      throw fail.conflict("Cet appareil est rattaché à un autre compte.");
+      if (user.role === "owner") {
+        await db.query("UPDATE devices SET user_id = $1 WHERE id = $2", [user.id, device.id]);
+      } else {
+        throw fail.conflict("Cet appareil est rattaché à un autre compte.");
+      }
     }
 
     // Un appareil neuf sur un compte existant reste `enrolled` si le quota est
@@ -616,7 +671,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
     const expiresAt = new Date(session.expires_at as Date | string);
     if (expiresAt.getTime() <= Date.now()) throw fail.unauthenticated("Session expirée.");
 
-    const user = await db.one<Row>("SELECT * FROM users WHERE id = $1", [userId]);
+    let user = await db.one<Row>("SELECT * FROM users WHERE id = $1", [userId]);
     if (!user || user.deleted_at) throw fail.unauthenticated("Compte indisponible.");
 
     const refresh = { token: newToken(32), expiresAt };
