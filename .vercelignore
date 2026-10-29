@@ -13,6 +13,9 @@ tools
 knowledge
 infra
 apps/android
+re-geny
+re-simonfree
+test_*.png
 apps/dashboard/.next
 apps/api/data
 *.apk

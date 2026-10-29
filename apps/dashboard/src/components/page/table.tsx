@@ -58,17 +58,17 @@ export function TableCard({
   stickyTop?: number;
 }) {
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col overflow-hidden rounded-[1.25rem] bg-card shadow-card">
       <div className="overflow-x-auto">
         <table aria-label={label} className="w-full border-collapse text-start">
-          <thead className="sticky z-10 hidden bg-surface shadow-[inset_0_-1px_0_var(--border)] md:table-header-group" style={{ top: stickyTop }}>
+          <thead className="sticky z-10 hidden bg-group/90 shadow-[inset_0_-1px_0_var(--border)] backdrop-blur-xl md:table-header-group" style={{ top: stickyTop }}>
             <tr>
               {columns.map((c) => (
                 <th
                   key={c.id}
                   scope="col"
                   className={cn(
-                    "px-4 py-3 text-start text-footnote font-semibold whitespace-nowrap text-muted-foreground",
+                    "px-4 py-3.5 text-start text-[0.6875rem] font-bold uppercase tracking-[0.08em] whitespace-nowrap text-muted-foreground",
                     c.align === "right" && "text-end",
                     c.wide && "hidden xl:table-cell",
                   )}
@@ -81,12 +81,12 @@ export function TableCard({
           <tbody className="[&>tr]:border-b [&>tr]:border-border">{children}</tbody>
         </table>
       </div>
-      {footer ? <div className="flex flex-wrap items-center justify-between gap-2 px-1 py-4">{footer}</div> : null}
+      {footer ? <div className="flex flex-wrap items-center justify-between gap-2 border-t border-separator bg-group/45 px-4 py-3.5">{footer}</div> : null}
     </div>
   );
 }
 
-const ROW = "flex flex-wrap items-center gap-x-3 gap-y-1 px-1 py-3 transition-colors hover:bg-group md:table-row md:h-[57px] md:p-0";
+const ROW = "flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 transition-colors duration-150 hover:bg-accent-soft/45 md:table-row md:h-[60px] md:p-0";
 
 /** Lignes : `cells(row)` rend chaque colonne par son `id`. */
 export function TableRows<T>({
@@ -166,7 +166,7 @@ export function Initials({ name }: { name: string }) {
       .map((p) => p[0]?.toUpperCase())
       .join("") || "?";
   return (
-    <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-full bg-group-strong text-footnote font-semibold text-foreground">
+    <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-footnote font-bold text-accent-text">
       {text}
     </span>
   );

@@ -172,7 +172,7 @@ export async function UniversalDrawerHost({
         return {
           title: `Commande ${shortId(detail.id)}`,
           subtitle: formatDateTime(detail.createdAt),
-          body: <OrderSheetBody detail={detail} />,
+          body: <OrderSheetBody detail={detail} canReconcile={can(me, "orders.reconcile", detail.communityId)} />,
         };
       } catch {
         return {

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Aleo, Host_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Host_Grotesk, JetBrains_Mono } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
@@ -8,18 +8,11 @@ import { cn } from "@/lib/utils";
 import { Providers } from "./providers";
 import "./globals.css";
 
-// Système typographique Chariow / orya : Host Grotesk (corps), Aleo (titres display), JetBrains Mono (code / identifiants).
+// Système typographique unifié : Host Grotesk pour toute l'interface, JetBrains Mono pour le code et les identifiants.
 const fontBody = Host_Grotesk({
   weight: ["300", "400", "500", "600", "700"],
   subsets: ["latin"],
   variable: "--font-body",
-  display: "swap",
-});
-
-const fontHeading = Aleo({
-  weight: ["400", "500", "600", "700"],
-  subsets: ["latin"],
-  variable: "--font-heading",
   display: "swap",
 });
 
@@ -42,7 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="fr"
-      className={cn("h-full antialiased", fontBody.variable, fontHeading.variable, fontMono.variable)}
+      className={cn("h-full antialiased", fontBody.variable, fontMono.variable)}
       suppressHydrationWarning
     >
       <head>

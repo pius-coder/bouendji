@@ -1,7 +1,7 @@
 "use server";
 
 import { getServices } from "@/server/services";
-import { adminCreateBody, type AdminCreated, type AdminResetResult } from "@/server/services/admins/admins.schema";
+import { adminCreateBody, type AdminAccount, type AdminCreated, type AdminResetResult } from "@/server/services/admins/admins.schema";
 import { runAction, type ActionResult } from "./action-result";
 
 /**
@@ -33,4 +33,8 @@ export async function resetAdminPasswordAction(adminId: string): Promise<ActionR
   return runAction(async () => {
     return getServices().admins.resetPassword(adminId);
   });
+}
+
+export async function setAdminStatusAction(adminId: string, active: boolean): Promise<ActionResult<AdminAccount>> {
+  return runAction(() => getServices().admins.setStatus(String(adminId), active === true));
 }

@@ -1,19 +1,40 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
+import { toast } from "sonner";
 import { DetailFacts } from "@/components/common/detail-panel";
 import { Icon } from "@/components/common/icon";
 import { StatusBadge } from "@/components/common/status-badge";
 import { EntityLink } from "@/components/drawers/entity-link";
 import { shortId } from "@/components/offline/offline-status";
 import { formatBps, formatDateTime, formatXaf, NO_VALUE } from "@/lib/format";
+import { reconcileOrderAction } from "@/server/actions/orders.action";
 import type { OrderDetail } from "@/server/services/orders/orders.schema";
+import { Button } from "@/components/ui/button";
+import { canOfferPaymentReconciliation } from "@/components/orders/order-reconciliation";
 
 /**
  * Contenu de la fiche commande (`?commande=id`) chargée via `GET /v1/admin/orders/:orderId`.
  * Liens cliquables vers l'abonné (`?abonne=`), le forfait (`?forfait=`) et le versement (`?versement=`).
  */
-export function OrderSheetBody({ detail }: { detail: OrderDetail }) {
+export function OrderSheetBody({ detail, canReconcile = false }: { detail: OrderDetail; canReconcile?: boolean }) {
   const commission = detail.commissions?.[0] ?? null;
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const showReconcile = canOfferPaymentReconciliation(detail, canReconcile);
+
+  function reconcile() {
+    startTransition(async () => {
+      const result = await reconcileOrderAction(detail.id);
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      toast.success(result.data.activated ? "Paiement vérifié et forfait activé." : "Paiement vérifié. Aucun changement d'activation.");
+      router.refresh();
+    });
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -23,6 +44,18 @@ export function OrderSheetBody({ detail }: { detail: OrderDetail }) {
           {detail.amountXaf !== undefined ? formatXaf(detail.amountXaf) : NO_VALUE}
         </span>
       </div>
+
+      {showReconcile ? (
+        <div className="rounded-xl bg-group p-4">
+          <p className="text-subhead font-semibold text-foreground">Paiement ou activation en attente</p>
+          <p className="mt-1 text-footnote text-muted-foreground">
+            Vérifiez le fournisseur et reprenez l&apos;activation sans créer un second paiement.
+          </p>
+          <Button type="button" className="mt-3" disabled={pending} onClick={reconcile}>
+            {pending ? "Vérification…" : "Vérifier le paiement"}
+          </Button>
+        </div>
+      ) : null}
 
       <DetailFacts
         items={[

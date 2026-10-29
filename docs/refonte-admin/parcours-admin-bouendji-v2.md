@@ -139,7 +139,7 @@ sequenceDiagram
   API-->>N: mustChangePassword vrai
   N-->>Ad: redirection vers Changer le mot de passe, toute autre page bloquée
   Ad->>N: actuel, nouveau, confirmation
-  N->>N: 12 caractères minimum, confirmation identique, différent de l'actuel
+  N->>N: valeur non vide, confirmation identique, différent de l'actuel
   N->>API: POST /v1/admin/me/password
   API->>DB: vérifie l'actuel, enregistre le nouveau hash
   API->>DB: indicateur levé, toutes les autres sessions révoquées

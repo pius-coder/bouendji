@@ -32,6 +32,7 @@ export type Capability =
   | "staff.manage"
   | "members.read"
   | "orders.read"
+  | "orders.reconcile"
   | "money.read"
   | "devices.revoke"
   | "devices.offline"
@@ -127,6 +128,8 @@ export function can(me: RoleSource, capability: Capability, communityId: string 
       // permitted() accorde `finance` hors périmètre, mais scopedCommunity() répond 403 sur
       // les routes `/communities/:id/orders`. Le dashboard suit la règle produit (ui-model.test.ts).
       return local !== null || anyRole(me, ["finance"]);
+    case "orders.reconcile":
+      return local === "community_admin";
     case "money.read":
       // Route `/communities/:id/commissions` : scopedCommunity() exige une appartenance, donc local seulement.
       return local === "community_admin" || local === "finance";

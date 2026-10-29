@@ -27,17 +27,17 @@ export function StatStrip({ items, className }: { items: readonly StatItem[]; cl
   return (
     <dl
       className={cn(
-        "grid grid-cols-2 overflow-hidden rounded-section bg-card md:grid-cols-[repeat(auto-fit,minmax(11rem,1fr))]",
+        "grid grid-cols-2 overflow-hidden rounded-[1.25rem] bg-card shadow-card md:grid-cols-[repeat(auto-fit,minmax(11rem,1fr))]",
         className,
       )}
     >
       {items.map((item) => (
         <div
           key={item.label}
-          className="flex min-w-0 flex-col gap-0.5 px-4 py-3.5 shadow-[inset_-1px_-1px_0_var(--separator)]"
+          className="relative flex min-w-0 flex-col gap-1 px-5 py-4 shadow-[inset_-1px_-1px_0_var(--separator)]"
         >
-          <dt className="truncate text-footnote text-muted-foreground">{item.label}</dt>
-          <dd className={cn("text-title-3 font-semibold tabular-nums", TONE[item.tone ?? "default"])}>{item.value}</dd>
+          <dt className="truncate text-caption-1 font-semibold uppercase tracking-[0.06em] text-muted-foreground">{item.label}</dt>
+          <dd className={cn("text-title-2 font-bold tracking-tight tabular-nums", TONE[item.tone ?? "default"])}>{item.value}</dd>
           {item.hint ? <dd className="text-caption-1 text-muted-foreground">{item.hint}</dd> : null}
         </div>
       ))}
@@ -47,7 +47,7 @@ export function StatStrip({ items, className }: { items: readonly StatItem[]; cl
 
 export function StatStripSkeleton({ count = 4 }: { count?: number }) {
   return (
-    <div role="status" aria-label="Chargement des indicateurs" className="grid grid-cols-2 overflow-hidden rounded-section bg-card md:grid-cols-4">
+    <div role="status" aria-label="Chargement des indicateurs" className="grid grid-cols-2 overflow-hidden rounded-[1.25rem] bg-card shadow-card md:grid-cols-4">
       {Array.from({ length: count }, (_, i) => (
         <div key={i} aria-hidden className="flex flex-col gap-2 px-4 py-3.5 shadow-[inset_-1px_-1px_0_var(--separator)]">
           <span className="h-3 w-20 animate-pulse rounded-full bg-fill" />

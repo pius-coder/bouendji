@@ -17,22 +17,22 @@ import { BRAND_THEMES, type BrandTheme } from "@/server/services/onboarding/onbo
 export async function HomeOnboardingBanner() {
   const services = getServices();
   const [communities, onboarding, apps] = await Promise.all([
-    getCommunities().catch(() => []),
-    services.onboarding.getOnboarding().catch(() => null),
-    services.plans.listApps().catch(() => []),
+    getCommunities(),
+    services.onboarding.getOnboarding(),
+    services.plans.listApps(),
   ]);
 
   const primary = communities[0] ?? null;
   const primaryApp = primary ? apps.find((a) => a.communityId === primary.id) : apps[0];
   const builds = primaryApp
-    ? await services.builds.listBuilds({ appId: primaryApp.id }).catch(() => [])
+    ? await services.builds.listBuilds({ appId: primaryApp.id })
     : [];
   const latestBuild = builds[0] ?? null;
 
   if (!primary || (onboarding && onboarding.completedAt === null && onboarding.step < 6)) {
     const currentStep = onboarding?.step ?? 1;
     return (
-      <div className="flex flex-col justify-between gap-4 rounded-2xl border border-accent-from/30 bg-accent-soft/40 p-5 sm:flex-row sm:items-center">
+      <div className="flex flex-col justify-between gap-4 rounded-2xl bg-accent-soft/55 p-5 sm:flex-row sm:items-center">
         <div className="flex items-start gap-3.5">
           <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
             <Icon name="tag" className="size-5" />
@@ -97,8 +97,8 @@ export async function HomeOnboardingBanner() {
 export async function HomeAppShare() {
   const services = getServices();
   const [communities, apps] = await Promise.all([
-    getCommunities().catch(() => []),
-    services.plans.listApps().catch(() => []),
+    getCommunities(),
+    services.plans.listApps(),
   ]);
 
   const primary = communities[0] ?? null;
@@ -114,7 +114,7 @@ export async function HomeAppShare() {
 
   const primaryApp = apps.find((a) => a.communityId === primary.id) ?? apps[0];
   const builds = primaryApp
-    ? await services.builds.listBuilds({ appId: primaryApp.id }).catch(() => [])
+    ? await services.builds.listBuilds({ appId: primaryApp.id })
     : [];
   const latestReady = builds.find((b) => b.status === "ready" && b.apkUrl) ?? builds[0] ?? null;
   const safeTheme: BrandTheme =

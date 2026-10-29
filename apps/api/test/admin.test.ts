@@ -663,6 +663,20 @@ test("désactiver un compte coupe l'accès au prochain appel, pas dans 8 h", asy
   assert.equal((denied.body as { error: { message: string } }).error.message, "Compte administrateur désactivé.");
 });
 
+test("owner : suspendre un compte révoque ses sessions, puis le réactiver", async () => {
+  const denied = await call("PATCH", `/admins/${TARGET}`, ADMIN_A, { active: false });
+  assert.equal(denied.status, 403);
+
+  const suspended = await call("PATCH", `/admins/${TARGET}`, OWNER, { active: false });
+  assert.equal(suspended.status, 200, suspended.text);
+  assert.equal((suspended.body as { active: boolean }).active, false);
+  assert.equal((await call("GET", "/me", TARGET)).status, 401, "la session ouverte est révoquée");
+
+  const reactivated = await call("PATCH", `/admins/${TARGET}`, OWNER, { active: true });
+  assert.equal(reactivated.status, 200, reactivated.text);
+  assert.equal((reactivated.body as { active: boolean }).active, true);
+});
+
 test("validation : corps strict, valeurs bornées", async () => {
   const badSlug = await call("POST", "/communities", OWNER, { name: "X", slug: "Pas Un Slug" });
   assert.equal(badSlug.status, 400);

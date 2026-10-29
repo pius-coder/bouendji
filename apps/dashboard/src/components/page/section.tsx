@@ -19,12 +19,12 @@ export function Section({
   className?: string;
 }) {
   return (
-    <section className={cn("flex flex-col gap-4 rounded-2xl bg-group p-4", className)}>
+    <section className={cn("flex flex-col gap-5 rounded-[1.25rem] bg-card p-5 shadow-card md:p-6", className)}>
       {title || actions ? (
-        <div className="flex flex-wrap items-end justify-between gap-2">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-separator pb-4">
           <div className="min-w-0">
-            {title ? <h2 className="text-title-3 font-medium tracking-tight text-foreground">{title}</h2> : null}
-            {description ? <p className="text-footnote text-muted-foreground">{description}</p> : null}
+            {title ? <h2 className="text-title-3 font-semibold tracking-[-0.015em] text-foreground">{title}</h2> : null}
+            {description ? <p className="mt-1 max-w-3xl text-footnote leading-relaxed text-muted-foreground">{description}</p> : null}
           </div>
           {actions}
         </div>
@@ -36,5 +36,5 @@ export function Section({
 
 /** Carte blanche posée dans une section ou directement dans la page. */
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("rounded-xl border border-border bg-card p-6", className)}>{children}</div>;
+  return <div className={cn("rounded-2xl bg-card p-6 shadow-card", className)}>{children}</div>;
 }

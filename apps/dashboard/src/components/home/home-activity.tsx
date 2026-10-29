@@ -48,7 +48,7 @@ export async function HomeRecentActivity({ searchParams }: { searchParams: Searc
       communityId: me.platformRole === "owner" ? undefined : readableCommunity?.id,
       limit: 6,
     }),
-  ).catch(() => []);
+  );
 
   if (entries.length === 0) {
     return (
@@ -77,7 +77,7 @@ export async function HomeRecentActivity({ searchParams }: { searchParams: Searc
         return (
           <HomeRow
             key={entry.id}
-            href={href ?? "#"}
+            href={href}
             replace
             scroll={false}
             icon="history"

@@ -288,6 +288,23 @@ marque), soit corriger CONTRIBUTING pour dire « présence suffisante ».
   (`communityWhatsappUrl` vide), la rangée et le bouton restent masqués.
 - **Récompense du parrainage** (D95) : montant, plafond, anti-abus.
 
+## O22 — Attribution manuelle d'un forfait par l'owner
+
+Le besoin est confirmé le 2026-10-29 : l'owner doit pouvoir aider un utilisateur
+dont l'accès n'a pas été activé. Deux opérations différentes ne doivent pas être
+confondues :
+
+1. **reprendre un paiement déjà confirmé** en réconciliant la commande sans
+   modifier le montant ni créer une seconde commission ;
+2. **offrir/prolonger un accès sans paiement**, ce qui exige de décider comment
+   représenter la source, la durée, la commande éventuelle et l'absence de
+   commission dans l'audit et les chiffres de vente.
+
+État vérifié : aucune route admin ne réalise l'une ou l'autre ;
+`subscriptions.order_id` est actuellement obligatoire. Décision nécessaire :
+autoriser seulement la reprise d'activation, ou aussi les accès gratuits avec
+un motif obligatoire et une trace d'audit.
+
 - **Builds sur R2** (D100) : non implémenté ; `builds.ts` vise encore Vercel Blob.
 - ~~Sous-domaine Cloudflare~~ : réglé par D101 (`api`, `dl`, `node1`, `node2`).
 - ~~`cloud-run-url`~~ : réglé — `entrypoint.sh` déduit l'URL des métadonnées

@@ -40,7 +40,7 @@ async function OnboardingLoaded() {
     getCommunities(),
     services.onboarding.getOnboarding(),
     services.pricing.getPricing(),
-    services.plans.listApps().catch(() => []),
+    services.plans.listApps(),
   ]);
 
   const initialCommunity = communities[0] ?? null;
@@ -62,8 +62,8 @@ async function OnboardingLoaded() {
         theme: safeTheme,
       };
       const [appPlans, appBuilds] = await Promise.all([
-        services.plans.listPlans({ appId: firstApp.id }).catch(() => []),
-        services.builds.listBuilds({ appId: firstApp.id }).catch(() => []),
+        services.plans.listPlans({ appId: firstApp.id }),
+        services.builds.listBuilds({ appId: firstApp.id }),
       ]);
       initialPlans = appPlans.filter((p) => p.family !== "custom");
       initialBuilds = appBuilds;

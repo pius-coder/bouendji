@@ -122,6 +122,12 @@ await db.query(
 await db.query(
   `INSERT INTO orders (id, user_id, app_id, plan_id, community_id, amount_xaf, status, provider,
                        commission_bps, commission_xaf, paid_at, activated_at)
+   VALUES ('rd_ord_recovery', 'rd_usr_a2', 'rd_app_a', 'rd_plan_a', $1, 2000, 'paid', 'mock', 2000, 400, now(), NULL)`,
+  [COM_A],
+);
+await db.query(
+  `INSERT INTO orders (id, user_id, app_id, plan_id, community_id, amount_xaf, status, provider,
+                       commission_bps, commission_xaf, paid_at, activated_at)
    VALUES ('rd_ord_b1', 'rd_usr_b', 'rd_app_b', 'rd_plan_b', $1, 1500, 'paid', 'mock', 1500, 225, now(), now())`,
   [COM_B],
 );
@@ -270,6 +276,21 @@ test("fiche commande : support sans montant ni commission ; autre communauté re
   assert.equal((await adminCall("GET", "/orders/rd_nope", OWNER)).status, 404);
 });
 
+test("commande payée non activée : l'admin reprend l'activation, le support ne peut pas", async () => {
+  const forbidden = await adminCall("POST", "/orders/rd_ord_recovery/reconcile", SUPPORT_A);
+  assert.equal(forbidden.status, 403);
+
+  const recovered = await adminCall("POST", "/orders/rd_ord_recovery/reconcile", ADMIN_A);
+  assert.equal(recovered.status, 200, recovered.text);
+  assert.equal((recovered.body as Record<string, unknown>).status, "paid");
+  assert.equal((recovered.body as Record<string, unknown>).activated, true);
+
+  const detail = await adminCall("GET", "/orders/rd_ord_recovery", ADMIN_A);
+  assert.equal(detail.status, 200, detail.text);
+  assert.ok((detail.body as Record<string, any>).activatedAt);
+  assert.equal((detail.body as Record<string, any>).subscription.status, "active");
+});
+
 /* ------------------------------------------------------------- appareil */
 
 test("fiche appareil : rapports 24 h et consommation, aucune donnée de clé", async () => {
@@ -319,12 +340,12 @@ test("résumé de communauté : ventes, abonnés, données du jour, à traiter",
   assert.equal(res.status, 200, res.text);
   const body = res.body as Record<string, any>;
 
-  assert.equal(body.sales.today.count, 2, "deux commandes payées aujourd'hui");
-  assert.equal(body.sales.today.amountXaf, 5000);
-  assert.equal(body.sales.month.count, 2);
+  assert.equal(body.sales.today.count, 3, "trois commandes payées aujourd'hui, dont la reprise d'activation");
+  assert.equal(body.sales.today.amountXaf, 7000);
+  assert.equal(body.sales.month.count, 3);
   assert.equal(body.activeSubscribers, 2, "abonnés distincts");
   assert.equal(body.usageTodayBytes, 1000);
-  assert.deepEqual(body.commissionsAvailable, { count: 1, amountXaf: 400 });
+  assert.deepEqual(body.commissionsAvailable, { count: 2, amountXaf: 800 });
 
   const todo = Object.fromEntries((body.todo as Array<{ kind: string; count: number; ids: string[] }>).map((t) => [t.kind, t]));
   assert.equal(todo.orders_pending.count, 1);
@@ -339,7 +360,7 @@ test("résumé de communauté : support sans montant ni versement à traiter", a
   const res = await adminCall("GET", `/communities/${COM_A}/summary`, SUPPORT_A);
   assert.equal(res.status, 200, res.text);
   const body = res.body as Record<string, any>;
-  assert.equal(body.sales.today.count, 2);
+  assert.equal(body.sales.today.count, 3);
   assert.ok(!("amountXaf" in body.sales.today));
   assert.ok(!("commissionsAvailable" in body));
   const kinds = (body.todo as Array<{ kind: string }>).map((t) => t.kind);

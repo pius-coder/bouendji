@@ -102,9 +102,11 @@ describe("contrat /me", () => {
     assert.equal(updateMeBody.safeParse({ whatsappNumber: "12345678" }).success, false);
   });
 
-  it("passwordChangeBody : 12 caractères minimum, différent de l'actuel", () => {
+  it("passwordChangeBody : non vide et différent de l'actuel", () => {
+    const empty = passwordChangeBody.safeParse({ currentPassword: "ancien-mdp-ok", newPassword: "" });
+    assert.equal(empty.success, false);
     const short = passwordChangeBody.safeParse({ currentPassword: "ancien-mdp-ok", newPassword: "court" });
-    assert.equal(short.success, false);
+    assert.equal(short.success, true);
     const same = passwordChangeBody.safeParse({ currentPassword: "identique-123", newPassword: "identique-123" });
     assert.equal(same.success, false);
     const fine = passwordChangeBody.safeParse({ currentPassword: "ancien-mdp-ok", newPassword: "nouveau-mdp-2026" });
@@ -146,10 +148,10 @@ describe("service du compte : URL, en-têtes, corps", () => {
     assert.equal(calls[0].init.method, "POST");
   });
 
-  it("changePassword : refusé localement si trop court, aucun appel", async () => {
+  it("changePassword : refusé localement si vide, aucun appel", async () => {
     const { d, calls } = deps(() => json({}));
     await assert.rejects(
-      createServices(d).auth.changePassword({ currentPassword: "ancien-mdp-ok", newPassword: "court" }),
+      createServices(d).auth.changePassword({ currentPassword: "ancien-mdp-ok", newPassword: "" }),
       (e: ApiError) => Boolean(e.details?.newPassword),
     );
     assert.equal(calls.length, 0);

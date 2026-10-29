@@ -10,7 +10,6 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { Spinner } from "@/components/ui/spinner";
 import { changePasswordAction } from "@/server/actions/auth-account.action";
 import type { ActionResult } from "@/server/actions/action-result";
-import { PASSWORD_MIN_LENGTH } from "@/server/services/admin-auth/admin-auth.schema";
 import {
   canSubmitPassword,
   passwordErrors,

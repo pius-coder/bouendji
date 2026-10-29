@@ -36,7 +36,7 @@ export function InsightBand({
 }) {
   const hasData = data.some((p) => series.some((s) => (p.values[s.key] ?? 0) > 0));
   return (
-    <div className={cn("@container rounded-section bg-card p-4", className)}>
+    <div className={cn("@container rounded-2xl bg-card p-5 shadow-card", className)}>
     <div className="flex min-w-0 flex-col gap-4 @3xl:flex-row @3xl:items-stretch @3xl:gap-6">
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

@@ -18,10 +18,10 @@ const computeArgentStats = cache(async (communityIdProp?: string) => {
 
   const [payouts, commissions] = await Promise.all([
     can(me, "payouts.read", null)
-      ? withSession(() => services.payouts.listPayouts({})).catch(() => [])
+      ? withSession(() => services.payouts.listPayouts({}))
       : Promise.resolve([]),
     targetCommunityId && can(me, "money.read", targetCommunityId)
-      ? withSession(() => services.orders.listCommissions({ communityId: targetCommunityId, limit: 100 })).catch(() => [])
+      ? withSession(() => services.orders.listCommissions({ communityId: targetCommunityId, limit: 100 }))
       : Promise.resolve([]),
   ]);
 

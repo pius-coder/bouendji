@@ -5,7 +5,7 @@ import type { Tone } from "./icon-tile";
 
 /** Chariow : carte grise #f5f6f6, sans ombre ; variantes très pâles (en attente, payés). */
 const CARD: Record<"plain" | Tone, string> = {
-  plain: "bg-group",
+  plain: "bg-card",
   accent: "bg-accent-soft",
   success: "bg-success-soft",
   warning: "bg-warning-soft",
@@ -17,7 +17,7 @@ const CARD: Record<"plain" | Tone, string> = {
 /** Grille de cartes de chiffres. */
 export function StatGrid({ children, columns = 4 }: { children: ReactNode; columns?: 2 | 3 | 4 }) {
   return (
-    <div className={cn("grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-3", columns === 3 && "lg:grid-cols-3", columns === 4 && "lg:grid-cols-4")}>
+    <div className={cn("grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4", columns === 3 && "lg:grid-cols-3", columns === 4 && "lg:grid-cols-4")}>
       {children}
     </div>
   );
@@ -42,12 +42,16 @@ export function StatCard({
   children: ReactNode;
 }) {
   return (
-    <div className={cn("flex min-h-[158px] flex-col justify-between gap-3 rounded-2xl p-6", CARD[tone])}>
-      {icon ? <Icon name={icon} className="size-6 text-foreground" /> : null}
-      <div className="flex flex-col gap-1">
-        <div className="text-[1.875rem] leading-9 font-bold tracking-[-0.02em] text-foreground tabular-nums">{children}</div>
-        <p className="text-subhead text-sidebar-foreground">{label}</p>
-        {hint ? <div className="text-caption-1 text-muted-foreground">{hint}</div> : null}
+    <div className={cn("group relative flex min-h-[168px] overflow-hidden rounded-[1.25rem] p-5 shadow-card transition-[box-shadow,translate] duration-150 hover:-translate-y-0.5 hover:shadow-card-hover md:p-6", CARD[tone])}>
+      <div className="flex w-full flex-col justify-between gap-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-footnote font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
+          {icon ? <span className="grid size-9 place-items-center rounded-xl bg-accent-soft text-accent-text"><Icon name={icon} className="size-[1.125rem]" /></span> : null}
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[2rem] leading-9 font-bold tracking-[-0.035em] text-foreground tabular-nums">{children}</div>
+          {hint ? <div className="text-caption-1 text-muted-foreground">{hint}</div> : null}
+        </div>
       </div>
     </div>
   );

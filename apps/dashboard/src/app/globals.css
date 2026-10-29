@@ -11,31 +11,31 @@
  * Noms shadcn conservés : components/ui/* les lisent tels quels.
  */
 :root {
-  --radius: 0.75rem;
+  --radius: 1rem;
 
   /* Charpente : fond gris, contenu sur une surface blanche ombrée. */
-  --frame: #f5f6f6;
-  --surface: #ffffff;
-  --group: #f5f6f6;                   /* groupe gris contenant des cartes blanches */
-  --group-strong: #e5e7e8;
+  --frame: #f2f2ef;
+  --surface: #fcfcfa;
+  --group: #f1f1ee;
+  --group-strong: #e7e7e2;
 
   --background: #ffffff;
-  --foreground: #242528;
+  --foreground: #181816;
   --card: #ffffff;
-  --card-foreground: #242528;
+  --card-foreground: #181816;
   --popover: #ffffff;
-  --popover-foreground: #242528;
-  --secondary: #f5f6f6;
-  --secondary-foreground: #242528;
-  --muted: #f5f6f6;
-  --muted-foreground: #656c75;        /* gray-500 Chariow : 5,31:1 sur blanc, 4,90:1 sur le gris */
+  --popover-foreground: #181816;
+  --secondary: #efefec;
+  --secondary-foreground: #181816;
+  --muted: #f0f0ed;
+  --muted-foreground: #686861;
   --destructive: #d70022;             /* rouge Chariow #e30026 assombri : 5,2:1 */
   --destructive-solid: #e30026;
-  --border: #e5e7e8;
-  --input: #cad0d7;
-  --control-border: #cdd0d4;          /* bouton secondaire Chariow */
-  --fill: #f0f1f2;
-  --separator: #e5e7e8;
+  --border: #e3e3de;
+  --input: #cecec7;
+  --control-border: #cecec7;
+  --fill: #e9e9e4;
+  --separator: #e5e5e0;
   --placeholder: #6b727b;
   --tertiary: #808790;
   --cell-elevated: #ffffff;
@@ -51,18 +51,18 @@
   --neutral-state: #808790;
 
   /* Accent par défaut (rose). Surchargé par [data-accent]. */
-  --accent-from: #db2777;
-  --accent-to: #be185d;
-  --accent-text: #be185d;             /* 5,58:1 sur le gris */
-  --accent-soft: #fdf2f8;
-  --accent-ring: #db2777;
+  --accent-from: #ed3f83;
+  --accent-to: #bf1d61;
+  --accent-text: #b71958;
+  --accent-soft: #fff0f6;
+  --accent-ring: #df2f75;
 
   /* D108 : CTA noir (Chariow) ; la couleur du thème reste <= 10 % de l'écran. */
-  --primary: #242528;
+  --primary: #1c1c1a;
   --primary-foreground: #ffffff;
   --primary-hover: #000000;
   --accent: #f5f6f6;                  /* survol shadcn : neutre, pas teinté */
-  --accent-foreground: #242528;
+  --accent-foreground: #181816;
   --ring: var(--accent-ring);
 
   --chart-1: var(--accent-from);
@@ -71,26 +71,27 @@
   --chart-4: #cdd0d4;
   --chart-fill: var(--accent-from);
 
-  --glass: rgba(245, 246, 246, 0.8);
-  --sidebar: var(--frame);
-  --sidebar-foreground: #4a4e54;
-  --sidebar-primary: #242528;
+  --glass: rgba(252, 252, 250, 0.88);
+  --sidebar: #1c1c1a;
+  --sidebar-foreground: #b9b9b1;
+  --sidebar-primary: #ffffff;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e5e7e8;
-  --sidebar-accent-foreground: #242528;
-  --sidebar-border: transparent;
+  --sidebar-accent: rgba(255, 255, 255, 0.09);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
   --sidebar-ring: var(--accent-ring);
 
   /* Ombres relevées sur Chariow. */
-  --shadow-surface: 0 0 6px rgba(0, 0, 0, 0.06);
-  --shadow-card: 0 0 0 1px var(--border);   /* cartes : bordure, pas d'ombre (D108) */
+  --shadow-surface: 0 1px 2px rgba(24, 24, 22, 0.03), 0 16px 42px rgba(24, 24, 22, 0.07);
+  --shadow-card: 0 1px 2px rgba(24, 24, 22, 0.04), 0 8px 24px -18px rgba(24, 24, 22, 0.28);
+  --shadow-card-hover: 0 2px 5px rgba(24, 24, 22, 0.06), 0 14px 30px -20px rgba(24, 24, 22, 0.35);
   --shadow-sheet: 0 1px 3px rgba(0, 0, 0, 0.05), 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   --shadow-menu: 0 0 0 1px rgba(0, 0, 0, 0.04), 0 12px 16px -4px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
   --shadow-float: var(--shadow-menu);
   --shadow-button: none;
 
   --bottombar-h: 4rem;
-  --topbar-h: 3.5rem;
+  --topbar-h: 4rem;
 }
 
 :root[data-accent="vert"] {
@@ -166,6 +167,7 @@
 
   --shadow-surface: 0 0 0 1px rgba(255, 255, 255, 0.04);
   --shadow-card: 0 0 0 1px var(--border);
+  --shadow-card-hover: 0 0 0 1px rgba(255, 255, 255, 0.13);
   --shadow-sheet: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 24px 48px -12px rgba(0, 0, 0, 0.7);
   --shadow-menu: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 16px 32px -8px rgba(0, 0, 0, 0.6);
   --shadow-button: none;
@@ -272,7 +274,7 @@
   --radius-section: 16px;
 
   --font-sans: var(--font-body), -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
-  --font-display: var(--font-heading), "New York", ui-serif, "Iowan Old Style", Georgia, serif;
+  --font-display: var(--font-body), -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
   --font-mono: var(--font-mono-face), ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Échelle iOS « Large (default) ». */
@@ -308,6 +310,9 @@
 }
 @utility shadow-card {
   box-shadow: var(--shadow-card);
+}
+@utility shadow-card-hover {
+  box-shadow: var(--shadow-card-hover);
 }
 @utility shadow-sheet {
   box-shadow: var(--shadow-sheet);
@@ -368,6 +373,7 @@
     @apply bg-frame text-foreground font-sans;
     font-size: var(--text-body);
     line-height: var(--text-body--line-height);
+    background-image: none;
   }
   input,
   textarea,

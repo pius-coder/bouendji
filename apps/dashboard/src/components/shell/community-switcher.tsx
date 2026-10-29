@@ -50,25 +50,25 @@ export function CommunitySwitcher({
         aria-label={`${SWITCH_LABEL} (actuelle : ${active?.name ?? NO_COMMUNITY})`}
         className={cn(
           "flex min-w-0 items-center gap-2 rounded-field text-start outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          compact ? "h-11 max-w-[13rem] px-1.5" : "h-[42px] w-full border border-control-border bg-surface px-1.5 transition-colors hover:bg-group",
+          compact ? "h-11 max-w-[13rem] px-1.5" : "h-12 w-full bg-white/[0.07] px-2 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.09)] transition-colors hover:bg-white/[0.11]",
         )}
       >
         <span
           aria-hidden
           className={cn(
-            "grid shrink-0 place-items-center rounded-md bg-primary font-bold text-primary-foreground",
+            "grid shrink-0 place-items-center rounded-lg bg-accent-gradient font-bold text-white",
             compact ? "size-7 text-caption-1" : "size-8 text-footnote",
           )}
         >
           {(active?.name ?? "?").slice(0, 1).toUpperCase()}
         </span>
         <span className="min-w-0 flex-1">
-          <span className={cn("block truncate font-semibold text-foreground", compact ? "text-subhead" : "text-subhead")}>
+          <span className={cn("block truncate font-semibold", compact ? "text-foreground text-subhead" : "text-white text-subhead")}>
             {active?.name ?? NO_COMMUNITY}
           </span>
-          {role && !compact ? <span className="block truncate text-caption-1 text-muted-foreground">{ROLE_LABEL[role]}</span> : null}
+          {role && !compact ? <span className="block truncate text-caption-1 text-sidebar-foreground">{ROLE_LABEL[role]}</span> : null}
         </span>
-        <Icon name="sort" className="size-4 shrink-0 text-muted-foreground" />
+        <Icon name="sort" className={cn("size-4 shrink-0", compact ? "text-muted-foreground" : "text-sidebar-foreground")} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
         <DropdownMenuLabel className="text-footnote font-normal text-muted-foreground">{SWITCH_LABEL}</DropdownMenuLabel>

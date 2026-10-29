@@ -28,7 +28,7 @@ export function AppearanceForm() {
               aria-checked={selected}
               onClick={() => setTheme(option.value)}
               className={`flex flex-col items-center gap-2 rounded-xl border px-3 py-4 text-subhead font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                selected ? "border-accent-text bg-accent-soft text-accent-text" : "border-separator bg-group text-foreground"
+                selected ? "border-transparent bg-accent-soft text-accent-text shadow-card" : "border-transparent bg-group text-foreground"
               }`}
             >
               <Icon name={option.icon} className="size-6" />

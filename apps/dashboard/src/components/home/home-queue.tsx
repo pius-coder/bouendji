@@ -26,8 +26,8 @@ export async function HomeQueue({ searchParams }: { searchParams: SearchParams }
     access.network ? getPool() : Promise.resolve(null),
     access.me.platformRole === "owner"
       ? (async () => {
-          const apps = await services.plans.listApps().catch(() => []);
-          const lists = await Promise.all(apps.map((a) => services.builds.listBuilds({ appId: a.id }).catch(() => [])));
+          const apps = await services.plans.listApps();
+          const lists = await Promise.all(apps.map((a) => services.builds.listBuilds({ appId: a.id })));
           const out: Build[] = [];
           for (const list of lists) {
             for (const b of list) if (b.status === "requested") out.push(b);

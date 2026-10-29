@@ -22,7 +22,8 @@ import { z } from "zod";
 import type { Database, Row } from "../db.js";
 import { requireAdmin, roleInCommunity, scopedCommunity, type AdminContext } from "../lib/auth.js";
 import { fail } from "../lib/errors.js";
-import { parseBody } from "./admin.js";
+import { activateOrder, loadOrder, reconcilePayment } from "../services/payments.js";
+import { appendAudit, parseBody } from "./admin.js";
 
 const PREFIX = "/v1/admin";
 /** Fuseau d'exploitation : les « jour » et « mois » d'une communauté camerounaise. */
@@ -320,6 +321,50 @@ export function registerAdminDetailRoutes(app: FastifyInstance, db: Database): v
           }
         : null,
       ...(withMoney ? { commissions: commissions.map(commissionDto) } : {}),
+    };
+  });
+
+  /**
+   * Reprend une activation interrompue ou réinterroge le fournisseur pour une
+   * commande encore en attente. Cette action n'accorde jamais un forfait
+   * gratuit : elle ne fait que terminer une commande existante et payée.
+   */
+  app.post<{ Params: { id: string } }>(`${PREFIX}/orders/:id/reconcile`, async (req) => {
+    const admin = await requireAdmin(db, req);
+    const order = await loadOrder(db, req.params.id);
+    if (!order) throw fail.notFound("Commande introuvable.");
+
+    const communityId = String(order.community_id);
+    scopedCommunity(admin, communityId);
+    const localRole = roleInCommunity(admin, communityId);
+    if (admin.platformRole !== "owner" && localRole !== "community_admin") {
+      throw fail.forbidden("Seul le propriétaire ou l'administrateur de la communauté peut vérifier ce paiement.");
+    }
+
+    let changed = false;
+    if (order.status === "paid" && !order.activated_at) {
+      changed = await activateOrder(db, order.id);
+    } else if (order.status === "created" || order.status === "pending") {
+      const result = await reconcilePayment(db, { orderId: order.id });
+      changed = result.changed;
+    } else if (order.status !== "paid") {
+      throw fail.conflict("Cette commande ne peut pas être réconciliée dans son état actuel.");
+    }
+
+    const fresh = await loadOrder(db, order.id);
+    if (!fresh) throw fail.notFound("Commande introuvable.");
+    await appendAudit(db, admin, req, {
+      action: "order.reconcile",
+      targetType: "order",
+      targetId: order.id,
+      communityId,
+      meta: { status: fresh.status, activated: fresh.activated_at !== null, changed },
+    });
+    return {
+      orderId: order.id,
+      status: fresh.status,
+      activated: fresh.activated_at !== null,
+      changed,
     };
   });
 

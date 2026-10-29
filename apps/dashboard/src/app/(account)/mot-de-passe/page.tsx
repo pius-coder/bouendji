@@ -22,7 +22,7 @@ export default function ChangePasswordPage() {
           <div>
             <h1 className="text-title-2 font-bold tracking-tight">Changez votre mot de passe</h1>
             <p className="text-subhead text-muted-foreground">
-              Pour continuer, choisissez un nouveau mot de passe d&apos;au moins 12 caractères.
+              Pour continuer, choisissez un nouveau mot de passe différent de l&apos;actuel.
             </p>
           </div>
         </div>

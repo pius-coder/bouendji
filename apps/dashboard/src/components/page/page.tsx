@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  */
 export function PageContent({ children, wide = false, className }: { children: ReactNode; wide?: boolean; className?: string }) {
   return (
-    <div className={cn("mx-auto flex w-full flex-col gap-6 px-4 pt-5 pb-10 md:px-8 md:pt-8", wide ? "max-w-[1280px]" : "max-w-[1100px]", className)}>
+    <div className={cn("mx-auto flex w-full flex-col gap-7 px-4 pt-6 pb-12 md:px-8 md:pt-9 xl:px-10", wide ? "max-w-[1440px]" : "max-w-[1180px]", className)}>
       {children}
     </div>
   );
@@ -20,12 +20,13 @@ export function PageContent({ children, wide = false, className }: { children: R
  */
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return (
-    <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+    <header className="relative flex flex-wrap items-end justify-between gap-x-6 gap-y-4 border-b border-separator pb-6">
       <div className="min-w-0">
-        <h1 className="text-title-1 font-bold tracking-tight text-foreground md:text-large-title">{title}</h1>
-        {description ? <p className="mt-1 text-subhead text-muted-foreground">{description}</p> : null}
+        <p className="mb-1 text-[0.6875rem] font-bold uppercase tracking-[0.16em] text-accent-text">Console Bouendji</p>
+        <h1 className="text-title-1 font-semibold tracking-[-0.025em] text-foreground md:text-large-title">{title}</h1>
+        {description ? <p className="mt-1.5 max-w-2xl text-subhead leading-relaxed text-muted-foreground">{description}</p> : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+      {actions ? <div className="flex flex-wrap items-center gap-2 pb-0.5">{actions}</div> : null}
     </header>
   );
 }
@@ -36,7 +37,7 @@ export function PageHeader({ title, description, actions }: { title: string; des
  * au tableau (`stickyTop`) pour coller l'en-tête juste dessous.
  */
 export function Toolbar({ children }: { children: ReactNode }) {
-  return <div className="sticky top-0 z-20 -mx-4 -my-2 flex flex-col gap-3 bg-surface px-4 py-4 md:-mx-8 md:px-8">{children}</div>;
+  return <div className="sticky top-0 z-20 -mx-2 flex flex-col gap-3 rounded-2xl bg-glass px-2 py-3 backdrop-blur-xl md:-mx-3 md:px-3">{children}</div>;
 }
 
 /** Hauteurs de barre d'outils (px), pour l'en-tête collant du tableau. */

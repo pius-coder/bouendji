@@ -6,7 +6,8 @@ import { IconTile, type Tone } from "@/components/page/icon-tile";
 import { cn } from "@/lib/utils";
 
 export interface HomeRowProps {
-  href: string;
+  /** Absente pour une ligne informative qui n'a aucun écran de détail. */
+  href?: string;
   /** Remplace l'historique : ouverture du détail dans l'URL (`h_open`), sans quitter l'accueil. */
   replace?: boolean;
   scroll?: boolean;
@@ -28,18 +29,13 @@ export interface HomeRowProps {
  * Serveur par défaut : aucun état ici.
  */
 export function HomeRow({ href, replace, scroll, selected = false, icon, tone = "neutral", title, subtitle, value, trailing }: HomeRowProps) {
-  return (
-    <Link
-      href={href}
-      replace={replace}
-      scroll={scroll}
-      aria-current={selected ? "true" : undefined}
-      className={cn(
-        "flex min-h-14 items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 outline-none transition-[background-color,border-color] duration-150",
-        "[@media(hover:hover)]:hover:border-control-border focus-visible:ring-2 focus-visible:ring-ring",
-        selected && "border-foreground/40",
-      )}
-    >
+  const className = cn(
+    "flex min-h-14 items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 outline-none transition-[background-color,border-color] duration-150",
+    href && "[@media(hover:hover)]:hover:border-control-border focus-visible:ring-2 focus-visible:ring-ring",
+    selected && "border-foreground/40",
+  );
+  const content = (
+    <>
       <IconTile name={icon} tone={tone} size="md" />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-subhead font-semibold text-foreground">{title}</span>
@@ -49,7 +45,13 @@ export function HomeRow({ href, replace, scroll, selected = false, icon, tone = 
       {value !== undefined && value !== null ? (
         <span className="shrink-0 text-end text-subhead font-semibold text-foreground tabular-nums">{value}</span>
       ) : null}
-      <Icon name="chevron-right" className="size-4 shrink-0 text-muted-foreground/70 rtl:rotate-180" />
+      {href ? <Icon name="chevron-right" className="size-4 shrink-0 text-muted-foreground/70 rtl:rotate-180" /> : null}
+    </>
+  );
+  if (!href) return <div className={className}>{content}</div>;
+  return (
+    <Link href={href} replace={replace} scroll={scroll} aria-current={selected ? "true" : undefined} className={className}>
+      {content}
     </Link>
   );
 }

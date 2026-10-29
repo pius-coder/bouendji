@@ -28,7 +28,7 @@ export async function PlansSection({ params }: { params: Promise<{ communityId: 
   const [me, communities, pricing] = await Promise.all([
     getMe(),
     getCommunities(),
-    getServices().pricing.getPricing().catch(() => undefined),
+    getServices().pricing.getPricing(),
   ]);
   if (!can(me, "plans.read", communityId)) return <ForbiddenBlock />;
 

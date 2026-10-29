@@ -126,7 +126,7 @@ test("changer le mot de passe lève le drapeau, révoque les sessions et renvoie
   assert.equal(Number(trace[0]!.n), 1);
 });
 
-test("mot de passe : validation (actuel faux, identique, trop court)", async () => {
+test("mot de passe : validation (actuel faux, identique, nouveau vide)", async () => {
   const admin = await makeAdmin();
   const token = await login(admin.email, PASSWORD);
 
@@ -143,11 +143,11 @@ test("mot de passe : validation (actuel faux, identique, trop court)", async () 
   });
   assert.equal(same.status, 400, same.text);
 
-  const short = await call("POST", "/v1/admin/me/password", {
+  const empty = await call("POST", "/v1/admin/me/password", {
     headers: as(token),
-    payload: { currentPassword: PASSWORD, newPassword: "court" },
+    payload: { currentPassword: PASSWORD, newPassword: "" },
   });
-  assert.equal(short.status, 400, short.text);
+  assert.equal(empty.status, 400, empty.text);
 
   // Aucun de ces échecs n'a changé le mot de passe ni révoqué la session.
   const still = await call("GET", "/v1/admin/me", { headers: as(token) });

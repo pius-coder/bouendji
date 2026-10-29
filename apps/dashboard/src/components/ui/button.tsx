@@ -11,16 +11,16 @@ import { Slot } from "radix-ui"
  * Cible tactile 44 px sous 640 px.
  */
 const buttonVariants = cva(
-  "relative inline-flex shrink-0 items-center justify-center gap-2 font-semibold whitespace-nowrap transition-[background,color,box-shadow,transform] duration-150 outline-none select-none active:scale-[0.98] focus-visible:ring-[3px] focus-visible:ring-ring/35 disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "relative inline-flex shrink-0 items-center justify-center gap-2 font-semibold whitespace-nowrap transition-[background-color,color,box-shadow,scale] duration-150 outline-none select-none active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-ring/35 disabled:pointer-events-none disabled:opacity-40 disabled:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary-hover",
-        prominent: "bg-primary text-primary-foreground hover:bg-primary-hover",
-        dark: "bg-primary text-primary-foreground hover:bg-primary-hover",
-        destructive: "bg-destructive-solid text-white hover:brightness-95",
-        outline: "border border-control-border bg-transparent text-foreground hover:bg-group",
-        tinted: "border border-accent-text/30 bg-accent-soft text-accent-text hover:border-accent-text/50",
+        default: "bg-primary text-primary-foreground shadow-[0_8px_20px_-10px_rgba(15,23,42,0.8)] hover:bg-primary-hover hover:shadow-[0_10px_24px_-10px_rgba(15,23,42,0.9)]",
+        prominent: "bg-primary text-primary-foreground shadow-[0_8px_20px_-10px_rgba(15,23,42,0.8)] hover:bg-primary-hover",
+        dark: "bg-primary text-primary-foreground shadow-[0_8px_20px_-10px_rgba(15,23,42,0.8)] hover:bg-primary-hover",
+        destructive: "bg-destructive-solid text-white shadow-[0_8px_20px_-10px_rgba(215,0,34,0.65)] hover:brightness-95",
+        outline: "bg-card text-foreground shadow-card hover:bg-group hover:shadow-card-hover",
+        tinted: "bg-accent-soft text-accent-text hover:bg-accent-soft/75",
         secondary: "bg-group text-foreground hover:bg-group-strong",
         ghost: "text-foreground hover:bg-group",
         link: "h-auto px-0 text-accent-text underline-offset-4 hover:underline",

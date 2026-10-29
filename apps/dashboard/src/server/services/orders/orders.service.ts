@@ -11,6 +11,7 @@ import {
   orderDetail,
   orderIdParams,
   orderPage,
+  orderReconcileResult,
   ordersQuery,
 } from "./orders.schema";
 
@@ -35,6 +36,15 @@ export class OrdersService extends BaseService {
       params: orderIdParams,
       response: orderDetail,
     }),
+    reconcile: endpoint({
+      method: "POST",
+      basePath: "/v1/admin/orders",
+      path: "/:orderId/reconcile",
+      params: orderIdParams,
+      response: orderReconcileResult,
+      idempotent: true,
+      refreshAfter: true,
+    }),
     // `limit` seulement, pas de curseur côté API.
     commissions: endpoint({
       method: "GET",
@@ -57,6 +67,10 @@ export class OrdersService extends BaseService {
 
   getOrder(orderId: string) {
     return this.call(OrdersService.endpoints.get, { params: { orderId } });
+  }
+
+  reconcileOrder(orderId: string) {
+    return this.call(OrdersService.endpoints.reconcile, { params: { orderId } });
   }
 
   async listCommissions(input: ListCommissionsInput) {

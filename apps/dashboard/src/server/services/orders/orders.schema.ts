@@ -46,6 +46,14 @@ export type CommissionsQuery = z.input<typeof commissionsQuery>;
 
 export const orderIdParams = z.object({ orderId: id });
 
+export const orderReconcileResult = z.object({
+  orderId: z.string(),
+  status: z.string(),
+  activated: z.boolean(),
+  changed: z.boolean(),
+});
+export type OrderReconcileResult = z.infer<typeof orderReconcileResult>;
+
 /** Source : `GET /v1/admin/orders/:id` (`routes/adminDetails.ts`). */
 export const orderDetail = order.extend({
   communityId: z.string().nullable(),

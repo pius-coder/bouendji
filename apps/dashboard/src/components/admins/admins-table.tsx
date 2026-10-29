@@ -6,6 +6,7 @@ import { getMe, withSession } from "@/server/context";
 import { getServices } from "@/server/services";
 import { CreateAdminSheet } from "./create-admin-sheet";
 import { ResetPasswordButton } from "./reset-password-button";
+import { AdminStatusButton } from "./admin-status-button";
 
 export const ADMIN_COLUMNS = [
   { id: "name", header: "Administrateur", mobile: "primary" },
@@ -55,7 +56,12 @@ export async function AdminsRows() {
           ),
           scope: a.platformRole === "owner" ? "Propriétaire" : "Admin de communauté / Staff",
           status: <StatusBadge status={a.active ? "active" : "disabled"} />,
-          actions: isSelf ? null : <ResetPasswordButton adminId={a.id} name={displayName} />,
+          actions: isSelf ? null : (
+            <span className="flex flex-wrap justify-end gap-2">
+              <ResetPasswordButton adminId={a.id} name={displayName} />
+              <AdminStatusButton adminId={a.id} name={displayName} active={a.active} />
+            </span>
+          ),
         };
       }}
     />

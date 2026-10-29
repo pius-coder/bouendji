@@ -17,10 +17,10 @@ export async function GlobalBuildQueueRows() {
     );
   }
   const services = getServices();
-  const apps = await services.plans.listApps().catch(() => []);
+  const apps = await services.plans.listApps();
   const allBuilds: Build[] = [];
   const perApp = await Promise.all(
-    apps.map((a) => services.builds.listBuilds({ appId: a.id }).catch(() => [])),
+    apps.map((a) => services.builds.listBuilds({ appId: a.id })),
   );
   for (const list of perApp) {
     for (const b of list) allBuilds.push(b);

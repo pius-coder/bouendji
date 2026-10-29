@@ -8,7 +8,7 @@
  *   `z.object` supprime les clés inconnues : sans `tier` dans le schéma, un nœud
  *   `paid-gcp` s'enregistre comme nœud de lab et retombe sur `'free-labs'`. On
  *   vérifie donc la valeur **en base**, pas seulement dans la réponse.
- * - **Un bundle ne contient qu'un tier** (D45) : `servedEndpoints(db, tier)`
+ * - **Le gratuit reste borné ; le payant accède aux deux pools** (D141) : `servedEndpoints(db, tier)`
  *   filtre, et un nœud `down` n'y figure jamais (D47).
  * - **La parole du nœud ne lève pas un verdict client** (D47) : un heartbeat
  *   `healthy:true` sur un nœud `down` le laisse `down`.
@@ -207,7 +207,7 @@ test("register : le tier transmis est stocké, pas jeté avant le service (D68)"
   assert.equal(bad.body.error.code, "VALIDATION_FAILED");
 });
 
-test("servedEndpoints ne renvoie que le tier demandé (D45)", async () => {
+test("servedEndpoints borne le gratuit et ouvre les deux pools au payant (D141)", async () => {
   const freeNode = await publishNode("tier-served-free", { tier: "free-labs" });
   const paidNode = await publishNode("tier-served-paid", { tier: "paid-gcp" });
 
@@ -221,8 +221,8 @@ test("servedEndpoints ne renvoie que le tier demandé (D45)", async () => {
     "jamais un nœud payant dans la liste gratuite",
   );
   assert.ok(
-    paid.every((row) => row.tier === "paid-gcp"),
-    "jamais un nœud de lab dans la liste payante",
+    paid.every((row) => row.tier === "paid-gcp" || row.tier === "free-labs"),
+    "la liste payante ne contient que les deux tiers connus",
   );
   assert.ok(
     free.some((row) => row.id === freeNode.endpointId),
@@ -235,6 +235,10 @@ test("servedEndpoints ne renvoie que le tier demandé (D45)", async () => {
   assert.ok(
     paid.some((row) => row.id === paidNode.endpointId),
     "le nœud payant est servi à son propre tier",
+  );
+  assert.ok(
+    paid.some((row) => row.id === freeNode.endpointId),
+    "le forfait payant accède aussi au pool illimité",
   );
 
   // Le paramètre `limit` reste respecté (12 par défaut dans le bundle).
@@ -439,13 +443,13 @@ test("un 304 n'est renvoyé que si l'enveloppe calculée n'est pas expirée (D48
   assert.equal(cached.status, 304, "une enveloppe vivante reste servie en 304");
   assert.equal(cached.text, "");
 
-  // Tous les nœuds payants tombent : le pool de ce tier est vide, donc
+  // Tous les nœuds accessibles tombent : le pool est vide, donc
   // l'enveloppe calculée naît expirée (`expiresAt = issuedAt`).
-  await db.query("UPDATE endpoints SET health='down', down_since=now(), down_reason='manual' WHERE tier = 'paid-gcp'");
+  await db.query("UPDATE endpoints SET health='down', down_since=now(), down_reason='manual'");
 
   const first = await paidAccount.client("GET", BUNDLE);
   assert.equal(first.status, 200, first.text);
-  assert.equal(first.body.configCount, 0, "aucun nœud payant sain : la liste est vide, pas inventée");
+  assert.equal(first.body.configCount, 0, "aucun nœud accessible sain : la liste est vide, pas inventée");
   assert.equal(first.body.expiresAt, first.body.issuedAt, "une enveloppe sans configuration naît expirée");
 
   const etag = String(first.headers.etag);

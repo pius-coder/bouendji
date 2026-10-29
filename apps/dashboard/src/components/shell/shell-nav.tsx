@@ -60,19 +60,19 @@ export function ShellSidebar(props: ShellNavProps) {
   const platformSections = sections.filter((s) => s.key === "plateforme" || s.key === "reseau");
 
   return (
-    <aside aria-label="Navigation principale" className="hidden h-full w-60 shrink-0 flex-col gap-3 py-3 ps-3 pe-2 lg:flex">
+    <aside aria-label="Navigation principale" className="m-3 me-4 hidden h-[calc(100%-1.5rem)] w-64 shrink-0 flex-col gap-5 overflow-hidden rounded-[1.5rem] bg-sidebar p-3 text-sidebar-foreground shadow-[0_20px_50px_rgba(15,23,42,0.22)] lg:flex">
       <div className="flex flex-col gap-2.5">
-        <div className="flex items-center gap-2.5 px-2">
+        <div className="flex items-center gap-3 px-2 pt-1">
           <Link
             href="/"
             aria-label="Accueil de la console"
-            className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="grid size-10 place-items-center rounded-xl bg-accent-gradient text-white shadow-[0_8px_24px_color-mix(in_srgb,var(--accent-from)_35%,transparent)] outline-none transition-transform duration-150 active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-ring"
           >
             <NavGlyph name="shield" className="size-5" active />
           </Link>
           <div className="min-w-0 flex-1">
-            <span className="block truncate text-subhead font-bold tracking-tight text-foreground">Bouendji</span>
-            <span className="block truncate text-caption-2 text-muted-foreground">Console d&apos;administration</span>
+            <span className="block truncate text-subhead font-bold tracking-tight text-white">Bouendji</span>
+            <span className="block truncate text-caption-2 text-sidebar-foreground">Espace de gestion</span>
           </div>
         </div>
         <CommunitySwitcher communities={props.communities} activeId={activeId} role={role} />
@@ -88,13 +88,13 @@ export function ShellSidebar(props: ShellNavProps) {
                 href={s.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex h-[40px] items-center gap-3 rounded-xl px-3 text-callout outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                  "flex h-11 items-center gap-3 rounded-xl px-3 text-callout outline-none transition-[background-color,color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ring",
                   active
-                    ? "bg-group-strong font-semibold text-foreground shadow-xs"
-                    : "text-muted-foreground hover:bg-group-strong/60 hover:text-foreground",
+                    ? "bg-white/12 font-semibold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+                    : "text-sidebar-foreground hover:bg-white/[0.07] hover:text-white",
                 )}
               >
-                <NavGlyph name={s.icon} active={active} className={cn("size-5 shrink-0", active ? "text-accent-text" : "text-muted-foreground")} />
+                <NavGlyph name={s.icon} active={active} className={cn("size-5 shrink-0", active ? "text-white" : "text-sidebar-foreground")} />
                 <span className="truncate">{s.label}</span>
               </Link>
             );
@@ -102,9 +102,9 @@ export function ShellSidebar(props: ShellNavProps) {
         </div>
 
         {platformSections.length > 0 ? (
-          <div className="mt-3 flex flex-col gap-0.5 border-t border-separator/50 pt-3">
+          <div className="mt-3 flex flex-col gap-0.5 border-t border-white/10 pt-3">
             {isOwner ? (
-              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/70">
                 Plateforme
               </p>
             ) : null}
@@ -116,13 +116,13 @@ export function ShellSidebar(props: ShellNavProps) {
                   href={s.href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex h-[40px] items-center gap-3 rounded-xl px-3 text-callout outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                    "flex h-11 items-center gap-3 rounded-xl px-3 text-callout outline-none transition-[background-color,color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ring",
                     active
-                      ? "bg-group-strong font-semibold text-foreground shadow-xs"
-                      : "text-muted-foreground hover:bg-group-strong/60 hover:text-foreground",
+                      ? "bg-white/12 font-semibold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+                      : "text-sidebar-foreground hover:bg-white/[0.07] hover:text-white",
                   )}
                 >
-                  <NavGlyph name={s.icon} active={active} className={cn("size-5 shrink-0", active ? "text-accent-text" : "text-muted-foreground")} />
+                  <NavGlyph name={s.icon} active={active} className={cn("size-5 shrink-0", active ? "text-white" : "text-sidebar-foreground")} />
                   <span className="truncate">{s.label}</span>
                 </Link>
               );
@@ -131,7 +131,7 @@ export function ShellSidebar(props: ShellNavProps) {
         ) : null}
       </nav>
 
-      <div className="border-t border-separator/50 pt-2 px-1">
+      <div className="border-t border-white/10 px-1 pt-2">
         <UserMenu name={props.me.name} email={props.me.email} side="right" />
       </div>
     </aside>
@@ -218,13 +218,13 @@ export function ShellSectionBand(props: ShellNavProps) {
   const { section, item, activeId, guideRole } = useShellNav(props);
   if (!section) return null;
   return (
-    <div className="hidden h-12 shrink-0 items-center justify-between gap-4 pe-4 lg:flex">
+    <div className="hidden h-16 shrink-0 items-center justify-between gap-4 pe-4 lg:flex">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-group-strong text-accent-text">
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-text shadow-card">
           <NavGlyph name={item?.icon ?? section.icon} className="size-[1.125rem]" active />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-subhead font-semibold text-foreground">{item?.label ?? section.label}</p>
+          <p className="truncate text-callout font-semibold text-foreground">{item?.label ?? section.label}</p>
           <p className="truncate text-caption-1 text-muted-foreground">{section.description}</p>
         </div>
       </div>
@@ -235,7 +235,7 @@ export function ShellSectionBand(props: ShellNavProps) {
           variant="outline"
           size="sm"
           onClick={triggerCommandPalette}
-          className="h-8 min-w-56 justify-between gap-3 bg-surface text-muted-foreground hover:text-foreground"
+          className="h-9 min-w-64 justify-between gap-3 bg-surface text-muted-foreground shadow-card hover:text-foreground"
         >
           <span className="flex items-center gap-2 truncate">
             <Icon name="search" className="size-3.5 shrink-0" />
@@ -256,7 +256,7 @@ export function ShellSectionChips(props: ShellNavProps) {
   const { pathname, section } = useShellNav(props);
   if (!section || section.items.length < 2) return null;
   return (
-    <nav aria-label={section.label} className="mx-2 mb-2 flex gap-1.5 overflow-x-auto px-2 py-1 [scrollbar-width:none] lg:mx-0 lg:me-2">
+    <nav aria-label={section.label} className="mx-2 mb-2 flex gap-1 overflow-x-auto rounded-xl bg-group p-1 [scrollbar-width:none] lg:mx-0 lg:me-4 lg:w-fit">
       {section.items.map((item) => {
         const active = isActivePath(pathname, item.href);
         return (
@@ -265,10 +265,10 @@ export function ShellSectionChips(props: ShellNavProps) {
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-footnote font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+              "flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-footnote font-medium outline-none transition-[background-color,color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ring",
               active
-                ? "bg-group-strong font-semibold text-foreground shadow-xs border border-separator/40"
-                : "bg-surface/80 text-muted-foreground hover:bg-group-strong/60 hover:text-foreground",
+                ? "bg-surface font-semibold text-foreground shadow-card"
+                : "text-muted-foreground hover:bg-surface/60 hover:text-foreground",
             )}
           >
             <NavGlyph name={item.icon} active={active} className={cn("size-3.5 shrink-0", active ? "text-accent-text" : "text-muted-foreground")} />

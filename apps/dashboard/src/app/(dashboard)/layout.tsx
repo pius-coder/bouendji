@@ -23,7 +23,7 @@ import { TopBar } from "@/components/shell/top-bar";
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <PageChromeProvider>
-      <div className="flex h-dvh overflow-hidden bg-frame text-foreground">
+      <div className="flex h-dvh overflow-hidden text-foreground">
         <a
           href="#contenu"
           className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-full focus:bg-foreground focus:px-4 focus:py-2 focus:text-background"
@@ -34,7 +34,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <SidebarSection />
         </Suspense>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <Suspense fallback={<div aria-hidden className="hidden h-12 shrink-0 lg:block" />}>
+          <Suspense fallback={<div aria-hidden className="hidden h-16 shrink-0 lg:block" />}>
             <SectionBandSection />
           </Suspense>
           <TopBar
@@ -55,7 +55,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <main
             id="contenu"
             tabIndex={-1}
-            className="relative mx-2 mb-[calc(var(--bottombar-h)+0.5rem+env(safe-area-inset-bottom))] flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain rounded-2xl bg-surface shadow-surface outline-none lg:mx-0 lg:me-2 lg:mb-4"
+            className="relative mx-2 mb-[calc(var(--bottombar-h)+0.5rem+env(safe-area-inset-bottom))] flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain rounded-[1.5rem] bg-surface shadow-surface outline-none lg:mx-0 lg:me-4 lg:mb-4"
           >
             {children}
           </main>

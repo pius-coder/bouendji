@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { groupByUser } from "@/components/subscribers/subscriber-groups";
+import { canOfferPaymentReconciliation } from "@/components/orders/order-reconciliation";
 
 describe("groupByUser (appareils et commandes par abonné)", () => {
   it("regroupe les lignes par userId sans mélanger les abonnés", () => {
@@ -39,5 +40,18 @@ describe("groupByUser (appareils et commandes par abonné)", () => {
 
   it("accepte une liste vide sans erreur", () => {
     assert.equal(groupByUser([]).size, 0);
+  });
+});
+
+describe("fiche commande : reprise d'un paiement", () => {
+  it("propose la vérification seulement pour une commande en attente ou payée non activée", () => {
+    assert.equal(canOfferPaymentReconciliation({ status: "pending", activatedAt: null }, true), true);
+    assert.equal(canOfferPaymentReconciliation({ status: "paid", activatedAt: null }, true), true);
+    assert.equal(canOfferPaymentReconciliation({ status: "paid", activatedAt: "2026-10-29T00:00:00Z" }, true), false);
+    assert.equal(canOfferPaymentReconciliation({ status: "failed", activatedAt: null }, true), false);
+  });
+
+  it("ne la propose jamais à un rôle sans droit de reprise", () => {
+    assert.equal(canOfferPaymentReconciliation({ status: "pending", activatedAt: null }, false), false);
   });
 });

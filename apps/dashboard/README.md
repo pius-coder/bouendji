@@ -8,8 +8,11 @@ TanStack Query. Patron : `knowledge/30-clients/dashboard-architecture.md`.
 
 ```bash
 cp .env.example .env.local     # puis renseigner API_BASE_URL et DASHBOARD_ACCESS_KEY
-pnpm dev
-pnpm typecheck && pnpm lint && pnpm test && pnpm build
+bun run dev
+bun run typecheck
+bun run lint
+bun run test
+bun run build
 ```
 
 `API_BASE_URL` et `DASHBOARD_ACCESS_KEY` sont lues côté serveur uniquement (aucune
@@ -62,7 +65,8 @@ cumulables `owner` et `reseau` (`src/lib/roles.ts`). Ctrl K ouvre la navigation
 
 ## Écrans
 
-Connexion, Accueil (à traiter), Communautés (+ création), Commandes (curseur +
-filtre), Abonnés, Appareils (+ révocation), Versements (+ approbation), Réseau
-(+ forcer l'état), Journal. Non faits : forfaits, membres, comptes admin,
-fichier hors-ligne, builds, commissions, étapes de versement pay/confirm/resolve.
+Connexion, accueil, compte et mot de passe, onboarding, communautés, comptes
+admin, abonnés, appareils et fichiers hors ligne, commandes, forfaits et tarifs,
+membres, builds APK, commissions et versements, réseau, créneaux de nuit et
+journal d'audit. Les écrans et actions réellement disponibles sont inventoriés
+dans `../../docs/dashboard-audit-lancement-2026-10-29.md`.

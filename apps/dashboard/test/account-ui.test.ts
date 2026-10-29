@@ -4,12 +4,12 @@ import { canSubmitPassword, passwordErrors, passwordStrength } from "@/component
 import { describeAgent, formatSessionDate } from "@/components/account/session-format";
 
 describe("mot de passe : jauge et erreurs", () => {
-  it("sous 12 caractères : score 0, « Trop court »", () => {
-    assert.deepEqual(passwordStrength("Abc123!"), { score: 0, label: "Trop court" });
+  it("seule la valeur vide est trop courte", () => {
+    assert.deepEqual(passwordStrength("Abc123!"), { score: 2, label: "Correct" });
     assert.equal(passwordStrength("").score, 0);
   });
 
-  it("12 caractères d'une seule classe : Faible ; la longueur et la variété relèvent le score", () => {
+  it("la longueur et la variété relèvent le score", () => {
     assert.equal(passwordStrength("aaaaaaaaaaaa").score, 1);
     assert.equal(passwordStrength("aaaaaaaaaaaaaaaa").score, 2);
     assert.equal(passwordStrength("Abcdefgh1234").score, 2);
@@ -17,9 +17,9 @@ describe("mot de passe : jauge et erreurs", () => {
     assert.equal(passwordStrength("Abcdefgh1234!xyzABCD").score, 4);
   });
 
-  it("erreurs : minimum, identique à l'actuel, confirmation différente", () => {
+  it("erreurs : identique à l'actuel et confirmation différente", () => {
     const short = passwordErrors({ currentPassword: "ancien-mdp-ok", newPassword: "court", confirmPassword: "court" });
-    assert.match(short.newPassword ?? "", /12 caractères/);
+    assert.equal(short.newPassword, undefined);
     const same = passwordErrors({
       currentPassword: "identique-123456",
       newPassword: "identique-123456",
@@ -39,6 +39,7 @@ describe("mot de passe : jauge et erreurs", () => {
   });
 
   it("envoi permis seulement si tout est cohérent", () => {
+    assert.equal(canSubmitPassword({ currentPassword: "ancien", newPassword: "x", confirmPassword: "x" }), true);
     assert.equal(
       canSubmitPassword({ currentPassword: "ancien-mdp-ok", newPassword: "nouveau-mdp-2026", confirmPassword: "nouveau-mdp-2026" }),
       true,

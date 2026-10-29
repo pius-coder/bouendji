@@ -12,6 +12,8 @@ export const adminAccount = z.object({
 });
 export type AdminAccount = z.infer<typeof adminAccount>;
 
+export const adminStatusBody = z.object({ active: z.boolean() }).strict();
+
 /**
  * R4 : aucun mot de passe dans le corps (il est généré côté serveur).
  * Au moins un email ou un numéro WhatsApp est requis.

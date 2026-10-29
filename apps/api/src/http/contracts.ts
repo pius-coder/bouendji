@@ -711,7 +711,7 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
     description: "Révoque toutes les sessions, y compris celle-ci, et renvoie un jeton neuf. Douze caractères minimum. Lève le drapeau de changement obligatoire.",
     tags: ["administration"],
     security: ADMIN_SECURITY,
-    body: { type: "object", additionalProperties: false, required: ["currentPassword", "newPassword"], properties: { currentPassword: str("Mot de passe actuel."), newPassword: str("Nouveau mot de passe.", { minLength: 12 }) } },
+    body: { type: "object", additionalProperties: false, required: ["currentPassword", "newPassword"], properties: { currentPassword: str("Mot de passe actuel."), newPassword: str("Nouveau mot de passe non vide.", { minLength: 1 }) } },
     response: withErrors({ 200: jsonResponse("Nouvelle session.", { properties: { token: str("Jeton `vpn-admin`."), expiresAt: str("Expiration.", { format: "date-time" }) } }), 429: errorResponse("Trop de tentatives sur le mot de passe actuel.") }),
   },
 

@@ -8,8 +8,7 @@ son appareil, et l'application maintient seule une connexion valide.
 
 ```
 apps/api        API Fastify + PGlite/Postgres, ingestion des endpoints, paiements
-apps/admin      Dashboard Next.js (export statique servi par l'API sur /admin)
-apps/admin-legacy  Ancienne version sans framework — référence, plus servie
+apps/dashboard  Dashboard Next.js 16 déployé séparément sur Vercel
 apps/android    Application Android (sing-box, Compose, Keystore)
 infra/endpoint  Conteneur qui transforme un déploiement Cloud Run en nœud
 knowledge/      Mémoire du projet — la lire avant de coder
@@ -18,19 +17,21 @@ knowledge/      Mémoire du projet — la lire avant de coder
 ## Démarrer
 
 ```bash
-pnpm install --config.strict-dep-builds=false
-pnpm --filter @vpn/contract build
-pnpm --filter @vpn/admin build   # produit apps/admin/out, servi sous /admin/
+bun install
 
 cd apps/api
 cp .env.example .env          # remplir MASTER_KEY, JWT_SECRET, SEED_ADMIN_PASSWORD
-pnpm seed                     # communauté, app, forfaits, propriétaire
-pnpm dev                      # http://localhost:8080/admin/
+bun run seed                  # communauté, app, forfaits, propriétaire
+bun run dev                   # API sur http://localhost:8080
+
+cd ../dashboard
+cp .env.example .env.local    # remplir API_BASE_URL et DASHBOARD_ACCESS_KEY
+bun run dev                   # dashboard sur http://localhost:3000
 ```
 
 Le seed est idempotent : le relancer ne duplique rien et ne réinitialise aucun
-mot de passe. Sans `apps/admin/out`, `/admin/` répond 503 avec la commande à
-lancer — l'API n'invente pas une page vide.
+mot de passe. Le dashboard et l'API sont deux déploiements distincts ; l'API ne
+sert pas d'export statique du dashboard.
 
 ## Les quatre chiffres
 

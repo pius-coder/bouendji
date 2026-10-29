@@ -3,7 +3,7 @@ import { BaseService, type BaseServiceDeps } from "@/server/api/base-service";
 import { endpoint } from "@/server/api/endpoint";
 import { id, listOf } from "@/server/api/schema-kit";
 import { z } from "zod";
-import { type AdminCreate, adminAccount, adminCreateBody, adminCreated, adminResetResponse } from "./admins.schema";
+import { type AdminCreate, adminAccount, adminCreateBody, adminCreated, adminResetResponse, adminStatusBody } from "./admins.schema";
 
 export type CreateAdminInput = AdminCreate;
 
@@ -26,6 +26,14 @@ export class AdminsService extends BaseService {
       response: adminResetResponse,
       refreshAfter: true,
     }),
+    setStatus: endpoint({
+      method: "PATCH",
+      path: "/:adminId",
+      params: z.object({ adminId: id }),
+      body: adminStatusBody,
+      response: adminAccount,
+      refreshAfter: true,
+    }),
   } as const;
 
   constructor(deps: BaseServiceDeps) {
@@ -43,5 +51,9 @@ export class AdminsService extends BaseService {
   /** Owner : mot de passe provisoire renvoyé une fois ; l'admin doit le changer. */
   resetPassword(adminId: string) {
     return this.call(AdminsService.endpoints.resetPassword, { params: { adminId } });
+  }
+
+  setStatus(adminId: string, active: boolean) {
+    return this.call(AdminsService.endpoints.setStatus, { params: { adminId }, body: { active } });
   }
 }

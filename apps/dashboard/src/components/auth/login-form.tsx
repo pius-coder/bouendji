@@ -41,7 +41,7 @@ export function LoginForm({ next }: { next: string }) {
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
-            className="h-11"
+            className="h-12"
             required
             aria-invalid={identifierError ? true : undefined}
             aria-describedby="identifier-help"
@@ -51,7 +51,7 @@ export function LoginForm({ next }: { next: string }) {
         </Field>
         <Field data-invalid={passwordError ? true : undefined}>
           <FieldLabel htmlFor="password">{PASSWORD_LABEL}</FieldLabel>
-          <InputGroup className="h-11">
+          <InputGroup className="h-12">
             <InputGroupInput
               id="password"
               name="password"

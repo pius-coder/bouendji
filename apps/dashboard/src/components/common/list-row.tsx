@@ -55,10 +55,10 @@ export function ListRow({
   const interactive = Boolean(href || onClick);
   const resolvedAccessory = accessory ?? (interactive && !destructive ? "chevron" : "none");
   const rowClass = cn(
-    "group/row relative flex min-h-11 w-full items-center gap-3 px-4 py-2.5 text-start outline-none",
+    "group/row relative flex min-h-14 w-full items-center gap-3 px-4 py-3 text-start outline-none",
     leading ? "[--sep-inset:3.75rem]" : "[--sep-inset:1rem]",
     "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:start-[var(--sep-inset)] before:h-px before:bg-separator first:before:hidden",
-    interactive && "transition-colors duration-150 [@media(hover:hover)]:hover:bg-fill/60 active:bg-fill",
+    interactive && "transition-[background-color,transform] duration-150 [@media(hover:hover)]:hover:bg-fill/70 active:scale-[0.99] active:bg-fill",
     interactive && "focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     selected && "bg-accent",
     disabled && "pointer-events-none opacity-40",
@@ -138,7 +138,7 @@ export function ListRowSkeleton({ withSubtitle = true, withLeading = false }: { 
 /** Corps de section en chargement : `count` lignes fantômes sur fond cellule. */
 export function ListSkeleton({ count = 4, withSubtitle, withLeading }: { count?: number; withSubtitle?: boolean; withLeading?: boolean }) {
   return (
-    <div role="status" aria-label="Chargement" className="overflow-hidden rounded-section bg-card">
+    <div role="status" aria-label="Chargement" className="overflow-hidden rounded-section bg-card shadow-card">
       {Array.from({ length: count }, (_, i) => (
         <ListRowSkeleton key={i} withSubtitle={withSubtitle} withLeading={withLeading} />
       ))}

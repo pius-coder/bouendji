@@ -14,7 +14,7 @@ const membershipRef = z.object({ communityId: z.string(), role: z.string() });
 /** Code d'erreur 403 de l'API tant que le mot de passe doit être changé (contrat §6). */
 export const PASSWORD_CHANGE_REQUIRED = "PASSWORD_CHANGE_REQUIRED";
 
-/** Longueur minimale du nouveau mot de passe (chantier §6). */
+/** Le choix produit actuel n'impose qu'une valeur non vide. */
 export const PASSWORD_MIN_LENGTH = 1;
 export const PASSWORD_MAX_LENGTH = 200;
 
@@ -130,7 +130,7 @@ export const updateMeBody = z.object({
 });
 export type UpdateMeBody = z.input<typeof updateMeBody>;
 
-/** Règles du nouveau mot de passe (chantier §6 : 12 caractères minimum). */
+/** Règles du nouveau mot de passe : non vide et différent de l'actuel. */
 export const passwordChangeBody = z
   .object({
     currentPassword: z.string().min(1, "Mot de passe actuel requis.").max(PASSWORD_MAX_LENGTH),
