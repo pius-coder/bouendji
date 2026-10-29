@@ -858,3 +858,22 @@ Saitrix (nebula) : �cran d'auth sans onglets ni grand titre, compact et non scro
   (dont 2 réécrits : « register après expiration → le nœud revit », « un nœud
   au TTL passé reste servi »). Déployé en prod (vpn-api, healthchecks OK) ;
   sauvegarde DB avant : `vpn-db-2026-10-29-avant-multilien.sql.gz`.
+
+- **D146** (2026-10-29) — **Reprise de paiement et suspension admin livrées en
+  prod, sans accès gratuit.** Le lot `0bdaa67` ajoute :
+  `POST /v1/admin/orders/:id/reconcile` (owner ou `community_admin`), qui
+  réinterroge le fournisseur pour une commande `created`/`pending` ou termine
+  l'activation d'une commande `paid` non activée, journalise `order.reconcile`
+  et **ne crée jamais de forfait gratuit** (l'attribution gratuite reste la
+  question ouverte O22) ; `PATCH /v1/admin/:adminId` pour suspendre/réactiver
+  un administrateur avec révocation de ses sessions et garde-fous (pas
+  d'auto-suspension, pas de dernier owner). Côté dashboard : bouton
+  « Vérifier le paiement », bouton statut admin, refonte visuelle (palette
+  chaude, barre latérale sombre) et écran de connexion en deux panneaux.
+  Vérifié : tsc API + dashboard sans sortie, **API 358/358**, **dashboard
+  150/150**, `next build` OK. Déployé : API Dokku (openapi expose la route,
+  conteneur `Running`, logs 200) et dashboard Vercel
+  (`E9dWLSK62PRWD67vYRii7mhQ6Deo`, Ready, alias
+  `vpn-dashboard-seven.vercel.app`). Sauvegarde DB avant :
+  `vpn-db-2026-10-29-avant-dashboard-updates.sql.gz`. Le déploiement Vercel a
+  exigé de forcer IPv4 (voir `deploiement-dashboard-api`).
