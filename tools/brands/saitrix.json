@@ -1,17 +1,17 @@
 {
-  "_comment": "Marque de la communauté Saitrix (prod). Identité unique : nebula (une par app, 2026-10-26). Logo dessiné par tools/make-logo.mjs.",
+  "_comment": "Marque de la communauté Saitrix (prod). Identité : nebula. Logo officiel : tools/brands/saitrix/icon.png.",
   "theme": "nebula",
   "appName": "Saitrix",
   "packageName": "cm.bouendji.saitrix",
   "apiBaseUrl": "https://api.numzer0.store",
   "appId": "da24b189-1bff-459c-b7af-3ffe01468bff",
   "supportUrl": "mailto:support@henshins.online",
-  "accent": null,
+  "accent": "#8B5CF6",
   "offlineBundleSigningKeyB64": "MCowBQYDK2VwAyEADpJiokJbnFPbgtdSPuweH+T6TpmP9TnY0i2lruG7KtQ=",
   "memberWord": "",
   "communityWhatsappUrl": "",
   "communityTelegramUrl": "",
   "defaultLocale": "fr",
-  "versionCode": 4,
-  "versionName": "1.1.2"
+  "versionCode": 5,
+  "versionName": "1.1.3"
 }

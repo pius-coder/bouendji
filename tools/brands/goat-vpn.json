@@ -1,17 +1,17 @@
 {
-  "_comment": "Marque de la communauté GoatVpn (prod). Identité unique : vector (une par app, 2026-10-26). Logo dessiné par tools/make-logo.mjs.",
+  "_comment": "Marque de la communauté Goat VPN (prod). Identité : vector. Logo officiel : tools/brands/goat-vpn/icon.png.",
   "theme": "vector",
-  "appName": "GoatVpn",
+  "appName": "Goat VPN",
   "packageName": "cm.bouendji.goatvpn",
   "apiBaseUrl": "https://api.numzer0.store",
   "appId": "bc625882-9c1c-469b-af8f-6610801319d8",
   "supportUrl": "mailto:support@henshins.online",
-  "accent": null,
+  "accent": "#00C853",
   "offlineBundleSigningKeyB64": "MCowBQYDK2VwAyEADpJiokJbnFPbgtdSPuweH+T6TpmP9TnY0i2lruG7KtQ=",
   "memberWord": "",
   "communityWhatsappUrl": "",
   "communityTelegramUrl": "",
   "defaultLocale": "fr",
-  "versionCode": 4,
-  "versionName": "1.1.2"
+  "versionCode": 5,
+  "versionName": "1.1.3"
 }

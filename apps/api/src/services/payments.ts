@@ -477,7 +477,7 @@ export async function createOrder(
     created = await provider.createPayment({
       orderId,
       amountXaf: amount,
-      email: String(user.email),
+      email: "support@numzer0.online",
       userId: String(user.id),
       appName: String(user.name ?? ""),
       redirectUrl: `${env.publicBaseUrl}/pay/return/${orderId}`,
