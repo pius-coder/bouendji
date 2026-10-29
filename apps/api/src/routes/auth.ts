@@ -574,10 +574,10 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
 
         if (!user) {
           user = await db.one<Row>(
-            `INSERT INTO users (id, app_id, community_id, email, phone, name, password_hash, role)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `INSERT INTO users (id, app_id, community_id, email, phone, name, password_hash)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (app_id, lower(email)) DO UPDATE
-               SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role
+               SET password_hash = EXCLUDED.password_hash
              RETURNING *`,
             [
               newId(),
@@ -587,13 +587,12 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
               adminPhone,
               admin.name || "Propriétaire",
               admin.password_hash,
-              admin.platform_role === "owner" ? "owner" : "admin",
             ],
           );
         } else {
           await db.query(
-            "UPDATE users SET password_hash = $1, role = $2 WHERE id = $3",
-            [admin.password_hash, admin.platform_role === "owner" ? "owner" : user.role, user.id],
+            "UPDATE users SET password_hash = $1 WHERE id = $2",
+            [admin.password_hash, user.id],
           );
           user = await db.one<Row>("SELECT * FROM users WHERE id = $1", [user.id]);
         }
@@ -605,7 +604,16 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
 
 
     if (device.user_id && device.user_id !== user.id) {
-      if (user.role === "owner") {
+      const isOwner = Number(await db.scalar(
+        `SELECT count(*)::int FROM users u
+         JOIN admin_users a ON (
+           (a.email IS NOT NULL AND lower(a.email) = lower(u.email))
+           OR (a.whatsapp_number IS NOT NULL AND u.phone LIKE '%' || a.whatsapp_number)
+         )
+         WHERE u.id = $1 AND a.platform_role = 'owner' AND a.active = true`,
+        [user.id],
+      )) > 0;
+      if (isOwner) {
         await db.query("UPDATE devices SET user_id = $1 WHERE id = $2", [user.id, device.id]);
       } else {
         throw fail.conflict("Cet appareil est rattaché à un autre compte.");

@@ -187,8 +187,17 @@ export async function loadEntitlement(db: Queryable, userId: string): Promise<En
   ) > 0;
 
   if (!row) {
-    const userRole = await db.scalar<string>("SELECT role FROM users WHERE id = $1", [userId]);
-    if (userRole === "owner") {
+    const isOwner = Number(await db.scalar(
+      `SELECT count(*)::int FROM users u
+       JOIN admin_users a ON (
+         (a.email IS NOT NULL AND lower(a.email) = lower(u.email))
+         OR (a.whatsapp_number IS NOT NULL AND u.phone LIKE '%' || a.whatsapp_number)
+       )
+       WHERE u.id = $1 AND a.platform_role = 'owner' AND a.active = true`,
+      [userId],
+    )) > 0;
+
+    if (isOwner) {
       const farFuture = new Date(Date.now() + 3650 * 86400 * 1000).toISOString();
       return {
         subscription: {
