@@ -253,7 +253,6 @@ export async function xuiLeadConfig(db: Queryable, sub: LimitedSubscription): Pr
 export async function nightRowsFor(
   db: Queryable,
   window: NightWindow,
-  drainLeadSeconds: number,
 ): Promise<{ rows: EndpointRow[]; startsAt: Map<string, string> }> {
   const rows = await db.query<EndpointRow & { slot_starts_at: string | Date }>(
     `SELECT e.*, ns.starts_at AS slot_starts_at
@@ -263,9 +262,8 @@ export async function nightRowsFor(
         AND e.health <> 'down'
         AND ns.slot = ANY($1::text[])
         AND ns.ends_at > now()
-        AND e.expires_at > now() + ($2::int * interval '1 second')
       ORDER BY ns.starts_at, e.created_at`,
-    [slotsForWindow(window), drainLeadSeconds],
+    [slotsForWindow(window)],
   );
   const startsAt = new Map<string, string>();
   for (const row of rows) startsAt.set(row.id, new Date(row.slot_starts_at).toISOString());

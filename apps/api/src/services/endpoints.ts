@@ -10,9 +10,9 @@ export type EndpointStatus = "pending" | "active" | "draining" | "expired" | "fa
 export type EndpointHealth = "unknown" | "healthy" | "degraded" | "down";
 
 /**
- * Deux natures de nœuds, jamais mélangées (D45) : `free-labs` vit 4 h 30 et
+ * Deux natures de nœuds (D45/D141) : `free-labs` vit 4 h 30 et
  * tourne par le nombre, `paid-gcp` ne meurt pas et porte la mesure par appareil
- * (D69). Un bundle ne contient qu'un seul tier.
+ * (D69). Le gratuit reste sur `free-labs`; le payant accède aux deux pools.
  */
 export type EndpointTier = "free-labs" | "paid-gcp";
 export type EndpointIdentityMode = "shared" | "per_device";
@@ -122,7 +122,11 @@ function iso(value: Date | string): string {
 }
 
 function isExpired(row: EndpointRow, now = Date.now()): boolean {
-  return row.status === "expired" || new Date(row.expires_at).getTime() <= now;
+  // D145 : plus jamais de désactivation automatique. `expires_at` est purement
+  // informatif (affichage, rappels de créneaux) : un nœud dont la date est
+  // passée reste servi tant que personne ne l'a mis `expired` à la main.
+  void now;
+  return row.status === "expired";
 }
 
 /**
@@ -484,12 +488,12 @@ export async function heartbeat(
 }
 
 /**
- * La liste vivante (D45/D47) : le tier demandé, jamais un nœud `down`, jamais un
- * nœud qui meurt dans la fenêtre de drain. `expires_at` ne décide plus de la
- * présence — il ne sert qu'au drain et aux alertes.
- *
- * `drain` remplace `sweepEndpoints()` pour la **lecture** : plus besoin d'un
- * tick serveur pour retirer un nœud qui va mourir (D51).
+ * La liste vivante (D47/D141/D145) : `free-labs` reste borné à son pool ;
+ * `paid-gcp` reçoit les deux pools. Jamais un nœud `down`. Depuis D145, la
+ * fin de validité **ne retire plus personne** : un nœud reste servi tant que
+ * son statut est `active` et que les clients ne le déclarent pas mort —
+ * aucune désactivation automatique, l'expiration ne sert qu'à l'affichage
+ * et aux rappels de créneaux. Sortir un nœud est un geste manuel (console).
  *
  * La seconde signature (`servedEndpoints(db, limit)`) est l'appel historique des
  * bundles hors ligne : elle reste valable et sert le tier gratuit.
@@ -508,50 +512,16 @@ export async function servedEndpoints(
       WHERE status = 'active'
         AND ($2 = 'paid-gcp' OR tier = $2)
         AND health <> 'down'
-        AND expires_at > now() + ($3::int * interval '1 second')
       ORDER BY CASE health WHEN 'healthy' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END,
                latency_ms ASC NULLS LAST,
                created_at ASC
       LIMIT $1`,
-    [max, tier, env.ingest.drainLeadSeconds],
+    [max, tier],
   );
 }
 
 export async function listPool(db: Queryable): Promise<EndpointRow[]> {
   return db.query<EndpointRow>("SELECT * FROM endpoints ORDER BY created_at DESC LIMIT 500");
-}
-
-/**
- * Moves endpoints out of the served pool before they die, so clients stop
- * being handed a server that is about to disappear. Returns what changed.
- */
-export async function sweepEndpoints(
-  db: Queryable,
-  now = new Date(),
-): Promise<{ expired: number; draining: number; poolRevision: number }> {
-  const expired = await db.query<{ id: string }>(
-    `UPDATE endpoints SET status='expired', updated_at=now()
-      WHERE status IN ('pending','active','draining') AND expires_at <= $1
-      RETURNING id`,
-    [now],
-  );
-
-  let draining: Array<{ id: string }> = [];
-  if (env.ingest.drainLeadSeconds > 0) {
-    draining = await db.query<{ id: string }>(
-      `UPDATE endpoints SET status='draining', updated_at=now()
-        WHERE status='active' AND expires_at <= $1::timestamptz + ($2::int * interval '1 second')
-        RETURNING id`,
-      [now, env.ingest.drainLeadSeconds],
-    );
-  }
-
-  const changed = expired.length + draining.length;
-  return {
-    expired: expired.length,
-    draining: draining.length,
-    poolRevision: changed > 0 ? await bumpPoolRevision(db) : await poolRevision(db),
-  };
 }
 
 /** Plaintext config for one device. Only ever serialised inside the sealed envelope. */

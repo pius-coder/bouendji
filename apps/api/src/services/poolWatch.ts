@@ -122,7 +122,7 @@ export async function refreshSlotStates(db: Queryable, now: Date): Promise<void>
          SELECT s.id,
                 CASE
                   WHEN EXISTS (SELECT 1 FROM endpoints e
-                                WHERE e.night_slot_id = s.id AND e.status = 'active' AND e.expires_at > $1) THEN 'active'
+                                WHERE e.night_slot_id = s.id AND e.status = 'active') THEN 'active'
                   WHEN s.ends_at <= $1 THEN 'missed'
                   WHEN s.endpoint_id IS NOT NULL THEN 'deployed'
                   ELSE 'planned'

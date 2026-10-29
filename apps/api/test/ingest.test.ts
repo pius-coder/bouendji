@@ -20,7 +20,7 @@ process.env.ENDPOINT_DRAIN_LEAD = "900";
 const { createDb } = await import("../src/db.js");
 const { buildApp } = await import("../src/app.js");
 const { env } = await import("../src/config.js");
-const { sweepEndpoints } = await import("../src/services/endpoints.js");
+const { servedEndpoints } = await import("../src/services/endpoints.js");
 const { buildVlessUri, parseVlessUri } = await import("../src/lib/vless.js");
 const { sealForDevice, openEnvelope } = await import("../src/lib/crypto.js");
 
@@ -92,14 +92,19 @@ test("un second register n'étend pas expires_at", async () => {
   assert.equal(after, stored);
 });
 
-test("register sur une clé expirée renvoie 409, jamais une résurrection", async () => {
+test("register après expiration du TTL : le nœud revit, jamais de désactivation automatique (D145)", async () => {
   const first = await register("dead-key");
   assert.equal(first.status, 200);
   await db.query("UPDATE endpoints SET expires_at = now() - interval '1 second' WHERE deployment_key = $1", ["dead-key"]);
 
   const retry = await register("dead-key");
-  assert.equal(retry.status, 409);
-  assert.equal(retry.body.error.code, "CONFLICT");
+  assert.equal(retry.status, 200, "expires_at n'est plus une porte : seul le statut manuel compte");
+  const row = await db.one<{ status: string; expires_at: string }>(
+    "SELECT status, expires_at::text FROM endpoints WHERE deployment_key = $1",
+    ["dead-key"],
+  );
+  assert.equal(row?.status, "pending", "le nœud existe toujours, mêmes valeurs");
+  assert.ok(new Date(String(row?.expires_at)).getTime() < Date.now(), "l'expiration n'a pas été prolongée furtivement");
 });
 
 test("ready passe en active et ne bump la révision qu'une fois", async () => {
@@ -168,23 +173,22 @@ test("secret vide : 503, même avec un jeton", async () => {
   }
 });
 
-test("balayage : draining à expires_at - 900 s, expired après", async () => {
+test("plus de balayage : un nœud dont le TTL est passé reste actif et servi (D145)", async () => {
   const reg = await register("sweep-key", { ttl_seconds: 3600 });
   await ready("sweep-key");
   const expiresAt = new Date(reg.body.expires_at).getTime();
-  const lead = env.ingest.drainLeadSeconds;
-  assert.equal(lead, 900, "le drain testé est celui de l'environnement");
 
-  const early = await sweepEndpoints(db, new Date(expiresAt - (lead + 1) * 1000));
-  assert.equal(await statusOf("sweep-key"), "active", "hors de la fenêtre de drain, rien ne bouge");
+  await db.query("UPDATE endpoints SET expires_at = $2::timestamptz WHERE deployment_key = $1", [
+    "sweep-key",
+    new Date(expiresAt - 3_600_000).toISOString(),
+  ]);
+  assert.equal(await statusOf("sweep-key"), "active", "rien ne désactive un nœud dont la date est passée");
 
-  const atLead = await sweepEndpoints(db, new Date(expiresAt - lead * 1000));
-  assert.ok(atLead.draining >= 1);
-  assert.equal(await statusOf("sweep-key"), "draining");
-
-  const late = await sweepEndpoints(db, new Date(expiresAt + 1000));
-  assert.ok(late.expired >= 1);
-  assert.equal(await statusOf("sweep-key"), "expired");
+  const served = await servedEndpoints(db, "free-labs", 50);
+  assert.ok(
+    served.some((row: { deployment_key: string }) => row.deployment_key === "sweep-key"),
+    "le nœud dont le TTL est passé reste servi",
+  );
 });
 
 async function statusOf(deploymentKey: string): Promise<string> {

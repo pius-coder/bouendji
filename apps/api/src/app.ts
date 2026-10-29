@@ -258,12 +258,9 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
             SET health = 'unknown', down_since = NULL, down_reason = NULL, updated_at = now()
           WHERE health = 'down' AND down_since < now() - interval '30 minutes'`,
       );
-      // Expiration constatée : la lecture filtre déjà, ceci garde la console honnête.
-      await db.query(
-        `UPDATE endpoints
-            SET status = 'expired', updated_at = now()
-          WHERE status IN ('active', 'draining') AND expires_at <= now()`,
-      );
+      // D145 : plus aucune transition automatique `active` → `expired`.
+      // `expires_at` n'est qu'une date d'affichage ; sortir un nœud du pool
+      // est un geste manuel (console : statut, purge, suppression).
       // Un versement ambigu ne reste pas ambigu (D65).
       await db.query(
         `UPDATE payouts

@@ -2,7 +2,6 @@ import type { FastifyServerOptions } from "fastify";
 import { buildApp } from "./app.js";
 import { env } from "./config.js";
 import { createDb } from "./db.js";
-import { sweepEndpoints } from "./services/endpoints.js";
 import { purgeExpired, purgedTotal } from "./services/maintenance.js";
 import { checkPoolExpiry, newPoolWatchState } from "./services/poolWatch.js";
 import { startXuiWorker } from "./services/xuiWorker.js";
@@ -45,16 +44,13 @@ if (env.ingest.secret.length === 0) {
 
 async function sweep(): Promise<void> {
   try {
-    const result = await sweepEndpoints(db);
-    if (result.expired > 0 || result.draining > 0) {
-      app.log.info({ expired: result.expired, draining: result.draining }, "balayage du pool");
-    }
-    // Same tick as the sweep: the reminder must never fire on a stale pool.
+    // D145 : plus de balayage qui désactive les nœuds — un serveur reste dans
+    // le pool tant que personne ne le retire à la main. Ce tick ne fait plus
+    // que les rappels de créneaux de nuit.
     const watch = await checkPoolExpiry(db, poolWatch);
     if (watch.sent) app.log.info({ minutesLeft: watch.minutesLeft, active: watch.activeCount }, "rappel de deploiement envoye");
   } catch (err) {
-    // A failed sweep delays drain/expiry, it does not invalidate serving.
-    app.log.error({ err }, "balayage du pool en échec");
+    app.log.error({ err }, "tick du pool en échec");
   }
 
   // Purge in the same tick, but isolated: a slow DELETE must not stop the pool

@@ -19,8 +19,8 @@
  *    *toutes* les configurations servies sont mortes avant (D49). Il ne meurt
  *    plus avec son maillon le plus faible : quatre nœuds de lab à 4 h 30 ne
  *    doivent pas couper l'app six fois par jour.
- * 4. **Un seul tier par bundle** (D45) : celui du forfait actif. Les deux
- *    infrastructures ne se mélangent jamais.
+ * 4. **Accès par formule** (D141) : le gratuit reste sur `free-labs`; un
+ *    abonnement payant reçoit `paid-gcp` et `free-labs`.
  */
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { VlessConfig } from "@vpn/contract";
@@ -337,7 +337,7 @@ async function limitedPlan(db: Database, sub: LimitedSubscription, active: boole
   const lead = await xuiLeadConfig(db, sub);
   const night =
     sub.family === "limited_night" && sub.nightWindow
-      ? await nightRowsFor(db, sub.nightWindow, env.ingest.drainLeadSeconds)
+      ? await nightRowsFor(db, sub.nightWindow)
       : { rows: [] as EndpointRow[], startsAt: new Map<string, string>() };
   const leadPart = lead ? `${lead.id}:${sha256Hex(lead.uri).slice(0, 12)}` : "pending";
   return {
@@ -406,8 +406,8 @@ export function registerBundleRoutes(app: FastifyInstance, db: Database): void {
     if (!agreementKey) throw fail.forbidden("Clé d'accord absente : réenrôlez cet appareil.");
 
     /*
-     * D45 : un bundle ne contient qu'un tier, celui que le forfait actif
-     * achète. `servedEndpoints` retire déjà les nœuds `down` (D47) et ceux qui
+     * D141 : le gratuit reste sur son pool ; le payant reçoit les deux pools.
+     * `servedEndpoints` retire déjà les nœuds `down` (D47) et ceux qui
      * meurent dans la fenêtre de drain. Un forfait limité ne passe jamais par là.
      */
     const plan: ServedPlan = limited

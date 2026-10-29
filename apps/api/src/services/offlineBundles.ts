@@ -139,7 +139,7 @@ export async function issueOfflineBundle(
   if (limited && !lead) throw fail.conflict("Le client de cet abonnement n'est pas encore prêt côté serveur.");
   const night =
     limited?.family === "limited_night" && limited.nightWindow
-      ? await nightRowsFor(db, limited.nightWindow, env.ingest.drainLeadSeconds)
+      ? await nightRowsFor(db, limited.nightWindow)
       : null;
   const rows = limited ? (night?.rows ?? []) : await servedEndpoints(db, entitlement.endpointTier);
   if (!lead && rows.length === 0) {

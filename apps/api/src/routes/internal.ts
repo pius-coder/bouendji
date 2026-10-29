@@ -371,8 +371,7 @@ export function registerInternalRoutes(app: FastifyInstance, db: Database): void
           (row) =>
             row.tier === tier &&
             row.status === "active" &&
-            row.health !== "down" &&
-            new Date(row.expires_at).getTime() > Date.now() + env.ingest.drainLeadSeconds * 1000,
+            row.health !== "down",
         ).length,
       })),
       endpoints: rows.map(diagRow),
