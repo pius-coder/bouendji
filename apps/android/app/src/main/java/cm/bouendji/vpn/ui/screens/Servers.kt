@@ -88,8 +88,11 @@ fun ServersScreen(ctx: ShellContext) {
 
     val visible = servers
         .filter { s ->
-            // D136 : filtrage dynamique conditionné par la formule souscrite
-            if (userTier == "free-labs") {
+            // D136 / D140 : filtrage dynamique conditionné par la formule souscrite
+            // Le propriétaire et les utilisateurs payants ont accès à l'ensemble du réseau
+            if (entitlement?.planCode == "owner-vip" || userTier == "paid-gcp") {
+                true
+            } else if (userTier == "free-labs") {
                 s.endpointTier == "free-labs"
             } else {
                 s.endpointTier == "paid-gcp" || (s.startsAt != null && isNightActive)
@@ -125,9 +128,12 @@ fun ServersScreen(ctx: ShellContext) {
         ScreenColumn(tabs = true) {
             LargeTitle("Serveurs")
             c.me?.entitlement?.takeIf { it.active }?.let { entitlement ->
+                val isOwner = entitlement.planCode == "owner-vip"
+                val label = if (isOwner) "VIP" else tierLabel(entitlement.endpointTier)
+                val hint = if (isOwner) "Accès illimité à l'ensemble du réseau mondial." else tierHint(entitlement.endpointTier)
                 Row(Modifier.padding(start = 4.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Tag(tierLabel(entitlement.endpointTier))
-                    T("  ${tierHint(entitlement.endpointTier)}", color = t.label2, size = 13.sp, modifier = Modifier.weight(1f))
+                    Tag(label)
+                    T("  $hint", color = t.label2, size = 13.sp, modifier = Modifier.weight(1f))
                 }
             }
             SearchField(query, { query = it }, "Rechercher un pays ou une ville")
