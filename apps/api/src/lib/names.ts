@@ -30,3 +30,21 @@ export function randomNodeName(): string {
   const n = randomInt(10, 100);
   return `${ADJECTIVES[a]}-${NOUNS[b]}-${n}`;
 }
+
+/**
+ * Fleuves du Cameroun : noms courts, ASCII, lisibles dans la liste des serveurs.
+ * Un nœud manuel reçoit `Sanaga 42`, stable pour la même empreinte — republier
+ * la même URI ne renomme pas le serveur.
+ */
+const CAMEROON_RIVERS = [
+  "Sanaga", "Wouri", "Nyong", "Nkam", "Mungo", "Dibamba", "Lokundje",
+  "Kienke", "Benoue", "Logone", "Chari", "Faro", "Donga", "Mbam", "Noun",
+  "Boumba", "Ngoko", "Dja", "Kadei", "Vina", "Pangar", "Mayo-Kebbi",
+];
+
+export function cameroonRiverNameFor(seed: string): string {
+  const digest = sha256Hex(seed);
+  const river = CAMEROON_RIVERS[parseInt(digest.slice(0, 8), 16) % CAMEROON_RIVERS.length]!;
+  const n = (parseInt(digest.slice(8, 16), 16) % 90) + 10;
+  return `${river} ${n}`;
+}

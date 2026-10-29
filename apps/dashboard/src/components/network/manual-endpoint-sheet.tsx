@@ -15,8 +15,8 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/format";
-import { parseVlessLink, type VlessFields } from "@/lib/vless-link";
-import { addManualEndpointsAction } from "@/server/actions/network.action";
+import { parseVlessLink, parseVlessLinks, type VlessFields } from "@/lib/vless-link";
+import { addManualEndpointsAction, addManualVlessAction } from "@/server/actions/network.action";
 import { manualEndpointFormSchema, type ManualEndpointFormValues } from "@/server/services/network/network.schema";
 import { ENDPOINT_TIER_LABEL, type EndpointTier } from "@/server/services/plans/plans.schema";
 
@@ -110,10 +110,44 @@ export function ManualEndpointSheet({ defaultLabel }: { defaultLabel?: string } 
   const [open, setOpen] = useState(false);
   const [techOpen, setTechOpen] = useState(false);
   const [lockedFromLink, setLockedFromLink] = useState(false);
+  // « Lot » : plusieurs liens collés d'un coup, publiés en une transaction par l'API.
+  const [mode, setMode] = useState<"single" | "batch">("single");
+  const [batchText, setBatchText] = useState("");
+  const [batchTier, setBatchTier] = useState<EndpointTier>("free-labs");
+  const [batchTtl, setBatchTtl] = useState("12");
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
   const form = useForm<ManualEndpointFormValues>({
     resolver: zodResolver(manualEndpointFormSchema),
     defaultValues: makeEmpty(defaultLabel),
   });
+
+  const batchPreview = batchText.trim() ? parseVlessLinks(batchText) : null;
+
+  async function submitBatch() {
+    const parsed = parseVlessLinks(batchText);
+    if (!parsed.ok) {
+      setBatchError(parsed.error);
+      return;
+    }
+    setBatchError(null);
+    setBatchSubmitting(true);
+    const result = await addManualVlessAction({
+      vlessUri: batchText,
+      // L'API nomme « jour » le pool limité et « nuit » le pool illimité (D123).
+      kind: batchTier === "paid-gcp" ? "jour" : "nuit",
+      ttlHours: Number(batchTtl),
+    });
+    setBatchSubmitting(false);
+    if (result.ok) {
+      const { count, expiresAt } = result.data;
+      toast.success(`${count} nœud${count > 1 ? "s" : ""} publié${count > 1 ? "s" : ""} · jusqu'au ${formatDateTime(expiresAt)}`);
+      setBatchText("");
+      setOpen(false);
+      return;
+    }
+    setBatchError(result.details?.vlessUri ?? result.details?.ttlHours ?? result.message);
+  }
 
   async function submit(values: ManualEndpointFormValues) {
     const result = await addManualEndpointsAction(values);
@@ -183,6 +217,9 @@ export function ManualEndpointSheet({ defaultLabel }: { defaultLabel?: string } 
         if (next) {
           form.reset(makeEmpty(defaultLabel));
           setLockedFromLink(false);
+          setMode("single");
+          setBatchText("");
+          setBatchError(null);
         }
         setOpen(next);
       }}
@@ -197,12 +234,92 @@ export function ManualEndpointSheet({ defaultLabel }: { defaultLabel?: string } 
         <SheetHeader>
           <SheetTitle>{ADD_LABEL}</SheetTitle>
           <SheetDescription>
-            Collez un lien pour remplir automatiquement les paramètres techniques en lecture seule et attribuer un nom aléatoire.
+            Collez un lien pour remplir automatiquement les paramètres, ou un lot de liens pour publier plusieurs serveurs d'un coup.
           </SheetDescription>
         </SheetHeader>
-        <form onSubmit={form.handleSubmit(submit)} className="flex flex-1 flex-col gap-4 px-4" noValidate>
+        <form
+          onSubmit={
+            mode === "batch"
+              ? (event) => {
+                  event.preventDefault();
+                  void submitBatch();
+                }
+              : form.handleSubmit(submit)
+          }
+          className="flex flex-1 flex-col gap-4 px-4"
+          noValidate
+        >
           <FieldGroup>
-            <VlessPaste
+            <Field>
+              <FieldLabel>Mode d&apos;ajout</FieldLabel>
+              <SegmentedControl<"single" | "batch">
+                label="Mode d'ajout"
+                options={[
+                  { value: "single", label: "Un lien" },
+                  { value: "batch", label: "Lot de liens" },
+                ]}
+                value={mode}
+                onValueChange={(next) => {
+                  setBatchError(null);
+                  setMode(next);
+                }}
+              />
+              <FieldDescription>
+                En lot, chaque lien devient un nœud : le pays vient de la région Cloud Run et le nom d&apos;un fleuve camerounais.
+              </FieldDescription>
+            </Field>
+
+            {mode === "batch" ? (
+              <>
+                <Field data-invalid={Boolean(batchError)}>
+                  <FieldLabel htmlFor="manual-vless-batch">Liens VLESS</FieldLabel>
+                  <Textarea
+                    id="manual-vless-batch"
+                    rows={8}
+                    value={batchText}
+                    placeholder="Un lien par ligne…"
+                    className="font-mono"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    aria-invalid={Boolean(batchError)}
+                    onChange={(event) => {
+                      setBatchError(null);
+                      setBatchText(event.target.value);
+                    }}
+                  />
+                  <FieldDescription>
+                    {batchPreview?.ok
+                      ? `${batchPreview.fields.length} lien${batchPreview.fields.length > 1 ? "s" : ""} distinct${batchPreview.fields.length > 1 ? "s" : ""} détecté${batchPreview.fields.length > 1 ? "s" : ""}.`
+                      : "Un lien par ligne. WebSocket + TLS uniquement ; rien n'est envoyé avant publication."}
+                  </FieldDescription>
+                  {batchError ? <FieldError>{batchError}</FieldError> : null}
+                </Field>
+                <Field>
+                  <FieldLabel>Nature</FieldLabel>
+                  <SegmentedControl<EndpointTier>
+                    label="Nature des nœuds"
+                    options={TIER_OPTIONS}
+                    value={batchTier}
+                    onValueChange={setBatchTier}
+                  />
+                  <FieldDescription>Jour = pool limité ; nuit = pool illimité (D123).</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="manual-batch-ttl">Durée de validité (heures)</FieldLabel>
+                  <Input
+                    id="manual-batch-ttl"
+                    className="h-11"
+                    inputMode="numeric"
+                    value={batchTtl}
+                    onChange={(event) => setBatchTtl(event.target.value.replace(/[^\d]/g, "").slice(0, 3))}
+                  />
+                  <FieldDescription>1 à 720. Le nœud sort du pool ensuite.</FieldDescription>
+                </Field>
+              </>
+            ) : (
+              <>
+                <VlessPaste
               onFields={(f) => {
                 const current = form.getValues();
                 const rand = generateRandomNodeName();
@@ -291,11 +408,17 @@ export function ManualEndpointSheet({ defaultLabel }: { defaultLabel?: string } 
                 {text("uuid", "UUID du client", { mono: true, readOnly: lockedFromLink })}
               </CollapsibleContent>
             </Collapsible>
+              </>
+            )}
           </FieldGroup>
           <SheetFooter className="px-0">
-            <Button type="submit" className="h-11 w-full" disabled={form.formState.isSubmitting}>
-              {form.formState.isSubmitting && <Spinner />}
-              {SUBMIT_LABEL}
+            <Button
+              type="submit"
+              className="h-11 w-full"
+              disabled={mode === "batch" ? batchSubmitting : form.formState.isSubmitting}
+            >
+              {(mode === "batch" ? batchSubmitting : form.formState.isSubmitting) && <Spinner />}
+              {mode === "batch" ? "Publier le lot" : SUBMIT_LABEL}
             </Button>
           </SheetFooter>
         </form>

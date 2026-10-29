@@ -5,6 +5,7 @@ import {
   type DeployKeyResult,
   manualEndpointFormSchema,
   manualEndpointFormToBody,
+  manualVlessBody,
   type NightSlotView,
   type TelegramTestResult,
 } from "@/server/services/network/network.schema";
@@ -28,6 +29,25 @@ export async function addManualEndpointsAction(input: unknown): Promise<ActionRe
     const body = manualEndpointFormToBody(manualEndpointFormSchema.parse(input));
     const created = await getServices().network.addManualEndpoints(body);
     return { count: created.count, expiresAt: created.expiresAt };
+  });
+}
+
+/**
+ * Ajout par lot : un ou plusieurs liens VLESS collés. L'API déduit le pays de
+ * l'hôte Cloud Run et nomme chaque nœud d'après un fleuve camerounais.
+ * Le lien n'est ni renvoyé ni journalisé.
+ */
+export async function addManualVlessAction(
+  input: unknown,
+): Promise<ActionResult<{ count: number; expiresAt: string; nodes: Array<{ label: string; region: string }> }>> {
+  return runAction(async () => {
+    const body = manualVlessBody.parse(input);
+    const created = await getServices().network.addManualVless(body);
+    return {
+      count: created.count,
+      expiresAt: created.expiresAt,
+      nodes: created.nodes.map((node) => ({ label: node.label, region: node.region })),
+    };
   });
 }
 

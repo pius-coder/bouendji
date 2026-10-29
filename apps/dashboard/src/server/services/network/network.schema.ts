@@ -100,6 +100,32 @@ export const manualEndpointCreated = z.object({
   poolRevision: z.number(),
 });
 
+/** Source : `POST /v1/admin/endpoints/manual` avec `vlessUri` (un ou plusieurs liens). */
+export const manualVlessBody = z.object({
+  vlessUri: z.string().trim().min(10).max(16_384),
+  kind: z.enum(["jour", "nuit"]),
+  ttlHours: z.number().int().min(1).max(720).optional(),
+});
+export type ManualVless = z.input<typeof manualVlessBody>;
+
+export const manualVlessCreated = z.object({
+  group: z.string(),
+  label: z.string(),
+  groups: z.array(z.string()),
+  nodes: z.array(
+    z.object({
+      group: z.string(),
+      label: z.string(),
+      region: z.string(),
+      endpointId: z.string(),
+    }),
+  ),
+  count: z.number(),
+  ids: z.array(z.string()),
+  expiresAt: z.string(),
+  poolRevision: z.number(),
+});
+
 /** Saisie du formulaire : nombres en texte, SNI un par ligne (ou séparés par des virgules). */
 const wholeNumber = (label: string, min: number, max: number) =>
   z

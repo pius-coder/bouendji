@@ -10,6 +10,9 @@ import {
   type ManualEndpoint,
   manualEndpointBody,
   manualEndpointCreated,
+  type ManualVless,
+  manualVlessBody,
+  manualVlessCreated,
   nightSlotsHistoryResponse,
   nightSlotsResponse,
   nightSlotView,
@@ -51,6 +54,14 @@ export class NetworkService extends BaseService {
       path: "/endpoints/manual",
       body: manualEndpointBody,
       response: manualEndpointCreated,
+      idempotent: true,
+      refreshAfter: true,
+    }),
+    addManualVless: endpoint({
+      method: "POST",
+      path: "/endpoints/manual",
+      body: manualVlessBody,
+      response: manualVlessCreated,
       idempotent: true,
       refreshAfter: true,
     }),
@@ -124,6 +135,10 @@ export class NetworkService extends BaseService {
 
   addManualEndpoints(input: AddManualEndpointsInput) {
     return this.call(NetworkService.endpoints.addManual, { body: input });
+  }
+
+  addManualVless(input: ManualVless) {
+    return this.call(NetworkService.endpoints.addManualVless, { body: input });
   }
 
   async listXuiServers() {

@@ -37,7 +37,7 @@ test("une URI collée, nuit : nom généré, lien illimité (free-labs), UUID ch
   const res = await post(OWNER, { vlessUri: uri(), kind: "nuit" });
   assert.equal(res.status, 201, res.text);
   assert.equal(res.text.includes(UUID), false, "l'UUID ne revient pas");
-  assert.match(String(res.body.label), /^[a-z]+-[a-z]+-\d{2}$/);
+  assert.match(String(res.body.label), /^[A-Za-z-]+ \d{2}$/, "nom de fleuve camerounais + numéro");
   assert.equal(res.body.count, 1);
 
   const rows = await db.query<any>("SELECT * FROM endpoints WHERE deployment_key = $1", [`manual:${res.body.group}:1`]);
@@ -96,4 +96,49 @@ test("UUID malformé, transport gRPC, port hors plage : 400", async () => {
 test("type jour ou nuit obligatoire, et réservé au propriétaire", async () => {
   assert.equal((await post(OWNER, { vlessUri: uri() })).status, 400, "sans kind");
   assert.equal((await post(PARTNER, { vlessUri: uri(), kind: "nuit" })).status, 403);
+});
+
+test("plusieurs liens collés : un nœud par host, pays déduit de la région Cloud Run", async () => {
+  const hosts = [
+    "vb-912278514787.us-west1.run.app",
+    "simteste-114859348629.europe-west4.run.app",
+    "ahmed-vip1-982056827202.us-east4.run.app",
+  ];
+  const block = hosts
+    .map((host, index) =>
+      uri()
+        .replace("host=svc-123.example.run.app", `host=${host}`)
+        .replace("#Ancien", `#illimiter-vip${index + 1}`),
+    )
+    .join("\n");
+  const res = await post(OWNER, { vlessUri: block, kind: "nuit" });
+  assert.equal(res.status, 201, res.text);
+  assert.equal(res.body.count, 3);
+  assert.equal(res.body.groups.length, 3, "un groupe par host : aucun écrasement");
+  assert.deepEqual(
+    res.body.nodes.map((node: any) => node.region),
+    ["us", "nl", "us"],
+    "région GCP -> code pays ISO affiché par l'application",
+  );
+  assert.equal(new Set(res.body.nodes.map((node: any) => node.label)).size, 3, "un nom de fleuve par nœud");
+  assert.equal(res.text.includes(UUID), false);
+
+  const rows = await db.query<any>(
+    "SELECT ws_host, region, label, tier FROM endpoints WHERE deployment_key = ANY($1::text[]) ORDER BY ws_host",
+    [res.body.ids.map((_: string, index: number) => `manual:${res.body.groups[index]}:1`)],
+  );
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows.map((row) => row.ws_host).sort(), [...hosts].sort());
+  assert.deepEqual(rows.map((row) => row.region).sort(), ["nl", "us", "us"]);
+  assert.equal(rows.every((row) => row.tier === "free-labs"), true);
+});
+
+test("un lien invalide dans le bloc refuse tout le bloc, sans rien écrire", async () => {
+  const before = await db.scalar<number>("SELECT count(*)::int FROM endpoints");
+  const block = [uri(), uri().replace(UUID, "pas-un-uuid")].join("\n");
+  const res = await post(OWNER, { vlessUri: block, kind: "nuit" });
+  assert.equal(res.status, 400, res.text);
+  assert.equal(res.text.includes(UUID), false);
+  const after = await db.scalar<number>("SELECT count(*)::int FROM endpoints");
+  assert.equal(after, before, "aucune écriture partielle");
 });

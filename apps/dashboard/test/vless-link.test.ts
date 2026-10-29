@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseVlessLink } from "@/lib/vless-link";
+import { parseVlessLink, parseVlessLinks } from "@/lib/vless-link";
 
 // AGENTS.md : aucun lien VLESS en clair dans un fichier de test. Le lien factice
 // (UUID et hôtes de documentation) est assemblé à l'exécution.
@@ -33,5 +33,29 @@ describe("lien VLESS collé (D107)", () => {
     assert.equal(parseVlessLink(link("type=tcp&security=reality")).ok, false);
     assert.equal(parseVlessLink(link("type=ws&security=none")).ok, false);
     assert.equal(parseVlessLink("https://example.com").ok, false);
+  });
+});
+
+describe("lot de liens VLESS", () => {
+  const two = (second: string) =>
+    [link("type=ws&security=tls&sni=a.example.com&host=one.example.net&path=%2Fa", "#un"), second].join("\n");
+
+  it("lit plusieurs liens et retire les doublons exacts", () => {
+    const same = link("type=ws&security=tls&sni=a.example.com&host=one.example.net&path=%2Fa", "#deux");
+    const r = parseVlessLinks(two(same));
+    assert.ok(r.ok);
+    if (!r.ok) return;
+    assert.equal(r.fields.length, 1, "même hôte, même chemin : un seul nœud");
+  });
+
+  it("un lien invalide refuse tout le bloc", () => {
+    const r = parseVlessLinks(two(link("type=tcp&security=none")));
+    assert.equal(r.ok, false);
+    if (r.ok) return;
+    assert.match(r.error, /Lien 2/);
+  });
+
+  it("bloc vide : erreur explicite", () => {
+    assert.equal(parseVlessLinks("rien à coller").ok, false);
   });
 });

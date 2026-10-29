@@ -16,6 +16,26 @@ export interface VlessFields {
 
 export type VlessParse = { ok: true; fields: VlessFields } | { ok: false; error: string };
 
+/**
+ * Bloc de plusieurs liens (un par ligne). Utilisé par l'import en lot : le
+ * nombre affiché est celui des liens réellement distincts.
+ */
+export function parseVlessLinks(raw: string): { ok: true; fields: VlessFields[] } | { ok: false; error: string } {
+  const matches = raw.match(/vless:\/\/[^\s"'<>]+/gi) ?? [];
+  if (matches.length === 0) return { ok: false, error: "Aucun lien vless:// trouvé." };
+  const seen = new Set<string>();
+  const fields: VlessFields[] = [];
+  for (const [index, match] of matches.entries()) {
+    const parsed = parseVlessLink(match.replace(/[),;]+$/, ""));
+    if (!parsed.ok) return { ok: false, error: `Lien ${index + 1} : ${parsed.error}` };
+    const key = [parsed.fields.address, parsed.fields.port, parsed.fields.sni, parsed.fields.hostHeader, parsed.fields.wsPath].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    fields.push(parsed.fields);
+  }
+  return { ok: true, fields };
+}
+
 const SCHEME = "vless:";
 
 export function parseVlessLink(raw: string): VlessParse {

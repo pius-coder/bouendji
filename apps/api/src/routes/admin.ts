@@ -32,8 +32,8 @@ import { z } from "zod";
 import { isUniqueViolation, type Database, type Queryable, type Row } from "../db.js";
 import { hasPlatformRole, requireAdmin, roleInCommunity, scopedCommunity, type AdminContext, type StaffRole } from "../lib/auth.js";
 import { encryptSecret, hashPassword, newId, sha256Hex } from "../lib/crypto.js";
-import { nodeNameFor } from "../lib/names.js";
-import { parseNodeVless } from "../lib/vless.js";
+import { cameroonRiverNameFor, nodeNameFor } from "../lib/names.js";
+import { extractVlessUris, parseNodeVless } from "../lib/vless.js";
 import { fail } from "../lib/errors.js";
 // `services/payments.ts` n'expose aucun décaissement (il orchestre
 // commande -> paiement -> activation). Le fournisseur de versement est donc
@@ -138,6 +138,8 @@ const adminCreateSchema = z
   })
   .strict()
   .refine((value) => value.email !== undefined || value.whatsappNumber !== undefined, "Un email ou un numéro WhatsApp est requis.");
+
+const adminStatusSchema = z.object({ active: z.boolean() }).strict();
 
 const payoutCreateSchema = z
   .object({
@@ -1527,6 +1529,49 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     return reply.send({ adminId: targetId, mustChangePassword: true, temporaryPassword, whatsappLink });
   });
 
+  /** Suspend ou réactive un compte. Suspendre coupe immédiatement ses sessions. */
+  app.patch<{ Params: { adminId: string } }>(`${PREFIX}/admins/:adminId`, async (req) => {
+    const admin = await requireAdmin(db, req);
+    authorize(admin, "community.manage", null);
+    const targetId = String(req.params.adminId);
+    const input = parseBody(adminStatusSchema, req.body);
+    if (targetId === admin.adminId) {
+      throw fail.validation({ adminId: "Vous ne pouvez pas suspendre votre propre compte." });
+    }
+
+    const target = await db.one<Row>(
+      "SELECT id, email, name, platform_role, active FROM admin_users WHERE id = $1",
+      [targetId],
+    );
+    if (!target) throw fail.notFound("Compte introuvable.");
+    if (!input.active && target.platform_role === "owner") {
+      const activeOwners = Number(
+        await db.scalar<number>("SELECT count(*)::int FROM admin_users WHERE platform_role = 'owner' AND active = true"),
+      );
+      if (activeOwners <= 1) throw fail.conflict("Le dernier propriétaire actif ne peut pas être suspendu.");
+    }
+
+    await db.tx(async (q) => {
+      await q.query("UPDATE admin_users SET active = $2 WHERE id = $1", [targetId, input.active]);
+      if (!input.active) {
+        await q.query("UPDATE admin_sessions SET revoked_at = now() WHERE admin_id = $1 AND revoked_at IS NULL", [targetId]);
+      }
+      await appendAudit(q, admin, req, {
+        action: input.active ? "admin.reactivate" : "admin.suspend",
+        targetType: "admin_user",
+        targetId,
+        before: { active: target.active === true },
+        after: { active: input.active },
+      });
+    });
+
+    const row = await db.one<Row>(
+      "SELECT id, email, name, platform_role, active FROM admin_users WHERE id = $1",
+      [targetId],
+    );
+    return adminDirectoryDto(row as Row);
+  });
+
   /**
    * Annuaire de l'équipe (owner). Sans lui, la console devine des identifiants :
    * on ne peut pas composer un formulaire « ajouter ce compte à cette
@@ -2259,7 +2304,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
    */
   const manualVlessSchema = z
     .object({
-      vlessUri: z.string().trim().min(10).max(2048),
+      /** Un ou plusieurs liens, un par ligne (ou séparés par des espaces). */
+      vlessUri: z.string().trim().min(10).max(16_384),
       kind: z.enum(["jour", "nuit"]),
       ttlHours: z.number().int().min(1).max(720).optional(),
     })
@@ -2267,94 +2313,152 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
 
   type ManualInput = z.infer<typeof manualEndpointSchema>;
 
-  const manualFromVless = (body: unknown): ManualInput => {
+  /**
+   * Lit un bloc de liens VLESS. Chaque lien devient un nœud distinct : deux
+   * liens qui ne diffèrent que par `host=` (domain fronting vers deux services
+   * Cloud Run) ne doivent pas s'écraser l'un l'autre. Le `host` entre donc dans
+   * l'empreinte du groupe.
+   */
+  const manualFromVless = (body: unknown): ManualInput[] => {
     const form = parseBody(manualVlessSchema, body);
-    let node: ReturnType<typeof parseNodeVless>;
-    try {
-      node = parseNodeVless(form.vlessUri);
-    } catch {
-      // Le message ne reprend ni l'URI ni son UUID : rien de sensible ne sort.
+    const uris = extractVlessUris(form.vlessUri);
+    if (uris.length === 0) {
       throw fail.validation({
-        vlessUri: "URI VLESS invalide : attendu vless://UUID@hôte:port?type=ws&security=tls&path=/chemin&sni=domaine.",
+        vlessUri: "Aucun lien VLESS trouvé. Colle un ou plusieurs liens commençant par vless://.",
       });
     }
-    const sni = node.sni ?? node.host;
-    const group = `v-${sha256Hex(`${node.host}|${node.port}|${node.wsPath}|${sni}`).slice(0, 16)}`;
-    return {
-      group,
-      label: nodeNameFor(group),
-      region: "auto",
-      address: node.host,
-      port: node.port,
-      snis: [sni],
-      hostHeader: node.hostHeader,
-      wsPath: node.wsPath,
-      uuid: node.uuid,
-      ttlHours: form.ttlHours ?? 4,
-      // jour = nœud limité (paid-gcp, 3x-ui) ; nuit = nœud illimité de nuit (free-labs, D123).
-      tier: form.kind === "jour" ? "paid-gcp" : "free-labs",
-    };
+    if (uris.length > 50) {
+      throw fail.validation({ vlessUri: "50 liens au maximum par publication." });
+    }
+
+    const seen = new Set<string>();
+    const out: ManualInput[] = [];
+    let invalid = 0;
+    for (const uri of uris) {
+      let node: ReturnType<typeof parseNodeVless>;
+      try {
+        node = parseNodeVless(uri);
+      } catch {
+        // Le message ne reprend ni l'URI ni son UUID : rien de sensible ne sort.
+        invalid += 1;
+        continue;
+      }
+      const sni = node.sni ?? node.host;
+      const group = `v-${sha256Hex(
+        `${node.host}|${node.port}|${node.wsPath}|${sni}|${node.hostHeader ?? ""}`,
+      ).slice(0, 16)}`;
+      if (seen.has(group)) continue;
+      seen.add(group);
+      out.push({
+        group,
+        // Nom de fleuve camerounais + numéro, stable pour la même empreinte.
+        label: cameroonRiverNameFor(group),
+        // L'application affiche le drapeau à partir du code ISO à deux lettres.
+        region: node.cloudRun?.country ?? "auto",
+        address: node.host,
+        port: node.port,
+        snis: [sni],
+        hostHeader: node.hostHeader,
+        wsPath: node.wsPath,
+        uuid: node.uuid,
+        ttlHours: form.ttlHours ?? 4,
+        // jour = nœud limité (paid-gcp, 3x-ui) ; nuit = nœud illimité de nuit (free-labs, D123).
+        tier: form.kind === "jour" ? "paid-gcp" : "free-labs",
+      });
+    }
+
+    if (invalid > 0) {
+      throw fail.validation({
+        vlessUri: `${invalid} lien${invalid > 1 ? "s" : ""} sur ${uris.length} invalide${invalid > 1 ? "s" : ""}. ` +
+          "Attendu : vless://UUID@hôte:port?type=ws&security=tls&path=/chemin&sni=domaine.",
+      });
+    }
+    return out;
   };
 
   app.post(`${PREFIX}/endpoints/manual`, async (req, reply) => {
     const admin = await requireAdmin(db, req);
     authorize(admin, "endpoint.write", null);
     const fromVless = typeof req.body === "object" && req.body !== null && "vlessUri" in req.body;
-    const input: ManualInput = fromVless ? manualFromVless(req.body) : parseBody(manualEndpointSchema, req.body);
-    const expiresAt = new Date(Date.now() + input.ttlHours * 3_600_000);
-    const keys = input.snis.map((_, index) => `manual:${input.group}:${index + 1}`);
+    const inputs: ManualInput[] = fromVless
+      ? manualFromVless(req.body)
+      : [parseBody(manualEndpointSchema, req.body)];
+    const expiresAt = new Date(Date.now() + Math.max(...inputs.map((input) => input.ttlHours)) * 3_600_000);
 
     let revision = 0;
     const ids: string[] = [];
+    const nodes: Array<{ group: string; label: string; region: string; endpointId: string }> = [];
     await db.tx(async (q) => {
-      for (const [index, sni] of input.snis.entries()) {
-        const label = input.snis.length > 1 ? `${input.label} ${index + 1}` : input.label;
-        const row = await q.one<Row>(
-          `INSERT INTO endpoints
-             (id, deployment_key, label, host, port, protocol, transport, security, sni, ws_path, ws_host,
-              credential, identity_mode, region, capacity, status, health, last_seen_at, expires_at, tier)
-           VALUES ($1,$2,$3,$4,$5,'vless','ws','tls',$6,$7,$8,$9,'shared',$10,80,'active','unknown',now(),$11,$12)
-           ON CONFLICT (deployment_key) DO UPDATE
-              SET label = EXCLUDED.label, host = EXCLUDED.host, port = EXCLUDED.port, sni = EXCLUDED.sni,
-                  ws_path = EXCLUDED.ws_path, ws_host = EXCLUDED.ws_host, credential = EXCLUDED.credential,
-                  region = EXCLUDED.region, status = 'active', health = 'unknown', down_since = NULL,
-                  down_reason = NULL, expires_at = EXCLUDED.expires_at, tier = EXCLUDED.tier, updated_at = now()
-           RETURNING id`,
-          [
-            newId(),
-            keys[index],
-            label,
-            input.address,
-            input.port,
-            sni,
-            input.wsPath,
-            input.hostHeader ?? null,
-            encryptSecret(input.uuid),
-            input.region,
-            expiresAt,
-            input.tier,
-          ],
+      for (const input of inputs) {
+        const keys = input.snis.map((_, index) => `manual:${input.group}:${index + 1}`);
+        for (const [index, sni] of input.snis.entries()) {
+          const label = input.snis.length > 1 ? `${input.label} ${index + 1}` : input.label;
+          const row = await q.one<Row>(
+            `INSERT INTO endpoints
+               (id, deployment_key, label, host, port, protocol, transport, security, sni, ws_path, ws_host,
+                credential, identity_mode, region, capacity, status, health, last_seen_at, expires_at, tier)
+             VALUES ($1,$2,$3,$4,$5,'vless','ws','tls',$6,$7,$8,$9,'shared',$10,80,'active','unknown',now(),$11,$12)
+             ON CONFLICT (deployment_key) DO UPDATE
+                SET label = EXCLUDED.label, host = EXCLUDED.host, port = EXCLUDED.port, sni = EXCLUDED.sni,
+                    ws_path = EXCLUDED.ws_path, ws_host = EXCLUDED.ws_host, credential = EXCLUDED.credential,
+                    region = EXCLUDED.region, status = 'active', health = 'unknown', down_since = NULL,
+                    down_reason = NULL, expires_at = EXCLUDED.expires_at, tier = EXCLUDED.tier, updated_at = now()
+             RETURNING id`,
+            [
+              newId(),
+              keys[index],
+              label,
+              input.address,
+              input.port,
+              sni,
+              input.wsPath,
+              input.hostHeader ?? null,
+              encryptSecret(input.uuid),
+              input.region,
+              expiresAt,
+              input.tier,
+            ],
+          );
+          if (row) {
+            const endpointId = String(row.id);
+            ids.push(endpointId);
+            nodes.push({ group: input.group, label, region: input.region, endpointId });
+          }
+        }
+        // Les variantes retirées du groupe sortent du pool.
+        await q.query(
+          `UPDATE endpoints SET status = 'expired', expires_at = LEAST(expires_at, now()), updated_at = now()
+            WHERE deployment_key LIKE $1 AND NOT (deployment_key = ANY($2::text[])) AND status <> 'expired'`,
+          [`manual:${input.group}:%`, keys],
         );
-        if (row) ids.push(String(row.id));
       }
-      // Les variantes retirées du groupe sortent du pool.
-      await q.query(
-        `UPDATE endpoints SET status = 'expired', expires_at = LEAST(expires_at, now()), updated_at = now()
-          WHERE deployment_key LIKE $1 AND NOT (deployment_key = ANY($2::text[])) AND status <> 'expired'`,
-        [`manual:${input.group}:%`, keys],
-      );
       revision = await bumpPoolRevision(q);
       await appendAudit(q, admin, req, {
         action: "endpoint.manual",
         targetType: "endpoint",
-        targetId: input.group,
-        after: { group: input.group, count: input.snis.length, region: input.region, expiresAt: expiresAt.toISOString() },
+        targetId: inputs[0]!.group,
+        after: {
+          groups: inputs.map((input) => input.group),
+          count: ids.length,
+          regions: [...new Set(inputs.map((input) => input.region))],
+          expiresAt: expiresAt.toISOString(),
+        },
       });
     });
 
     return reply
       .code(201)
-      .send({ group: input.group, label: input.label, count: ids.length, ids, expiresAt: expiresAt.toISOString(), poolRevision: revision });
+      .send({
+        // Compatibilité avec le formulaire à un seul lien.
+        group: inputs[0]!.group,
+        label: inputs[0]!.label,
+        groups: inputs.map((input) => input.group),
+        nodes,
+        count: ids.length,
+        ids,
+        expiresAt: expiresAt.toISOString(),
+        poolRevision: revision,
+      });
   });
 
   app.post<{ Params: { endpointId: string } }>(`${PREFIX}/endpoints/:endpointId/health`, async (req) => {

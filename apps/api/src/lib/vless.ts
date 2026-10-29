@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { cloudRunLocationOf, type CloudRunLocation } from "./cloudrun.js";
 
 /**
  * VLESS URI construction. Kept in one place because this string is the only
@@ -85,6 +86,26 @@ export interface ParsedNodeUri {
   sni: string | null;
   /** En-tête Host du WebSocket quand il diffère du SNI et de l'hôte ; sinon null. */
   hostHeader: string | null;
+  /** Pays déduit du host Cloud Run (`host=...`), null si le host n'en est pas un. */
+  cloudRun: CloudRunLocation | null;
+}
+
+/**
+ * Extrait tous les liens d'un bloc collé (un par ligne ou séparés par des
+ * espaces). Les doublons exacts sont retirés ; l'ordre d'entrée est conservé.
+ */
+export function extractVlessUris(raw: string): string[] {
+  const matches = raw.match(/vless:\/\/[^\s"'<>]+/gi) ?? [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const rawMatch of matches) {
+    const uri = rawMatch.replace(/[),;]+$/, "");
+    if (!seen.has(uri)) {
+      seen.add(uri);
+      out.push(uri);
+    }
+  }
+  return out;
 }
 
 /**
@@ -127,12 +148,15 @@ export function parseNodeVless(raw: string): ParsedNodeUri {
   if (hostHeader !== null && !HOST_STRICT_RE.test(hostHeader)) fail();
 
   const effectiveSni = sni ?? host;
+  const effectiveHost = hostHeader && hostHeader !== effectiveSni && hostHeader !== host ? hostHeader : null;
   return {
     uuid: uuid.toLowerCase(),
     host,
     port,
     wsPath,
     sni,
-    hostHeader: hostHeader && hostHeader !== effectiveSni && hostHeader !== host ? hostHeader : null,
+    hostHeader: effectiveHost,
+    // Le service Cloud Run est dans `host=`, pas dans l'adresse du frontal.
+    cloudRun: cloudRunLocationOf(effectiveHost ?? host),
   };
 }
