@@ -37,10 +37,20 @@ import cm.bouendji.vpn.ui.kit.ListRow
 import cm.bouendji.vpn.ui.kit.Segmented
 import cm.bouendji.vpn.ui.kit.Stack
 import cm.bouendji.vpn.ui.kit.BlockBtn
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import cm.bouendji.vpn.ui.kit.T
 import cm.bouendji.vpn.ui.theme.LocalTokens
 
 @Composable
-fun AuthScreen(ctx: ShellContext) {
+private fun AuthScreenClassic(ctx: ShellContext) {
     val c = ctx.c
     val t = LocalTokens.current
     val form = c.authForm
@@ -157,6 +167,64 @@ fun AuthScreen(ctx: ShellContext) {
                 Spacer(Modifier.height(4.dp))
                 Btn("Besoin d'aide ?", ctx.openSupport, Modifier.fillMaxWidth(), kind = BtnKind.PLAIN, height = 44.dp)
                 FinePrint("En continuant, tu acceptes les conditions d'utilisation du service.")
+            }
+        }
+    }
+}
+
+@Composable
+fun AuthScreen(ctx: ShellContext) {
+    if (BrandTokens.themeId == "nebula") AuthScreenNebula(ctx) else AuthScreenClassic(ctx)
+}
+
+/** Nebula : sans onglets ni grand titre, compact, bascule Inscription/Connexion sous le bouton. */
+@Composable
+private fun AuthScreenNebula(ctx: ShellContext) {
+    val c = ctx.c
+    val t = LocalTokens.current
+    val form = c.authForm
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Mascot(Modifier.height(130.dp), float = false)
+            Spacer(Modifier.height(6.dp))
+            T(if (form.register) "Inscription" else "Connexion", size = 22.sp, weight = FontWeight.Bold)
+            Spacer(Modifier.height(10.dp))
+            Group {
+                ListRow("Pays", value = COUNTRIES[form.countryIndex].first, chevron = true, onClick = { c.sheet = "country" })
+                if (form.register) {
+                    Divider()
+                    FormRow("Nom", form.fullName, { c.authForm = c.authForm.copy(fullName = it) }, "Nom complet")
+                }
+                Divider()
+                FormRow("WhatsApp", form.phone, { c.authForm = c.authForm.copy(phone = it) }, "6XX XX XX XX", KeyboardType.Phone, prefix = "+${COUNTRIES[form.countryIndex].second}")
+                Divider()
+                FormRow("Mot de passe", form.password, { c.authForm = c.authForm.copy(password = it) }, "Mot de passe", KeyboardType.Password, password = true)
+                if (form.register) {
+                    Divider()
+                    FormRow("Parrain", form.referral, { c.authForm = c.authForm.copy(referral = it.uppercase()) }, "Facultatif", mono = true)
+                }
+            }
+            c.error?.let {
+                Spacer(Modifier.height(6.dp))
+                T(it, color = t.danger, size = 13.sp, align = TextAlign.Center)
+            }
+            Spacer(Modifier.height(14.dp))
+            BlockBtn(if (form.register) "Créer mon compte" else "Se connecter", c::authenticate, busy = c.busy)
+            Spacer(Modifier.height(8.dp))
+            Row(
+                Modifier.clip(RoundedCornerShape(8.dp)).clickable { c.authForm = form.copy(register = !form.register); c.error = null }.padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                T(if (form.register) "Déjà inscrit ? " else "Nouveau ici ? ", size = 14.sp, color = t.label2)
+                T(if (form.register) "Se connecter" else "S'inscrire", size = 14.sp, weight = FontWeight.SemiBold, color = t.accentText)
+            }
+            Row(horizontalArrangement = Arrangement.Center) {
+                Btn("Forfaits", { c.go(Screen.PLANS) }, kind = BtnKind.PLAIN, height = 40.dp)
+                Btn("Aide", ctx.openSupport, kind = BtnKind.PLAIN, height = 40.dp)
             }
         }
     }

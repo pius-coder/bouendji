@@ -324,7 +324,7 @@ fun InviteScreen(ctx: ShellContext) {
     Column(Modifier.fillMaxSize()) {
         NavBar(backLabel = "Profil", onBack = { c.back() })
         ScreenColumn(centered = true) {
-            Mascot(Modifier.width(150.dp).padding(top = 6.dp, bottom = 10.dp))
+            Mascot(alt = true, modifier = Modifier.width(150.dp).padding(top = 6.dp, bottom = 10.dp))
             DisplayTitle("Invite tes proches.", align = TextAlign.Center)
             Spacer(Modifier.height(10.dp))
             Lead("Partage ton code : chaque inscription faite avec lui est rattachée à ton compte.", align = TextAlign.Center)

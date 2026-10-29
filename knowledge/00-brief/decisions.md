@@ -323,8 +323,9 @@ ici, pas laissée en double.
 Issues de l'audit des six couches et de l'arène de conception. Chaque décision
 ferme une question ouverte ou un défaut vérifié dans le code.
 
-- **D45** — **Deux natures de nœuds, jamais mélangées.** `endpoints.tier ∈
-  {free-labs, paid-gcp}`, `plans.endpoint_tier`, `servedEndpoints(tier)` filtre.
+- **D45** — **Deux natures de nœuds.** `endpoints.tier ∈
+  {free-labs, paid-gcp}`, `plans.endpoint_tier`. La règle d'accès « jamais
+  mélangées » a été remplacée le 2026-10-29 par D141.
   Un forfait d'un tier n'est créable que si ≥ 1 nœud de ce tier est actif et non
   `down` (422 sinon). Les labs gratuits assurent la continuité par le nombre ;
   le nœud GCP facturé est persistant et seul à pouvoir mesurer la consommation
@@ -777,9 +778,7 @@ ferme une question ouverte ou un défaut vérifié dans le code.
   Toutefois, la liste affichée à l'utilisateur dans l'interface et active dans le sélecteur dépend de son abonnement :
   - Sans abonnement actif : aucun serveur n'apparaît (message invitant à souscrire un forfait) ;
   - Forfait `unlimited` : seuls les serveurs illimités (`free-labs`) s'affichent ;
-  - Forfait `limited` : seuls les serveurs limités (`paid-gcp`) s'affichent ;
-  - Forfait `limited_night` : serveurs `paid-gcp` le jour, complétés des serveurs illimités (`free-labs`) pendant
-    la plage horaire nocturne souscrite (fuseau de Douala UTC+1).
+  - Règle `limited` / `limited_night` remplacée le 2026-10-29 par D141.
 
 - **D137** (2026-10-28) — **Android : inscription sans email (4 champs) et synchronisation différée / secours.**
   - L'inscription sur Android ne demande plus aucun email : strictement 4 champs (Nom complet, Téléphone/WhatsApp,
@@ -796,3 +795,26 @@ ferme une question ouverte ou un défaut vérifié dans le code.
 - **D140** (2026-10-29) — **Réseau : Pas de serveurs spécifiques à la nuit, unification de l'infrastructure.**
   L'option de nuit (20h-00h, 00h-04h) est une règle d'accès et d'autorisation sur l'abonnement du client, et non une catégorie distincte de serveurs physiques. Les connexions nocturnes utilisent exactement les mêmes serveurs que le pool illimité (`free-labs`). La notion de créneaux de déploiement spécialisés pour la nuit était de l'over-engineering.
   Le document v2 et la page Réseau du dashboard sont simplifiés : gestion directe et concrète des serveurs réels (pool illimité et serveurs 3x-ui), avec cycle de vie complet (actif, vidange, expiré, purge des nœuds morts).
+
+- **D141** (2026-10-29) — **Accès réseau cumulatif pour les abonnés payants et le propriétaire VIP.**
+  Un forfait gratuit/illimité reste borné aux nœuds `free-labs`. Un forfait
+  `paid-gcp` — y compris le plan `owner-vip` — reçoit les nœuds `paid-gcp` et
+  `free-labs`, et l'écran Android les laisse tous sélectionnables. Cette
+  décision remplace la partie « un seul tier par bundle » de D45 et le filtrage
+  exclusif des forfaits limités de D136. Vérifié par les commits `f4757e7` et
+  `ee12984`.
+
+## D141 � 2026-10-29 � Diff�renciation structurelle par th�me
+Saitrix (nebula) : �cran d'auth sans onglets ni grand titre, compact et non scrollable, bascule Inscription/Connexion par lien sous le bouton. Mascotte : robot (concepts ChatGPT e9 + c68, fonds retir�s ; c318 exclu). Sources : tools/brands/saitrix/mascot*.png. Fond d'ic�ne adaptative : #16082F. V�rifi� : assembleDebug OK, install� sur Pixel 8, capture relue. Reste : autres �crans (Home, Servers, Plans, Profile) � diff�rencier, puis Goat VPN.
+
+
+- **D142** (2026-10-29) — **Outillage dev : provider OpenCode `explabs` (gateway Experiential Labs).**
+  Ajouté à la config globale (`~/.config/opencode/opencode.json`), PAS au dépôt : ID `explabs`, package natif
+  `@opencode/ai/providers/openai-compatible`, baseURL `https://api.experientiallabs.ai/v1`, clé lue via
+  `{file:~/.secrets/xpl-key}` (jamais dans un fichier suivi). Modèles : `deepseek-v4.1-flash-uncensored`
+  (1M ctx / 393 216 out ; variantes low|high|max|none) et `glm-5.3-flash-uncensored` (1M ctx / 131 072 out ;
+  low|high|max). Vérifié par `opencode run` sur chaque modèle et chaque variante testée (réponses OK).
+  Pièges consignés : (1) `opencode.json` commence par un BOM UTF-8 — le préserver lors des éditions, et le
+  retirer avant tout `JSON.parse` par script ; (2) dans OpenCode v2.2.0, `capabilities.reasoning.toggle` ne
+  produit PAS de variante `none` (erreur « Variant unavailable ») — la déclarer via `variants: [{id: none,
+  settings: {reasoningEffort: none}}]`. Sauvegarde : `opencode.json.bak-explabs`.

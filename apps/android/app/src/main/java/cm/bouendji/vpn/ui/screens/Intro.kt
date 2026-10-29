@@ -108,7 +108,7 @@ fun BrandIcon(sizeDp: Int) {
 }
 
 @Composable
-fun Mascot(modifier: Modifier = Modifier, float: Boolean = true) {
+fun Mascot(modifier: Modifier = Modifier, float: Boolean = true, alt: Boolean = false) {
     val offset = if (float) {
         val transition = rememberInfiniteTransition(label = "float")
         val y by transition.animateFloat(0f, -8f, infiniteRepeatable(tween(3_000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "y")
@@ -116,7 +116,7 @@ fun Mascot(modifier: Modifier = Modifier, float: Boolean = true) {
     } else {
         0f
     }
-    Image(painterResource(R.drawable.brand_mascot), contentDescription = null, modifier = modifier.graphicsLayer { translationY = offset * density })
+    Image(painterResource(if (alt && BrandTokens.themeId == "nebula") R.drawable.brand_mascot_alt else R.drawable.brand_mascot), contentDescription = null, modifier = modifier.graphicsLayer { translationY = offset * density })
 }
 
 /* -------------------------------------------------------------- onboarding */
