@@ -3,8 +3,8 @@ id: flux-serveurs-app
 title: Flux de la liste des serveurs (prod, application Android)
 tags: [app, serveurs, bundle, endpoints, flux]
 status: verified
-updated: 2026-10-27
-related: [decisions, livraison-apk-2026-10-26, admin-journeys]
+updated: 2026-10-29
+related: [decisions, livraison-apk-2026-10-29, admin-journeys]
 ---
 
 # Flux de la liste des serveurs
@@ -15,7 +15,8 @@ related: [decisions, livraison-apk-2026-10-26, admin-journeys]
   Paris (fr, `node2.numzer0.store`), Ballon d'or (Oregon, `192.179.18.100`, healthy,
   expire 2026-10-28). Les autres sont `expired` (dont 9 avec la même adresse
   192.179.18.100 et un `smoke.invalid`).
-- Le serveur ne renvoie que `status='active'`, `tier` = tier du forfait, `health <> 'down'`,
+- Le serveur ne renvoie que `status='active'`, `health <> 'down'` ; `free-labs`
+  reste borné à son pool, tandis que `paid-gcp` reçoit les deux tiers (D141),
   `expires_at` > maintenant + 900 s (`services/endpoints.ts`, `servedEndpoints`).
 
 ## Chemin de la liste
@@ -23,6 +24,13 @@ related: [decisions, livraison-apk-2026-10-26, admin-journeys]
 1. L'app appelle `GET /v1/configuration-bundles/current` (`BundleFetch`).
 2. Réponse 200 → `vault.save` (sauf bundle vide, D61). Réponse 304 → rien.
 3. La page Serveurs affiche le coffre local (`syncServersFromVault`, `nodesOf`).
+
+## Plus de désactivation automatique (D145, 2026-10-29)
+
+- `expires_at` ne filtre **plus** le service ni `ready`/`register` : un nœud
+  `active` reste servi même après sa date. `sweepEndpoints` est supprimé.
+- Sortir un nœud du pool = geste **manuel** (console : statut, purge, suppression).
+- Restent : verdicts clients `down` (D47) et probation 30 min (D50).
 
 ## Déclencheurs (état au 2026-10-27)
 

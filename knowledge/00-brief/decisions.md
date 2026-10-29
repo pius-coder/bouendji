@@ -818,3 +818,43 @@ Saitrix (nebula) : �cran d'auth sans onglets ni grand titre, compact et non scro
   retirer avant tout `JSON.parse` par script ; (2) dans OpenCode v2.2.0, `capabilities.reasoning.toggle` ne
   produit PAS de variante `none` (erreur « Variant unavailable ») — la déclarer via `variants: [{id: none,
   settings: {reasoningEffort: none}}]`. Sauvegarde : `opencode.json.bak-explabs`.
+
+- **D143** (2026-10-29) — **Ajout manuel VLESS : plusieurs liens, pays déduit de Cloud Run, noms de fleuves.**
+  `POST /v1/admin/endpoints/manual` accepte maintenant un bloc de liens (un par ligne, 50 max,
+  `extractVlessUris` dans `apps/api/src/lib/vless.ts`). Un lien = un nœud ; l'empreinte du groupe
+  inclut désormais `hostHeader` (sinon deux liens ne différant que par le Cloud Run s'écrasaient).
+  Un lien invalide refuse tout le bloc (aucune écriture partielle). Le pays affiché vient de la
+  région GCP du host Cloud Run (`apps/api/src/lib/cloudrun.ts` → code ISO alpha-2, ex. `us-west1`
+  → `us`) car `Flags.kt` de l'app rend le drapeau à partir d'un code à deux lettres ; région
+  inconnue → `auto`. Le libellé est un fleuve camerounais + numéro (`Sanaga 42`,
+  `cameroonRiverNameFor`), stable pour la même empreinte. Le dashboard a un mode « Lot de liens »
+  dans la feuille d'ajout (`manual-endpoint-sheet.tsx`) qui appelle `addManualVlessAction`.
+  Réponse : `nodes[]` + `groups[]`, `group`/`label` conservés pour compat. Vérifié : `tsc` API et
+  dashboard sans sortie ; `node --test test/manualVless.test.ts` 8/8 pass (dont 2 nouveaux) ;
+  dashboard `vless-link.test.ts` 6/6 pass (dont 3 nouveaux). Piège : `bun test` échoue sur les
+  tests API (401) — utiliser `node --test --import tsx`.
+
+- **D144** (2026-10-29) — **Pages de téléchargement par marque sur `dl.numzer0.store`, jamais une page commune.**
+  `vpn-dl` (nginx Dokku) sert un `index.html` par marque : `/` et `/bouendji/` (Bouendji),
+  `/dalas-npv/`, `/goat-vpn/`, `/gregor-44/`, `/james-pro/`, `/nevpn/`, `/saitrix/`, `/test/`.
+  Chaque page ne lie que le APK versionné de SA marque sur `apps.numzer0.store` — aucun lien
+  croisé, aucun annuaire : les communautés ne se découvrent pas entre elles. Les fichiers vivent
+  sur le montage persistant `/var/lib/dokku/data/storage/vpn-dl/` (survivent au redéploiement).
+  L'ancien `bouendji-vpn.apk` (91 Mo, beta.2) reste en place mais n'est plus lié.
+
+- **D145** (2026-10-29) — **Plus aucune désactivation automatique des serveurs.**
+  Demande explicite : un serveur ne doit jamais être désactivé tout seul, même
+  expiré. Changements (`38463d4`) : `sweepEndpoints` supprimé (plus de tick
+  `active → draining → expired`, `server.ts` ne fait plus que les rappels de
+  créneaux de nuit + purge bundles/sessions) ; la transition silencieuse
+  `active → expired` du hook de maintenance (`app.ts`) retirée ;
+  `expires_at` ne filtre **plus** le service (`servedEndpoints`,
+  `nightRowsFor`, diagnostic `/pool`) ni `ready`/`register` — seul un statut
+  `expired` **posé à la main** bloque un re-register. `expires_at` devient une
+  date d'affichage. La fenêtre de nuit 3x-ui reste bornée par le **créneau
+  acheté** (`ns.ends_at`), pas par le TTL. Restent intacts : probation `down`
+  30 min (D50, c'est l'inverse d'une désactivation), verdicts clients `down`
+  (D47), purge manuelle console. Vérifié : tsc sans sortie, **358/358 tests**
+  (dont 2 réécrits : « register après expiration → le nœud revit », « un nœud
+  au TTL passé reste servi »). Déployé en prod (vpn-api, healthchecks OK) ;
+  sauvegarde DB avant : `vpn-db-2026-10-29-avant-multilien.sql.gz`.
