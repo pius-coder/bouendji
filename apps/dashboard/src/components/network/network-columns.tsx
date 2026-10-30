@@ -2,7 +2,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { IconTile } from "@/components/page/icon-tile";
 import { CellStack, type TableColumn } from "@/components/page/table";
 import { formatDateTime, NO_VALUE } from "@/lib/format";
-import type { PoolEndpoint } from "@/server/services/network/network.schema";
+import { downReasonLabel, type PoolEndpoint } from "@/server/services/network/network.schema";
 import { ENDPOINT_TIER_LABEL, type EndpointTier } from "@/server/services/plans/plans.schema";
 import { EndpointDrawer } from "./endpoint-drawer";
 
@@ -24,6 +24,8 @@ export const NETWORK_COLUMNS = [
 export function networkCells(e: PoolEndpoint, { canWrite }: { canWrite: boolean }) {
   const isExpired = e.status === "expired";
   const isDown = e.health === "down";
+  /** La sonde serveur (D147) met `latency_ms` à jour quand elle réussit ; sinon on montre la mesure des téléphones. */
+  const latency = e.probeLatencyMs ?? e.latencyMs;
   return {
     label: (
       <div className="flex min-w-0 items-center gap-3">
@@ -38,11 +40,15 @@ export function networkCells(e: PoolEndpoint, { canWrite }: { canWrite: boolean 
         />
       </div>
     ),
-    health: <StatusBadge status={e.health} />,
+    health: (
+      <span title={downReasonLabel(e.downReason) || undefined}>
+        <StatusBadge status={e.health} />
+      </span>
+    ),
     status: <StatusBadge status={e.status} />,
     manage: <EndpointDrawer endpoint={e} canWrite={canWrite} />,
     usage: `${e.inUse} / ${e.capacity}`,
-    latency: e.latencyMs === null ? NO_VALUE : `${e.latencyMs} ms`,
+    latency: latency === null ? NO_VALUE : `${latency} ms`,
     expires: formatDateTime(e.expiresAt),
   };
 }

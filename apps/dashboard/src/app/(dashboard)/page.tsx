@@ -22,13 +22,35 @@ import {
   SubscribersValue,
 } from "@/components/home/home-stats";
 import { HomeTrend } from "@/components/home/home-trend";
+import { EmptyBlock } from "@/components/page/empty";
 import { PageContent, PageHeader } from "@/components/page/page";
 import { Section } from "@/components/page/section";
 import { StatCard, StatGrid, StatValueSkeleton } from "@/components/page/stat";
+import { platformRolesOf } from "@/lib/roles";
+import { getMe } from "@/server/context";
 
 export const metadata: Metadata = { title: "Accueil" };
 
 const hint = <span className="block h-4 w-28 animate-pulse rounded bg-group-strong" />;
+
+/**
+ * Admin sans rôle plateforme ni appartenance (ex. compte créé avant le
+ * rattachement à une communauté) : les écrans de données répondraient 403
+ * (`community.read` exige au moins une appartenance). On affiche une page
+ * d'attente au lieu de laisser l'accueil planter — incident du 2026-10-30.
+ */
+function PendingCommunity() {
+  return (
+    <PageContent>
+      <PageHeader title="Accueil" description="Votre tableau de bord sera disponible dès que votre communauté sera prête." />
+      <EmptyBlock
+        icon="building"
+        title="En attente de création de votre communauté"
+        description="Votre compte administrateur est actif. Vous recevrez l'accès au tableau de bord dès qu'une communauté sera créée et rattachée à votre compte."
+      />
+    </PageContent>
+  );
+}
 
 /**
  * Accueil (D104) : titre, libellés des cartes et titres de section sont statiques ;
@@ -36,6 +58,28 @@ const hint = <span className="block h-4 w-28 animate-pulse rounded bg-group-stro
  * frontière `<Suspense>`.
  */
 export default function HomePage({ searchParams }: PageProps<"/">) {
+  return (
+    <Suspense fallback={<HomeGateFallback />}>
+      <HomeBody searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+/** Pendant la lecture de session qui décide entre accueil et page d'attente. */
+function HomeGateFallback() {
+  return (
+    <PageContent wide>
+      <PageHeader title="Accueil" description="Ventes, abonnés, application et réseau de vos communautés." />
+      <div className="h-96 animate-pulse rounded-section bg-muted/40" />
+    </PageContent>
+  );
+}
+
+async function HomeBody({ searchParams }: { searchParams: PageProps<"/">["searchParams"] }) {
+  const me = await getMe();
+  if (platformRolesOf(me).length === 0 && me.memberships.length === 0) {
+    return <PendingCommunity />;
+  }
   return (
     <PageContent wide>
       <PageHeader

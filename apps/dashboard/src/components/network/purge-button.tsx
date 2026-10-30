@@ -43,7 +43,7 @@ export function PurgeExpiredButton() {
         open={open}
         onOpenChange={setOpen}
         title="Purger les serveurs expirés ?"
-        description="Tous les nœuds du pool dont la date de validité est dépassée ou marqués expirés seront retirés définitivement de la base."
+        description="Seuls les nœuds au statut « Expiré » seront supprimés définitivement de la base. Les nœuds actifs ne sont jamais touchés, quelle que soit leur date de validité."
         confirmLabel="Purger maintenant"
         pending={pending}
         onConfirm={handlePurge}

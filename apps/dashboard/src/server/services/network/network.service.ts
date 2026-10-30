@@ -7,6 +7,7 @@ import {
   endpointHealthBody,
   endpointHealthChange,
   endpointIdParams,
+  endpointTestResponse,
   type ManualEndpoint,
   manualEndpointBody,
   manualEndpointCreated,
@@ -118,6 +119,13 @@ export class NetworkService extends BaseService {
       response: deleteEndpointResponse,
       refreshAfter: true,
     }),
+    testEndpoint: endpoint({
+      method: "POST",
+      path: "/endpoints/:endpointId/test",
+      params: endpointIdParams,
+      response: endpointTestResponse,
+      refreshAfter: true,
+    }),
   } as const;
 
   constructor(deps: BaseServiceDeps) {
@@ -188,5 +196,10 @@ export class NetworkService extends BaseService {
 
   deleteEndpoint(endpointId: string) {
     return this.call(NetworkService.endpoints.deleteEndpoint, { params: { endpointId } });
+  }
+
+  /** Sonde TCP à la demande : l'API ouvre une connexion réelle vers `host:port` (D147). */
+  testEndpoint(endpointId: string) {
+    return this.call(NetworkService.endpoints.testEndpoint, { params: { endpointId } });
   }
 }

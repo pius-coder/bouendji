@@ -115,6 +115,16 @@ export async function deleteEndpointAction(endpointId: string): Promise<ActionRe
   });
 }
 
+/** Test réel d'un nœud : sonde TCP côté API + verdict combiné (D147). */
+export async function testEndpointAction(
+  endpointId: string,
+): Promise<ActionResult<{ ok: boolean; latencyMs: number | null; error: string | null; health: string; reason: string | null }>> {
+  return runAction(async () => {
+    const res = await getServices().network.testEndpoint(String(endpointId));
+    return { ok: res.ok, latencyMs: res.latencyMs, error: res.error, health: res.health, reason: res.reason };
+  });
+}
+
 /** Suppression d'un serveur 3x-ui (vérifie qu'aucun client actif n'est présent). */
 export async function deleteXuiServerAction(serverId: string): Promise<ActionResult<{ ok: boolean; serverId: string }>> {
   return runAction(async () => {

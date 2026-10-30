@@ -8,17 +8,41 @@ import { ConfirmDialog } from "@/components/page/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { formatDateTime, NO_VALUE } from "@/lib/format";
-import type { PoolEndpoint } from "@/server/services/network/network.schema";
+import { downReasonLabel, type PoolEndpoint } from "@/server/services/network/network.schema";
 import { ENDPOINT_TIER_LABEL, type EndpointTier } from "@/server/services/plans/plans.schema";
-import { deleteEndpointAction, setEndpointHealthAction, setEndpointStatusAction } from "@/server/actions/network.action";
+import { deleteEndpointAction, setEndpointHealthAction, setEndpointStatusAction, testEndpointAction } from "@/server/actions/network.action";
 
 export function EndpointDrawer({ endpoint: e, canWrite }: { endpoint: PoolEndpoint; canWrite: boolean }) {
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDown, setConfirmDown] = useState(false);
   const [pending, startTransition] = useTransition();
+  /** Résultat de la dernière sonde lancée depuis ce drawer (D147). */
+  const [probe, setProbe] = useState({
+    ok: e.probeOk,
+    latencyMs: e.probeLatencyMs,
+    error: e.probeError,
+    probedAt: e.probedAt,
+  });
   const tierLabel = ENDPOINT_TIER_LABEL[e.tier as EndpointTier] ?? e.tier;
-  const isDown = e.health === "down";
+  const isHealthy = e.health === "healthy";
+
+  function runProbe() {
+    startTransition(async () => {
+      const res = await testEndpointAction(e.endpointId);
+      if (res.ok) {
+        const d = res.data;
+        setProbe({ ok: d.ok, latencyMs: d.latencyMs, error: d.error, probedAt: new Date().toISOString() });
+        toast.success(
+          d.ok
+            ? `« ${e.label} » répond (${d.latencyMs} ms)`
+            : `« ${e.label} » injoignable (${d.error ?? "erreur inconnue"})`,
+        );
+      } else {
+        toast.error(res.message);
+      }
+    });
+  }
 
   function changeHealth(newHealth: "healthy" | "down") {
     startTransition(async () => {
@@ -96,20 +120,9 @@ export function EndpointDrawer({ endpoint: e, canWrite }: { endpoint: PoolEndpoi
                 {/* 1. SANTÉ / DISTRIBUTION */}
                 <div className="flex flex-col gap-2">
                   <span className="text-xs font-medium text-muted-foreground">
-                    Santé du nœud (distribution aux clients) :
+                    Santé du nœud (verdict combiné sonde + téléphones) :
                   </span>
-                  {isDown ? (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      disabled={pending}
-                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold flex items-center justify-center gap-2"
-                      onClick={() => changeHealth("healthy")}
-                    >
-                      <Icon name="check" className="size-4" />
-                      Rétablir en service (Réactiver la distribution)
-                    </Button>
-                  ) : (
+                  {isHealthy ? (
                     <Button
                       variant="outline"
                       size="sm"
@@ -120,11 +133,22 @@ export function EndpointDrawer({ endpoint: e, canWrite }: { endpoint: PoolEndpoi
                       <Icon name="close-circle" className="size-4" />
                       Mettre hors service (Sortir du pool)
                     </Button>
+                  ) : (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      disabled={pending}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold flex items-center justify-center gap-2"
+                      onClick={() => changeHealth("healthy")}
+                    >
+                      <Icon name="check" className="size-4" />
+                      Rétablir en service (Réactiver la distribution)
+                    </Button>
                   )}
                   <p className="text-[11px] text-muted-foreground">
-                    {isDown
-                      ? "⚠️ Ce nœud est actuellement exclu des bundles chiffrés. Les clients ne le reçoivent plus."
-                      : "✓ Ce nœud est distribué dans les bundles chiffrés des abonnés éligibles."}
+                    {isHealthy
+                      ? "✓ Ce nœud est distribué en priorité dans les bundles chiffrés des abonnés éligibles."
+                      : "⚠️ Ce nœud est signalé dégradé : il reste distribué, mais en fin de liste (aucun retrait automatique)."}
                   </p>
                 </div>
 
@@ -172,7 +196,32 @@ export function EndpointDrawer({ endpoint: e, canWrite }: { endpoint: PoolEndpoi
                   </p>
                 </div>
 
-                {/* 3. SUPPRESSION DÉFINITIVE */}
+                {/* 3. SONDE SERVEUR (D147) */}
+                <div className="flex flex-col gap-2 pt-2 border-t border-border">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Sonde serveur (connexion TCP réelle vers {e.host}:{e.port}) :
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={pending}
+                    className="w-full border-primary/50 text-primary hover:bg-primary/10 font-semibold flex items-center justify-center gap-2"
+                    onClick={runProbe}
+                  >
+                    <Icon name="widget" className="size-4" />
+                    {pending ? "Test en cours…" : "Tester ce nœud"}
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground">
+                    {probe.ok === null
+                      ? "Jamais sondé. La sonde s'exécute aussi automatiquement toutes les 5 minutes."
+                      : probe.ok
+                      ? `✓ Joignable${probe.latencyMs === null ? "" : ` · ${probe.latencyMs} ms`} · dernière sonde ${formatDateTime(probe.probedAt)}`
+                      : `✗ Injoignable (${probe.error ?? "erreur inconnue"}) · dernière sonde ${formatDateTime(probe.probedAt)}`}
+                  </p>
+                </div>
+
+                {/* 4. SUPPRESSION DÉFINITIVE */}
                 <div className="pt-2 border-t border-border flex justify-end">
                   <Button
                     variant="ghost"
@@ -203,7 +252,8 @@ export function EndpointDrawer({ endpoint: e, canWrite }: { endpoint: PoolEndpoi
             <DrawerSection icon="history" title="Cycle de vie">
               <Line label="Dernier signe de vie" value={formatDateTime(e.lastSeenAt)} />
               <Line label="Date d'expiration" value={formatDateTime(e.expiresAt)} />
-              {isDown && <Line label="Hors service depuis" value={formatDateTime(e.downSince)} />}
+              {e.downReason && <Line label="Raison de l'état" value={downReasonLabel(e.downReason)} />}
+              {e.downSince && !isHealthy && <Line label="Dégradé depuis" value={formatDateTime(e.downSince)} />}
             </DrawerSection>
           </div>
         </SheetContent>

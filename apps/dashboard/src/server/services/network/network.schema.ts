@@ -21,8 +21,39 @@ export const poolEndpoint = z.object({
   latencyMs: z.number().nullable(),
   lastSeenAt: z.string().nullable(),
   expiresAt: z.string().nullable(),
+  /** Sonde serveur (D147) : dernière mesure TCP réelle du point d'entrée. */
+  probeOk: z.boolean().nullable(),
+  probeLatencyMs: z.number().nullable(),
+  probeError: z.string().nullable(),
+  probedAt: z.string().nullable(),
 });
 export type PoolEndpoint = z.infer<typeof poolEndpoint>;
+
+/** Source : `healthReasonLabel` de `apps/api/src/services/health.ts` (D147). */
+export function downReasonLabel(reason: string | null): string {
+  if (!reason) return "";
+  if (reason === "probe") return "sonde serveur : point d'entrée injoignable";
+  if (reason === "probe:ok") return "sonde serveur : point d'entrée joignable";
+  if (reason === "probe:clients") return "sonde serveur OK, mais plusieurs téléphones échouent";
+  if (reason === "probation") return "fin de probation";
+  if (reason === "witness") return "témoin différentiel : un téléphone échoue ici et réussit ailleurs";
+  if (reason === "manual") return "forçage manuel depuis le dashboard";
+  const m = /^reports:(\d+)$/.exec(reason);
+  if (m) return `${m[1]} téléphone(s) signalent un échec`;
+  return reason;
+}
+
+/** Source : réponse de `POST /endpoints/:id/test` (admin.ts → probeAndRecord). */
+export const endpointTestResponse = z.object({
+  endpointId: z.string(),
+  ok: z.boolean(),
+  latencyMs: z.number().nullable(),
+  error: z.string().nullable(),
+  health: z.string(),
+  reason: z.string().nullable(),
+  changed: z.boolean(),
+});
+export type EndpointTestResult = z.infer<typeof endpointTestResponse>;
 
 export const pool = z.object({ poolRevision: z.number(), count: z.number(), endpoints: z.array(poolEndpoint) });
 export type Pool = z.infer<typeof pool>;
