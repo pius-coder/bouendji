@@ -74,11 +74,11 @@ export async function HomeOnboardingBanner() {
         </div>
       </div>
       <div className="flex items-center gap-2">
-        {latestBuild.apkUrl ? (
+        {latestBuild.downloadPageUrl ? (
           <Button asChild size="sm" variant="outline">
-            <a href={latestBuild.apkUrl} target="_blank" rel="noreferrer">
+            <a href={latestBuild.downloadPageUrl} target="_blank" rel="noreferrer">
               <Icon name="download" className="size-4" />
-              Télécharger l&apos;APK
+              Page de téléchargement
             </a>
           </Button>
         ) : null}
@@ -116,7 +116,7 @@ export async function HomeAppShare() {
   const builds = primaryApp
     ? await services.builds.listBuilds({ appId: primaryApp.id })
     : [];
-  const latestReady = builds.find((b) => b.status === "ready" && b.apkUrl) ?? builds[0] ?? null;
+  const latestReady = builds.find((b) => b.status === "ready" && b.downloadPageUrl) ?? builds.find((b) => b.downloadPageUrl) ?? builds[0] ?? null;
   const safeTheme: BrandTheme =
     primaryApp && (BRAND_THEMES as readonly string[]).includes(primaryApp.theme)
       ? (primaryApp.theme as BrandTheme)
@@ -126,7 +126,7 @@ export async function HomeAppShare() {
     <div className="grid gap-4 xl:grid-cols-2">
       <ShareAppCard
         appName={primaryApp?.name ?? primary.name}
-        apkUrl={latestReady?.apkUrl ?? null}
+        downloadUrl={latestReady?.downloadPageUrl ?? null}
         versionName={latestReady?.versionName}
         whatsappGroupUrl={primary.whatsappGroupUrl}
       />

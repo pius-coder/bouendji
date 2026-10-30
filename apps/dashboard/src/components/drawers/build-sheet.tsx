@@ -129,10 +129,10 @@ export function BuildSheetBody({
         </div>
       ) : null}
 
-      {build.apkUrl ? (
+      {build.downloadPageUrl ? (
         <ShareAppCard
           appName={appName}
-          apkUrl={build.apkUrl}
+          downloadUrl={build.downloadPageUrl}
           versionName={build.versionName}
         />
       ) : null}

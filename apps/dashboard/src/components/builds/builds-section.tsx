@@ -110,11 +110,11 @@ async function AppShareBanner({
   whatsappGroupUrl?: string | null;
 }) {
   const builds = await withSession(() => getServices().builds.listBuilds({ appId }));
-  const ready = builds.find((b) => b.apkUrl && (b.status === "Ready" || b.status === "succeeded")) ?? builds.find((b) => b.apkUrl);
+  const ready = builds.find((b) => b.downloadPageUrl && (b.status === "Ready" || b.status === "succeeded")) ?? builds.find((b) => b.downloadPageUrl);
   return (
     <ShareAppCard
       appName={appName}
-      apkUrl={ready?.apkUrl ?? null}
+      downloadUrl={ready?.downloadPageUrl ?? null}
       versionName={ready?.versionName ?? null}
       whatsappGroupUrl={whatsappGroupUrl}
     />

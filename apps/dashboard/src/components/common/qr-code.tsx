@@ -68,21 +68,22 @@ export function SvgQrMatrix({ value, size = 132 }: { value: string; size?: numbe
 
 export function ShareAppCard({
   appName,
-  apkUrl,
+  downloadUrl,
   versionName,
   whatsappGroupUrl,
   className,
 }: {
   appName: string;
-  apkUrl: string | null;
+  /** Page de téléchargement publique (Cloudflare), jamais l'URL de l'APK. */
+  downloadUrl: string | null;
   versionName?: string | null;
   whatsappGroupUrl?: string | null;
   className?: string;
 }) {
-  const shareUrl = apkUrl || whatsappGroupUrl || null;
+  const shareUrl = downloadUrl || whatsappGroupUrl || null;
   const shareMessage = shareUrl
-    ? apkUrl
-      ? `Téléchargez l'application ${appName}${versionName ? ` (v${versionName})` : ""} : ${apkUrl}`
+    ? downloadUrl
+      ? `Téléchargez l'application ${appName}${versionName ? ` (v${versionName})` : ""} : ${downloadUrl}`
       : `Rejoignez la communauté ${appName} : ${shareUrl}`
     : "";
   const whatsappShareHref = shareMessage ? `https://wa.me/?text=${encodeURIComponent(shareMessage)}` : null;
@@ -115,10 +116,10 @@ export function ShareAppCard({
           <p className="text-headline text-foreground">Partager {appName}</p>
           <p className="mt-0.5 text-subhead text-muted-foreground">
             {shareUrl
-              ? apkUrl
-                ? `Version ${versionName ?? "prête"} disponible au téléchargement direct.`
-                : "Aucune version compilée pour l'instant — le lien du groupe WhatsApp est utilisé."
-              : "Lien bientôt disponible : compilez l'application ou configurez un groupe WhatsApp."}
+              ? downloadUrl
+                ? `Page de téléchargement officielle${versionName ? ` · version ${versionName}` : ""}.`
+                : "Aucune page publiée pour l'instant — le lien du groupe WhatsApp est utilisé."
+              : "Lien bientôt disponible : publiez une version ou configurez un groupe WhatsApp."}
           </p>
           {shareUrl ? (
             <p className="mt-1.5 truncate font-mono text-caption text-muted-foreground select-all">{shareUrl}</p>

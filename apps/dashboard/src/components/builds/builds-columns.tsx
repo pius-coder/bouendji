@@ -34,9 +34,9 @@ export function buildCells(build: Build) {
     status: <StatusBadge status={build.status} />,
     createdAt: formatDateTime(build.createdAt),
     updatedAt: formatDateTime(build.updatedAt),
-    link: build.apkUrl ? (
+    link: build.downloadPageUrl ? (
       <span className="flex flex-wrap items-center gap-2">
-        <CopyLinkButton url={build.apkUrl} />
+        <CopyLinkButton url={build.downloadPageUrl} />
         {sha ? (
           <span className="font-mono text-footnote text-muted-foreground" title={build.sha256 ?? undefined}>
             SHA-256 {sha}…
@@ -44,7 +44,7 @@ export function buildCells(build: Build) {
         ) : null}
       </span>
     ) : (
-      <span className="text-muted-foreground" title="Le lien apparaît quand le build est terminé.">
+      <span className="text-muted-foreground" title="La page apparaît quand la marque a un sous-domaine publié.">
         {NO_VALUE}
       </span>
     ),

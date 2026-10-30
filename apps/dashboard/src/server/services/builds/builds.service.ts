@@ -12,6 +12,8 @@ export const build = z.object({
   versionName: z.string().nullable(),
   sha256: z.string().nullable(),
   apkUrl: z.string().nullable(),
+  /** Page Cloudflare de la marque : le lien à partager, jamais l'APK brut. */
+  downloadPageUrl: z.string().nullable().optional(),
   rejectReason: z.string().nullable().optional(),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
