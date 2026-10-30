@@ -54,3 +54,15 @@ attachés au Worker lors d'un nouveau déploiement.
 main) reste en place mais est **supplanté** : à retirer ou rediriger quand la
 décision est prise. Les APK restent sur Cloudflare R2 (`apps.numzer0.store`,
 alias `apps.cleanforceplus.online`).
+
+## Vérification 2026-10-30 (après déploiement API `eb1a092`)
+
+Les 8 pages `https://<slug>.cleanforceplus.online` répondent **200** :
+`bouendji`, `teste`, `goatvpn`, `james-pro`, `gregor44`, `dalas-npv`,
+`saitrix`, `nevpn`. Chaque page ne lie que l'APK versionné de sa marque sur
+`apps.cleanforceplus.online` (bouendji : beta.8-8 ; teste 1.1.4-6 ; goatvpn
+1.1.5-7 ; james-pro 1.1.4-6 ; gregor44 1.1.4-6 ; dalas-npv 1.1.4-6 ; saitrix
+1.1.5-7 ; nevpn 1.1.4-6). Aucun lien croisé : les mentions « bouendji » dans
+les autres pages viennent des noms de package `cm.bouendji.*`, pas de liens.
+Vérifié par fetch réel (status + extraction des `href` .apk) le 2026-10-30.
+
