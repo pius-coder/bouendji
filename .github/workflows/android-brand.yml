@@ -7,10 +7,13 @@ name: android-brand
 # l'admin remet à ses utilisateurs.
 #
 # Déclencheurs :
-#   - workflow_dispatch : l'API le déclenche après validation de l'owner (D117),
-#     ou un humain le lance à la main ;
-#   - push d'un manifeste sous tools/brands/*.json : build de cette marque.
-#     Un push qui ne touche que ce fichier de workflow ne construit RIEN.
+#   - workflow_dispatch uniquement : l'API le déclenche après validation de
+#     l'owner (D117), ou un humain le lance à la main.
+#
+# Le déclencheur `push` a été retiré : il signait avec la clé de production
+# depuis n'importe quelle branche, sur un dépôt public dont `master` n'est pas
+# protégée. Un push pouvait donc produire un APK du même certificat pointant
+# vers un autre serveur.
 #
 # Callbacks (D66) : `running` au démarrage, `succeeded` à la fin, `failed` si
 # une étape échoue. L'API ignore les rapports qui arrivent après un état
@@ -27,10 +30,6 @@ on:
         description: "URL appelée en fin de build (facultatif)"
         required: false
         type: string
-  push:
-    paths:
-      - "tools/brands/*.json"
-
 permissions:
   contents: read
 
@@ -109,7 +108,10 @@ jobs:
           set -euo pipefail
           if [ "$SPEC_FILE" = "__input__" ]; then
             printf '%s' "$SPEC_INPUT" > "$RUNNER_TEMP/brand.json"
-            echo "assets=" >> "$GITHUB_OUTPUT"
+            # Un dispatch API ne transporte que le JSON, pas le chemin du
+            # manifeste : on retrouve le dossier d'assets par `packageName`.
+            DIR=$(node -e 'const fs=require("fs");const pkg=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/brand.json","utf8")).packageName;for(const f of fs.readdirSync("tools/brands")){if(!f.endsWith(".json")||f.startsWith("_"))continue;const p="tools/brands/"+f;try{if(JSON.parse(fs.readFileSync(p,"utf8")).packageName===pkg){console.log(p.replace(/\.json$/,""));break}}catch{}}')
+            if [ -n "${DIR:-}" ] && [ -f "$DIR/icon.png" ]; then echo "assets=$DIR" >> "$GITHUB_OUTPUT"; else echo "assets=" >> "$GITHUB_OUTPUT"; fi
           else
             cp "$SPEC_FILE" "$RUNNER_TEMP/brand.json"
             # Icône et mascotte de la marque : tools/brands/<nom>/ s'il existe.
@@ -149,12 +151,25 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m pip install --quiet pillow
-          ARGS="--src $ASSETS/icon.png --res apps/android/app/src/main/res"
+          RES=apps/android/app/src/main/res
+          ARGS="--src $ASSETS/icon.png --res $RES"
           if [ -f "$ASSETS/mascot.png" ]; then ARGS="$ARGS --mascot $ASSETS/mascot.png"; fi
           python3 tools/make-icons.py $ARGS
+          # Aucune marque ne doit hériter de la mascotte d'une autre (le dépôt
+          # contient celle de Bouendji par défaut). Sans mascotte fournie,
+          # l'illustration est le logo de la marque.
+          if [ -f "$ASSETS/mascot_alt.png" ]; then
+            cp "$ASSETS/mascot_alt.png" "$RES/drawable-nodpi/brand_mascot_alt.png"
+          elif [ -f "$ASSETS/mascot.png" ]; then
+            cp "$ASSETS/mascot.png" "$RES/drawable-nodpi/brand_mascot_alt.png"
+          else
+            cp "$RES/drawable-nodpi/brand_icon.png" "$RES/drawable-nodpi/brand_mascot.png"
+            cp "$RES/drawable-nodpi/brand_icon.png" "$RES/drawable-nodpi/brand_mascot_alt.png"
+          fi
 
       # Sans icône fournie, la marque reçoit un logo dessiné pour elle (thème,
       # initiales, variation tirée du nom) au lieu de la mascotte du dépôt.
+      # Pas de mascotte générée : celles qui n'en ont pas gardent leur logo.
       - name: Logo généré
         if: ${{ steps.spec.outputs.assets == '' }}
         env:
@@ -165,10 +180,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends librsvg2-bin fonts-dejavu-core > /dev/null
           python3 -m pip install --quiet pillow
           OUT="$RUNNER_TEMP/logo"
+          RES=apps/android/app/src/main/res
           node tools/make-logo.mjs --spec "$SPEC_PATH" --out "$OUT"
           rsvg-convert -w 512 -h 512 "$OUT/icon.svg" -o "$OUT/icon.png"
-          rsvg-convert -w 512 -h 512 "$OUT/mascot.svg" -o "$OUT/mascot.png"
-          python3 tools/make-icons.py --src "$OUT/icon.png" --res apps/android/app/src/main/res --mascot "$OUT/mascot.png"
+          python3 tools/make-icons.py --src "$OUT/icon.png" --res "$RES"
+          cp "$RES/drawable-nodpi/brand_icon.png" "$RES/drawable-nodpi/brand_mascot.png"
+          cp "$RES/drawable-nodpi/brand_icon.png" "$RES/drawable-nodpi/brand_mascot_alt.png"
 
       - name: Moteur libbox (Release GitHub, D102)
         env:
