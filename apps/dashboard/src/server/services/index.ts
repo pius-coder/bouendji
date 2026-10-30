@@ -14,6 +14,7 @@ import { ManualGrantsService } from "./manual-grants/manual-grants.service";
 import { NetworkService } from "./network/network.service";
 import { OnboardingService } from "./onboarding/onboarding.service";
 import { OrdersService } from "./orders/orders.service";
+import { PaymentOperatorsService } from "./payment-operators/payment-operators.service";
 import { PayoutsService } from "./payouts/payouts.service";
 import { PlansService } from "./plans/plans.service";
 import { PricingService } from "./pricing/pricing.service";
@@ -37,6 +38,7 @@ export function createServices(deps: BaseServiceDeps) {
     onboarding: new OnboardingService(deps),
     coupons: new CouponsService(deps),
     manualGrants: new ManualGrantsService(deps),
+    paymentOperators: new PaymentOperatorsService(deps),
   };
 }
 

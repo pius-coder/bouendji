@@ -55,7 +55,9 @@ export type Capability =
   /** 104 : générer / annuler un coupon pour un abonné (API `coupon.issue`). */
   | "coupons.issue"
   /** 105 : accorder un forfait payé en direct, impayés, versement (API `manual_grant.manage`). */
-  | "manual_grants.manage";
+  | "manual_grants.manage"
+  /** 106 : opérateurs de paiement (Orange Money, MTN MoMo) — owner seul (API `payment_operator.manage`). */
+  | "payment_operators.manage";
 
 /** Ce qu'il faut pour décider : le contexte admin, `platformRoles` quand l'API le fournit. */
 export type RoleSource = Pick<AdminMe, "platformRole" | "memberships"> & { platformRoles?: readonly string[] };
@@ -105,6 +107,7 @@ export function can(me: RoleSource, capability: Capability, communityId: string 
     case "presence.read":
     case "community.manage":
     case "coupons.types":
+    case "payment_operators.manage":
       // Owner seul (le court-circuit ci-dessus le couvre ; ici, rien d'autre).
       return false;
     case "onboarding.self":

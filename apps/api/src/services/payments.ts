@@ -37,6 +37,7 @@ import {
   type CustomChoice,
 } from "./customOffer.js";
 import { BYTES_PER_GB } from "./pricing.js";
+import { currentNoticeMode, type NoticeMode } from "./paymentOperators.js";
 
 /** Fenêtre de paiement d'une commande. Même valeur que l'exemple du contrat. */
 export const ORDER_TTL_MINUTES = 24 * 60;
@@ -285,7 +286,24 @@ export function activationStatusOf(order: Pick<OrderRow, "status" | "activated_a
   return "not_started";
 }
 
-export function toOrderDto(order: OrderRow): OrderDto {
+/**
+ * Une URL de paiement n'existe que tant que l'argent n'est pas encaissé : statut
+ * `created`/`pending`, lien fournisseur connu, échéance posée.
+ */
+export function hasCheckout(order: Pick<OrderRow, "status" | "payment_url" | "expires_at">): boolean {
+  return (order.status === "created" || order.status === "pending") && !!order.payment_url && !!order.expires_at;
+}
+
+/** Page d'avis servie par l'API avant (ou à la place de) Fapshi. */
+export function noticeUrl(orderId: string): string {
+  return `${env.publicBaseUrl}/pay/notice/${encodeURIComponent(orderId)}`;
+}
+
+/**
+ * `mode` vient du réglage owner des opérateurs (106, `paymentOperators.ts`),
+ * lu par l'appelant. Défaut `direct` : URL Fapshi, comme avant le réglage.
+ */
+export function toOrderDto(order: OrderRow, mode: NoticeMode = "direct"): OrderDto {
   const activationStatus = activationStatusOf(order);
   const status = order.status;
   const dto: OrderDto = {
@@ -323,15 +341,31 @@ export function toOrderDto(order: OrderRow): OrderDto {
   // Une URL de paiement n'existe que tant que l'argent n'est pas encaissé.
   // Après `paid`, l'absence de `checkout` est ce qui empêche l'app de
   // réafficher un bouton « Repayer ».
-  if ((status === "created" || status === "pending") && order.payment_url && expiresAt) {
-    // Avec un avis (PAYMENT_NOTICE), l'app ouvre d'abord la page d'avis, qui renvoie vers le vrai paiement.
-    const url = env.paymentNotice ? `${env.publicBaseUrl}/pay/notice/${order.id}` : order.payment_url;
+  if (hasCheckout(order) && order.payment_url && expiresAt) {
+    // Un opérateur coupé par l'owner : l'app ouvre d'abord la page d'avis, qui
+    // relit le réglage à l'ouverture (bouton vers Fapshi, ou aucun si les deux
+    // sont coupés). Les deux disponibles : URL Fapshi directe.
+    const url = mode === "direct" ? order.payment_url : noticeUrl(order.id);
     dto.checkout = { url, expiresAt };
   }
   if (order.failure_reason && status !== "paid") {
     dto.failureCode = failureCodeOf(order.failure_reason);
   }
   return dto;
+}
+
+/**
+ * DTO avec le réglage courant des opérateurs. Le réglage n'est lu que si la
+ * commande expose encore une URL de paiement.
+ */
+export async function orderDtoFor(db: Queryable, order: OrderRow): Promise<OrderDto> {
+  return toOrderDto(order, hasCheckout(order) ? await currentNoticeMode(db) : "direct");
+}
+
+/** Plusieurs commandes, une seule lecture du réglage. */
+export async function orderDtosFor(db: Queryable, orders: readonly OrderRow[]): Promise<OrderDto[]> {
+  const mode = orders.some(hasCheckout) ? await currentNoticeMode(db) : "direct";
+  return orders.map((order) => toOrderDto(order, mode));
 }
 
 /** Ne jamais laisser fuir un message interne dans `failureCode`. */
@@ -521,7 +555,7 @@ export async function createOrder(
   const order = await loadOrder(db, orderId);
   if (!order) throw fail.notFound("Commande introuvable.");
   return {
-    order: toOrderDto(order),
+    order: await orderDtoFor(db, order),
     raw: { orderId, providerRef: created.providerRef, paymentUrl: created.paymentUrl },
   };
 }
@@ -638,24 +672,24 @@ export async function reconcilePayment(db: Database, input: ReconcileInput): Pro
   const providerRef = order.provider_ref;
   if (!providerRef) {
     // Paiement jamais initialisé : rien à interroger, rien à activer.
-    return { order: toOrderDto(order), providerStatus: "pending", changed: false, activated: false };
+    return { order: await orderDtoFor(db, order), providerStatus: "pending", changed: false, activated: false };
   }
 
   const providerStatus = await provider.fetchStatus(providerRef);
 
   if (providerStatus === "pending") {
-    return { order: toOrderDto(order), providerStatus, changed: false, activated: false };
+    return { order: await orderDtoFor(db, order), providerStatus, changed: false, activated: false };
   }
 
   if (providerStatus === "failed") {
     // Ne jamais dégrader un paiement déjà encaissé sur la foi d'un webhook :
     // un `failed` après `paid` est un rapprochement, pas un remboursement.
     if (order.status === "paid" || order.status === "refunded") {
-      return { order: toOrderDto(order), providerStatus, changed: false, activated: false };
+      return { order: await orderDtoFor(db, order), providerStatus, changed: false, activated: false };
     }
     const changed = await markFailed(db, order.id, "provider_reported_failed");
     const fresh = (await loadOrder(db, order.id)) ?? order;
-    return { order: toOrderDto(fresh), providerStatus, changed, activated: false };
+    return { order: await orderDtoFor(db, fresh), providerStatus, changed, activated: false };
   }
 
   /* providerStatus === "paid" */
@@ -685,7 +719,7 @@ export async function reconcilePayment(db: Database, input: ReconcileInput): Pro
   }
 
   const fresh = (await loadOrder(db, order.id)) ?? order;
-  return { order: toOrderDto(fresh), providerStatus, changed: changed || activated, activated };
+  return { order: await orderDtoFor(db, fresh), providerStatus, changed: changed || activated, activated };
 }
 
 /* --------------------------------------------------------------- webhook */

@@ -311,7 +311,11 @@ type Capability =
   /** 104 : émettre ou annuler un coupon pour un abonné de la communauté. */
   | "coupon.issue"
   /** 105 : accorder un forfait payé en direct, voir les impayés, verser à la plateforme. */
-  | "manual_grant.manage";
+  | "manual_grant.manage"
+  /** 106 : lire l'état des opérateurs de paiement (Orange Money, MTN MoMo). */
+  | "payment_operator.read"
+  /** 106 : déclarer un opérateur disponible ou indisponible — owner seul. */
+  | "payment_operator.manage";
 
 /**
  * Matrice appliquée, rôle par rôle (knowledge/40-money/roles-and-commissions.md,
@@ -348,6 +352,8 @@ type Capability =
  * | coupon_type.manage    | oui   | non             | non     | non     |
  * | coupon.issue          | oui   | sa communauté   | non     | non     |
  * | manual_grant.manage   | oui   | sa communauté   | non     | non     |
+ * | payment_operator.read | oui   | oui (lecture)   | non     | non     |
+ * | payment_operator.manage | oui | non             | non     | non     |
  *
  * Rôle plateforme `reseau` (D120, cumulable avec `owner`) : endpoint.read,
  * endpoint.write, night_slot.manage, et rien d'autre. Son rôle ne donne aucune
@@ -442,6 +448,12 @@ export function permitted(admin: AdminContext, capability: Capability, community
     case "manual_grant.manage":
       // 105 : owner ou community_admin de la communauté de l'abonné (sa dette).
       return local === "community_admin";
+    case "payment_operator.read":
+      // 106 : réglage global, lu par un administrateur de n'importe quelle communauté.
+      return anyRole(["community_admin"]);
+    case "payment_operator.manage":
+      // 106 : décision owner 2 — seul l'owner change le réglage (court-circuit plus haut).
+      return false;
     default:
       return false;
   }

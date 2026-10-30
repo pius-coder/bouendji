@@ -43,6 +43,9 @@ export const STATUS: Record<string, { label: string; tone: StatusTone }> = {
   settlement_paid: { label: "Versé", tone: "success" },
   settlement_failed: { label: "Échoué", tone: "danger" },
   settlement_needs_review: { label: "À vérifier", tone: "danger" },
+  // 106 : opérateurs de paiement (préfixés : `available` a déjà un sens « commission »).
+  operator_available: { label: "Disponible", tone: "success" },
+  operator_unavailable: { label: "Indisponible", tone: "danger" },
 };
 
 const PILL: Record<StatusTone, string> = {

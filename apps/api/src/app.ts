@@ -32,6 +32,7 @@ import { registerPricingRoutes } from "./routes/pricing.js";
 import { registerAdminCustomOfferRoutes } from "./routes/adminCustomOffer.js";
 import { registerCouponRoutes } from "./routes/coupons.js";
 import { registerManualGrantRoutes } from "./routes/manualGrants.js";
+import { registerPaymentOperatorRoutes } from "./routes/paymentOperators.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -322,6 +323,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   registerAdminCustomOfferRoutes(app, db);
   registerCouponRoutes(app, db);
   registerManualGrantRoutes(app, db);
+  registerPaymentOperatorRoutes(app, db);
   await registerOpenApiReference(app);
 
   return app;

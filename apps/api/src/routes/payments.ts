@@ -15,7 +15,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { env } from "../config.js";
 import type { Database } from "../db.js";
 import { ApiFailure, fail } from "../lib/errors.js";
-import { handleWebhookEvent, payloadHash, reconcilePayment, loadOrder, loadOrderByProviderRef } from "../services/payments.js";
+import { handleWebhookEvent, hasCheckout, payloadHash, reconcilePayment, loadOrder, loadOrderByProviderRef } from "../services/payments.js";
+import { currentNoticeMode, noticeContent } from "../services/paymentOperators.js";
 import { getMockPaymentStatus, setMockPaymentStatus, type MockPaymentStatus } from "../services/mockPayments.js";
 import { findSettlementForWebhook, reconcileSettlement } from "../services/manualGrants.js";
 
@@ -65,6 +66,26 @@ function html(body: string): string {
 </head>
 <body><main>${body}</main></body>
 </html>`;
+}
+
+/**
+ * Page d'avis avant paiement (106). Tout le texte est échappé ; sans `target`,
+ * aucun bouton vers le fournisseur n'est rendu.
+ */
+function noticePage({ title, message, target }: { title: string; message: string; target: string | null }): string {
+  const button = target
+    ? `<a class="btn" href="${escapeHtml(target)}" rel="noopener noreferrer">Continuer vers le paiement</a>`
+    : `<p class="muted">Vous pouvez fermer cette page et revenir à l'application.</p>`;
+  return `<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<style>:root{color-scheme:light dark}body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;background:#f5f7fb;color:#0b1220}
+main{max-width:420px;padding:24px;margin:16px;background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+h1{font-size:20px;margin:0 0 12px}p{line-height:1.5;margin:0 0 20px}.muted{opacity:.7;font-size:14px;margin:0}
+a.btn{display:block;text-align:center;padding:14px;border-radius:12px;background:#0a5cf0;color:#fff;text-decoration:none;font-weight:600}
+@media (prefers-color-scheme:dark){body{background:#0b1220;color:#f5f7fb}main{background:#111827}}</style>
+</head><body><main><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p>
+${button}</main></body></html>`;
 }
 
 interface ReturnPageProps {
@@ -367,24 +388,40 @@ export function registerPaymentRoutes(app: FastifyInstance, db: Database): void 
 
   /* ----------------------------------------------------- avis avant paiement */
 
-  // Page d'avis affichée avant la redirection vers le prestataire (ex. Orange
-  // Money indisponible). Le lien ramène au vrai paiement, stocké sur la commande.
+  /*
+   * Page d'avis (106). L'état des opérateurs est relu **à l'ouverture**, pas
+   * figé à la création de la commande :
+   * - les deux disponibles : redirection directe vers Fapshi, aucun avis ;
+   * - un opérateur coupé : avis + bouton vers Fapshi ;
+   * - les deux coupés : avis sans bouton (payer l'administrateur).
+   * Le lien Fapshi vient de la commande (`payment_url`), jamais de la requête.
+   * Réglage manuel de l'owner : aucune détection automatique d'une panne.
+   */
   app.get("/pay/notice/:orderId", async (req: FastifyRequest<{ Params: { orderId: string } }>, reply) => {
     const order = await loadOrder(db, String(req.params.orderId ?? "").trim());
-    if (!order || !order.payment_url || !env.paymentNotice) {
+    if (!order || !order.payment_url) {
       throw fail.notFound("Commande introuvable.");
     }
-    const notice = escapeHtml(env.paymentNotice);
-    const target = escapeHtml(order.payment_url);
-    return reply.type("text/html; charset=utf-8").send(`<!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Paiement — information</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;background:#f5f7fb;color:#0b1220}
-main{max-width:420px;padding:24px;margin:16px;background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-h1{font-size:20px;margin:0 0 12px}p{line-height:1.5;margin:0 0 20px}
-a.btn{display:block;text-align:center;padding:14px;border-radius:12px;background:#0a5cf0;color:#fff;text-decoration:none;font-weight:600}</style>
-</head><body><main><h1>Paiement</h1><p>${notice}</p>
-<a class="btn" href="${target}" rel="noopener">Continuer vers le paiement</a></main></body></html>`);
+    // L'état change sans prévenir : ni le navigateur ni un intermédiaire ne gardent la page.
+    reply.header("cache-control", "no-store");
+
+    const expired = order.expires_at !== null && new Date(order.expires_at).getTime() <= Date.now();
+    if (!hasCheckout(order) || expired) {
+      return reply
+        .type("text/html; charset=utf-8")
+        .send(noticePage({ title: "Paiement indisponible", message: "Cette commande n'attend plus de paiement. Revenez à l'application.", target: null }));
+    }
+
+    const mode = await currentNoticeMode(db);
+    const target = /^https?:\/\//i.test(order.payment_url) ? order.payment_url : null;
+    if (mode === "direct") {
+      if (!target) throw fail.notFound("Commande introuvable.");
+      return reply.redirect(target, 302);
+    }
+    const content = noticeContent(mode);
+    return reply
+      .type("text/html; charset=utf-8")
+      .send(noticePage({ title: content.title, message: content.message, target: content.withCheckout ? target : null }));
   });
 
   /* --------------------------------------------------------- retour paiement */

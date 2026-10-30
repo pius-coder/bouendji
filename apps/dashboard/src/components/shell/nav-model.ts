@@ -127,6 +127,8 @@ export function buildNav(me: RoleSource, communityId: string | null): NavModel {
           { href: "/admins", label: "Administrateurs", icon: "shield" as const },
           { href: "/pricing", label: "Tarifs et marges", icon: "tag" as const },
           { href: "/coupons", label: "Types de coupon", icon: "tag" as const },
+          // 106 : opérateurs de paiement (Orange Money, MTN MoMo), réglage owner.
+          { href: "/payments", label: "Paiements", icon: "wallet" as const },
         ]
       : [],
   );

@@ -19,8 +19,9 @@ import {
   createOrder,
   loadOrder,
   ORDER_SELECT,
+  orderDtoFor,
+  orderDtosFor,
   reconcilePayment,
-  toOrderDto,
   type OrderDto,
   type OrderRow,
 } from "../services/payments.js";
@@ -118,7 +119,8 @@ async function listOrders(
   const page = hasMore ? rows.slice(0, options.limit) : rows;
   const last = page[page.length - 1];
   return {
-    items: page.map(toOrderDto),
+    // 106 : l'URL de paiement suit le réglage courant des opérateurs.
+    items: await orderDtosFor(db, page),
     ...(hasMore && last ? { nextCursor: encodeCursor(last) } : {}),
   };
 }
@@ -179,8 +181,8 @@ export function registerOrderRoutes(app: FastifyInstance, db: Database): void {
       // Paiement acquis mais activation interrompue : on reprend sans jamais
       // redemander un paiement.
       await reconcilePayment(db, { orderId: order.id });
-      return toOrderDto(await ownedOrder(db, auth.userId, order.id));
+      return orderDtoFor(db, await ownedOrder(db, auth.userId, order.id));
     }
-    return toOrderDto(order);
+    return orderDtoFor(db, order);
   });
 }
