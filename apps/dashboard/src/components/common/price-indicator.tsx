@@ -83,6 +83,11 @@ export function PriceIndicator({
         gainXaf: Math.max(0, safePrice - floorXaf),
       });
   const belowFloor = !breakdown.aboveFloor;
+  // Commission réellement versée à l'admin : `commissionFor` côté API
+  // (services/payments.ts:255) — un pourcentage du prix de vente, plafonné,
+  // et non le gain au-dessus du plancher.
+  const commissionBpsCapped = Math.max(0, Math.min(commissionBps, pricing.maxCommissionBps ?? 3000));
+  const commissionXaf = Math.floor((safePrice * commissionBpsCapped) / 10_000);
   const totalBase = Math.max(1, safePrice, floorXaf);
   const serverPct = Math.min(100, Math.round((breakdown.costXaf / totalBase) * 100));
   const platformPct = Math.min(100 - serverPct, Math.round((breakdown.platformMarginXaf / totalBase) * 100));
@@ -123,11 +128,11 @@ export function PriceIndicator({
                     : "bg-positive/15 text-positive",
                 )}
               >
-                Votre gain : {formatXaf(breakdown.gainXaf)} / vente
+                Votre commission : {formatXaf(commissionXaf)} / vente ({(commissionBpsCapped / 100).toFixed(0)} %)
               </span>
             </TooltipTrigger>
             <TooltipContent>
-              Montant qui vous revient sur chaque abonnement payé ({(commissionBps / 100).toFixed(0)} % de commission max).
+              30 % du prix de vente, versés sur votre Mobile Money. La plateforme conserve le reste ; le prix plancher couvre l'infrastructure.
             </TooltipContent>
           </Tooltip>
         </div>
@@ -148,14 +153,14 @@ export function PriceIndicator({
         <div
           className={cn("transition-all", belowFloor ? "bg-destructive" : "bg-positive")}
           style={{ width: `${adminPct}%` }}
-          title={`Votre gain : ${formatXaf(breakdown.gainXaf)}`}
+          title={`Au-dessus du plancher : ${formatXaf(breakdown.gainXaf)}`}
         />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-caption text-muted-foreground">
         <span>Serveur : {formatXaf(breakdown.costXaf)}</span>
         <span>Plateforme : {formatXaf(breakdown.platformMarginXaf)}</span>
-        <span>Votre part : {formatXaf(breakdown.gainXaf)}</span>
+        <span>Votre commission ({(commissionBpsCapped / 100).toFixed(0)} %) : {formatXaf(commissionXaf)}</span>
       </div>
 
       {belowFloor ? (
