@@ -65,3 +65,17 @@ toutes les pages portent la version du tableau ci-dessus.
   APK même si la page publique est à jour.
 - Aucun test de tunnel sur le Pixel 8 avec le nouvel APK (cleartext loopback,
   IPv6).
+
+## Installation complète (2026-10-30, après-midi)
+
+Pixel 8 (`39141FDJH00GAV`) : les **7 marques** secondaires sont maintenant à
+la version livrée — dalasnpv 1.1.4 (6), goatvpn 1.1.5 (7), gregor44 1.1.4 (6),
+jamespro 1.1.4 (6), nevpn 1.1.4 (6, **désinstall puis install** : la v1 sur
+l'appareil portait une signature différente), saitrix 1.1.5 (7, déjà à jour),
+test 1.1.4 (6, installation neuve). APK téléchargés de R2 via
+`tools/fetch-segmented.ps1` vers `C:UserslenovoDownloads`, puis
+`adb install(-r)` — **Success** vérifié pour chacun, versions relues par
+`dumpsys package`. `com.bouendji.vpn` reste en beta.3 (3) sur l'appareil.
+**Le tunnel n'a pas encore été retesté** (voir
+`00-brief/passation-2026-10-30.md`).
+
