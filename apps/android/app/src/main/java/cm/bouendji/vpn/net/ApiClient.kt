@@ -253,7 +253,14 @@ class ApiClient(
     suspend fun refresh(): SessionResponse {
         val token = refreshToken() ?: throw ApiException(401, ApiCodes.UNAUTHENTICATED, "Session absente.")
         val body = json.encodeToString(RefreshRequest.serializer(), RefreshRequest(refreshToken = token))
-        val session = decode(authed("POST", ApiPaths.REFRESH, body, bearer = null), "renouvellement", SessionResponse.serializer())
+        // `allowRefresh = false` est la garde qui empêche la récursion :
+        // sans elle, un 401 sur cette route relance `refresh()`, qui relaie
+        // un 401, indéfiniment. Le jeton mort est effacé par `authed`.
+        val session = decode(
+            authed("POST", ApiPaths.REFRESH, body, bearer = null, allowRefresh = false),
+            "renouvellement",
+            SessionResponse.serializer(),
+        )
         saveSession(session)
         return session
     }
@@ -383,9 +390,18 @@ class ApiClient(
 
         // Un bundle sans configuration est un retrait légitime, pas une panne :
         // on le propage tel quel et l'UI dira « aucune connexion disponible ».
+        //
+        // L'ETag n'est PAS enregistré ici : l'appelant ne doit l'avancer
+        // qu'après une écriture réussie du coffre (`rememberBundleEtag`).
+        // Sinon un bundle vide ou une écriture ratée bloque le client en 304
+        // et le retrait serveur ne se propage plus jamais.
         val etag = response.headers["etag"]
-        if (etag != null) store.putString(KEY_BUNDLE_ETAG, etag)
         return BundleFetch.Fresh(payload = payload, etag = etag, revision = dto.revision)
+    }
+
+    /** À appeler uniquement après un `ConfigVault.save` réussi. */
+    fun rememberBundleEtag(etag: String?) {
+        if (etag != null) store.putString(KEY_BUNDLE_ETAG, etag)
     }
 
     fun forgetBundleEtag() = store.remove(KEY_BUNDLE_ETAG)
@@ -398,11 +414,12 @@ class ApiClient(
         body: String?,
         bearer: String? = null,
         extraHeaders: Map<String, String> = emptyMap(),
+        allowRefresh: Boolean = true,
     ): RawResponse {
         val token = bearer ?: accessToken()
         var response = sendSigned(method, path, body, token, extraHeaders)
 
-        if (response.status == 401 && response.errorCode() == ApiCodes.UNAUTHENTICATED && refreshToken() != null) {
+        if (allowRefresh && response.status == 401 && response.errorCode() == ApiCodes.UNAUTHENTICATED && refreshToken() != null) {
             // Une seule tentative : si le refresh échoue aussi, la session est
             // morte et l'UI doit redemander les identifiants.
             val renewed = try {
@@ -676,7 +693,40 @@ class ApiClient(
     data class DevicesResponse(val items: List<DeviceDto> = emptyList())
 
     @Serializable
-    data class CatalogAppDto(val id: String, val name: String)
+    data class CatalogAppDto(
+        val id: String,
+        val name: String,
+        val minVersionCode: Int = 0,
+        val latestVersionCode: Int = 0,
+        val latestVersionName: String? = null,
+        val updateUrl: String? = null,
+        val updateSha256: String? = null,
+    )
+
+    @Serializable
+    data class AnnouncementDto(
+        val id: String,
+        val title: String,
+        val body: String,
+        val level: String = "info",
+        val publishedAt: String = "",
+    )
+
+    /** Contacts d'exploitation renvoyés par le catalogue (saisis par l'admin). */
+    @Serializable
+    data class SupportDto(
+        val source: String = "none",
+        val whatsapp: String? = null,
+        val whatsappUrl: String? = null,
+        val call: String? = null,
+        val email: String? = null,
+        val groupUrl: String? = null,
+        val hours: String? = null,
+        val responseHint: String? = null,
+    )
+
+    @Serializable
+    data class LegalDto(val privacyUrl: String? = null, val termsUrl: String? = null)
 
     @Serializable
     data class PlanDto(
@@ -732,7 +782,13 @@ class ApiClient(
     }
 
     @Serializable
-    data class PlansResponse(val app: CatalogAppDto, val items: List<PlanDto> = emptyList())
+    data class PlansResponse(
+        val app: CatalogAppDto,
+        val items: List<PlanDto> = emptyList(),
+        val support: SupportDto = SupportDto(),
+        val legal: LegalDto = LegalDto(),
+        val announcement: AnnouncementDto? = null,
+    )
 
     @Serializable
     data class CustomChoiceDto(val gb: Int, val days: Int)

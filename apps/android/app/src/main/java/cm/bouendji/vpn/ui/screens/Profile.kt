@@ -307,7 +307,7 @@ fun DevicesScreen(ctx: ShellContext) {
             GroupFooter("Ton forfait couvre ${c.me?.devicesLimit ?: 1} appareil(s). Retirer un appareil libère sa place ; la coupure de son tunnel en cours n'est pas immédiate.")
             GroupFooter(c.error, danger = true)
             Stack {
-                BlockBtn("Ajouter un appareil", ctx.openSupport, kind = BtnKind.TINTED, icon = Ic.Plug)
+                BlockBtn("Ajouter un appareil", { c.openSupport("ajouter un appareil") }, kind = BtnKind.TINTED, icon = Ic.Plug)
             }
             GroupFooter("Pour utiliser ton compte sur un autre téléphone, installe l'application et connecte-toi avec ton e-mail.")
         }
@@ -400,22 +400,27 @@ fun HelpScreen(ctx: ShellContext) {
             }
             GroupHeader("Nous contacter")
             Group {
-                val mail = BrandTokens.supportUrl.startsWith("mailto:")
+                val s = c.support
+                val hasWhatsapp = !s?.whatsapp.isNullOrBlank()
+                val label = when {
+                    hasWhatsapp -> "WhatsApp +${s?.whatsapp}"
+                    !s?.email.isNullOrBlank() -> s?.email.orEmpty()
+                    !s?.call.isNullOrBlank() -> "Appel ${s?.call?.removePrefix("tel:").orEmpty()}"
+                    else -> "Non configuré par ton administrateur"
+                }
                 ListRow(
                     "Support",
-                    icon = if (mail) Ic.Mail else Ic.Help,
-                    iconColor = t.accent,
-                    sub = BrandTokens.supportUrl.removePrefix("mailto:").removePrefix("https://"),
+                    icon = if (hasWhatsapp) Ic.Whatsapp else Ic.Help,
+                    iconColor = if (hasWhatsapp) Color(0xFF25D366) else t.accent,
+                    sub = label,
                     chevron = true,
-                    onClick = ctx.openSupport,
+                    onClick = { c.openSupport() },
                 )
-                if (BrandTokens.communityWhatsappUrl.isNotBlank()) {
+                val group = c.support?.groupUrl?.takeIf { it.isNotBlank() }
+                    ?: BrandTokens.communityWhatsappUrl.takeIf { it.isNotBlank() }
+                if (!group.isNullOrBlank()) {
                     Divider(58.dp)
-                    ListRow("Communauté WhatsApp", icon = Ic.Whatsapp, iconColor = Color(0xFF25D366), chevron = true, onClick = { c.platform.openUrl(BrandTokens.communityWhatsappUrl) })
-                }
-                if (BrandTokens.communityTelegramUrl.isNotBlank()) {
-                    Divider(58.dp)
-                    ListRow("Canal Telegram", icon = Ic.Telegram, iconColor = Color(0xFF2AABEE), chevron = true, onClick = { c.platform.openUrl(BrandTokens.communityTelegramUrl) })
+                    ListRow("Communauté WhatsApp", icon = Ic.Whatsapp, iconColor = Color(0xFF25D366), chevron = true, onClick = { c.platform.openUrl(group) })
                 }
             }
             GroupHeader("Confidentialité")

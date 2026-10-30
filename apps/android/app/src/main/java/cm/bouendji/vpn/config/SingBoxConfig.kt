@@ -123,6 +123,12 @@ object SingBoxConfig {
     /** Options TUN : la moitié non vérifiable sans `libbox` (voir TODO dans TunnelEngine.kt). */
     data class TunOptions(
         val address: String = "172.19.0.1/30",
+        /**
+         * Adresse IPv6 du TUN. Sans elle (et sans route `::/0` côté
+         * `VpnService`), le trafic IPv6 de l'appareil contourne le tunnel
+         * pendant que l'écran affiche « Protégé ».
+         */
+        val addressV6: String? = null,
         val mtu: Int = 1500,
         val stack: String = "system",
         val autoRoute: Boolean = false,
@@ -228,7 +234,10 @@ object SingBoxConfig {
                     buildJsonObject {
                         put("type", "tun")
                         put("tag", TUN_TAG)
-                        putJsonArray("address") { add(tun.address) }
+                        putJsonArray("address") {
+                            add(tun.address)
+                            tun.addressV6?.let { add(it) }
+                        }
                         put("mtu", tun.mtu)
                         put("stack", tun.stack)
                         put("auto_route", tun.autoRoute)

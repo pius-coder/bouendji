@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Politique réseau de l'application.
+
+  Tout le trafic sortant reste en HTTPS : c'est la règle par défaut, héritée de
+  `android:usesCleartextTraffic="false"` dans le manifeste.
+
+  Une seule exception, et elle est locale : l'API de contrôle de sing-box
+  (`experimental.clash_api`) écoute en HTTP sur `127.0.0.1`. Sans cette
+  exemption, Android bloque chaque appel — sonde de latence, bascule de
+  serveur, lecture du trafic — et l'application affiche « aucun serveur » alors
+  que le tunnel est monté.
+
+  L'exemption ne couvre que la boucle locale : aucun autre hôte ne peut passer
+  en clair.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

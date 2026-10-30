@@ -20,7 +20,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowCompat
-import cm.bouendji.vpn.brand.BrandTokens
 import cm.bouendji.vpn.net.DeepLinkBus
 import cm.bouendji.vpn.offline.ImportInbox
 import cm.bouendji.vpn.ui.VpnApp
@@ -73,7 +72,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 },
-                onOpenSupport = ::openSupport,
                 onOpenUrl = ::openUrl,
                 onOpenVpnSettings = { startActivity(Intent(Settings.ACTION_VPN_SETTINGS)) },
                 onRequestNotifications = {
@@ -119,8 +117,6 @@ class MainActivity : ComponentActivity() {
         } ?: return
         ImportInbox.offer(contentResolver, uri)
     }
-
-    private fun openSupport() = openUrl(BrandTokens.supportUrl)
 
     private fun openUrl(url: String) {
         if (url.isBlank()) return

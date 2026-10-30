@@ -138,34 +138,22 @@ private fun AuthScreenClassic(ctx: ShellContext) {
                     BlockBtn("Voir les forfaits", { c.go(Screen.PLANS) }, kind = BtnKind.TINTED)
                 }
 
-                if (BrandTokens.communityWhatsappUrl.isNotBlank() || BrandTokens.communityTelegramUrl.isNotBlank()) {
+                if (!c.support?.groupUrl.isNullOrBlank()) {
                     GroupHeader("Communauté")
                     Group {
-                        if (BrandTokens.communityWhatsappUrl.isNotBlank()) {
-                            ListRow(
-                                "Rejoins notre communauté WhatsApp",
-                                icon = Ic.Whatsapp,
-                                iconColor = Color(0xFF25D366),
-                                sub = "Nouveautés et annonces du service",
-                                chevron = true,
-                                onClick = { c.platform.openUrl(BrandTokens.communityWhatsappUrl) },
-                            )
-                        }
-                        if (BrandTokens.communityWhatsappUrl.isNotBlank() && BrandTokens.communityTelegramUrl.isNotBlank()) Divider(58.dp)
-                        if (BrandTokens.communityTelegramUrl.isNotBlank()) {
-                            ListRow(
-                                "Rejoins-nous sur Telegram",
-                                icon = Ic.Telegram,
-                                iconColor = Color(0xFF2AABEE),
-                                sub = "Astuces et annonces",
-                                chevron = true,
-                                onClick = { c.platform.openUrl(BrandTokens.communityTelegramUrl) },
-                            )
-                        }
+                        val group = c.support?.groupUrl.orEmpty()
+                        ListRow(
+                            "Rejoins notre communauté WhatsApp",
+                            icon = Ic.Whatsapp,
+                            iconColor = Color(0xFF25D366),
+                            sub = "Nouveautés et annonces du service",
+                            chevron = true,
+                            onClick = { c.platform.openUrl(group) },
+                        )
                     }
                 }
                 Spacer(Modifier.height(4.dp))
-                Btn("Besoin d'aide ?", ctx.openSupport, Modifier.fillMaxWidth(), kind = BtnKind.PLAIN, height = 44.dp)
+                Btn("Besoin d'aide ?", { c.openSupport("connexion") }, Modifier.fillMaxWidth(), kind = BtnKind.PLAIN, height = 44.dp)
                 FinePrint("En continuant, tu acceptes les conditions d'utilisation du service.")
             }
         }
@@ -224,7 +212,7 @@ private fun AuthScreenNebula(ctx: ShellContext) {
             }
             Row(horizontalArrangement = Arrangement.Center) {
                 Btn("Forfaits", { c.go(Screen.PLANS) }, kind = BtnKind.PLAIN, height = 40.dp)
-                Btn("Aide", ctx.openSupport, kind = BtnKind.PLAIN, height = 40.dp)
+                Btn("Aide", { c.openSupport("connexion") }, kind = BtnKind.PLAIN, height = 40.dp)
             }
         }
     }

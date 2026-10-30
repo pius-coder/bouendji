@@ -38,6 +38,19 @@ android {
         versionCode = brandValue("versionCode", "1").toInt()
         versionName = brandValue("versionName", "0.1.0")
 
+        // D138 : armeabi-v7a (Android 32 bits) + arm64-v8a. x86_64 ne sert
+        // qu'à l'émulateur et pesait 85 Mo dans l'APK livré aux utilisateurs.
+        // `-Pabi=arm64-v8a` produit un APK de test pour un téléphone donné.
+        val abis = (project.findProperty("abi") as String?)
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.takeIf { it.isNotEmpty() }
+            ?: listOf("armeabi-v7a", "arm64-v8a")
+        ndk {
+            abiFilters.addAll(abis)
+        }
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Le libellé visible vient du même fichier que BrandTokens.appName.
@@ -50,6 +63,11 @@ android {
             // Pas de suffixe d'`applicationId` : l'identifiant de l'appareil est
             // lié à l'installation, et deux identifiants pour la même marque
             // feraient consommer deux places d'appareil.
+            //
+            // Exception opt-in (`-PdebugSuffix=true`) : installe un build de
+            // test à côté de la version de production signée, sans la
+            // désinstaller.
+            if (project.hasProperty("debugSuffix")) applicationIdSuffix = ".debug"
             isMinifyEnabled = false
         }
         release {

@@ -286,16 +286,14 @@ fun SheetHost(c: AppController) {
                     align = TextAlign.Center,
                 )
                 Stack {
-                    if (BrandTokens.communityWhatsappUrl.isNotBlank()) {
-                        BlockBtn("Rejoindre la communauté WhatsApp", { c.platform.openUrl(BrandTokens.communityWhatsappUrl) }, icon = Ic.Whatsapp)
-                    }
-                    if (BrandTokens.communityTelegramUrl.isNotBlank()) {
-                        BlockBtn("Rejoindre le canal Telegram", { c.platform.openUrl(BrandTokens.communityTelegramUrl) }, kind = BtnKind.TINTED, icon = Ic.Telegram)
+                    val group = c.support?.groupUrl?.takeIf { it.isNotBlank() }
+                    if (group != null) {
+                        BlockBtn("Rejoindre la communauté WhatsApp", { c.platform.openUrl(group) }, icon = Ic.Whatsapp)
                     }
                     BlockBtn(if (c.accessActive) "C'est parti" else "Voir les forfaits", {
                         c.sheet = null
                         if (!c.accessActive) c.go(Screen.PLANS)
-                    }, kind = if (BrandTokens.communityWhatsappUrl.isNotBlank()) BtnKind.TINTED else BtnKind.FILLED)
+                    }, kind = if (group != null) BtnKind.TINTED else BtnKind.FILLED)
                 }
             }
             "import" -> {
@@ -309,7 +307,7 @@ fun SheetHost(c: AppController) {
                         BlockBtn("Me connecter", { c.sheet = null; c.go(Screen.HOME); c.platform.toggleTunnel() }, icon = Ic.Power)
                     } else {
                         BlockBtn("Choisir un autre fichier", { c.sheet = null; c.platform.pickOfflineFile() })
-                        BlockBtn("Contacter le support", { c.sheet = null; c.platform.openUrl(BrandTokens.supportUrl) }, kind = BtnKind.TINTED)
+                        BlockBtn("Contacter le support", { c.sheet = null; c.openSupport("import de fichier de secours") }, kind = BtnKind.TINTED)
                     }
                 }
             }
@@ -317,7 +315,7 @@ fun SheetHost(c: AppController) {
                 DisplayTitle("Appareil retiré", size = 22.sp, align = TextAlign.Center)
                 Spacer(Modifier.height(6.dp))
                 Lead("Cet appareil a été retiré de ton compte. Contacte le support pour le réactiver.", align = TextAlign.Center)
-                Stack { BlockBtn("Contacter le support", { c.sheet = null; c.platform.openUrl(BrandTokens.supportUrl) }) }
+                Stack { BlockBtn("Contacter le support", { c.sheet = null; c.openSupport("appareil retiré") }) }
             }
             else -> Spacer(Modifier.height(1.dp))
         }

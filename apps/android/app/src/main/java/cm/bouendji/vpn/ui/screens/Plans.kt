@@ -544,7 +544,7 @@ fun OrderDoneScreen(ctx: ShellContext) {
     val activated = order?.activationStatus == "active"
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            NavBar(backLabel = "Forfaits", onBack = { c.back() })
+            NavBar(backLabel = "Accueil", onBack = { c.go(Screen.HOME) })
             ScreenColumn(cta = true, centered = true) {
                 PermArt(if (activated || status == "paid") Ic.Check else if (status == "failed" || status == "expired") Ic.X else Ic.Clock)
                 Spacer(Modifier.height(18.dp))

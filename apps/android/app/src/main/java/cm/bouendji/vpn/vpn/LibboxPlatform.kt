@@ -179,6 +179,7 @@ internal class TunnelPlatform(
 ) : PlatformDefaults {
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var defaultNetwork: Network? = null
 
     override fun openTun(options: TunOptions): Int = tunFd
 
@@ -195,6 +196,7 @@ internal class TunnelPlatform(
         val manager = context.getSystemService(ConnectivityManager::class.java) ?: return
 
         fun publish(network: Network?) {
+            defaultNetwork = network
             val name = network?.let { manager.getLinkProperties(it) }?.interfaceName
             if (name.isNullOrEmpty()) {
                 listener.updateDefaultInterface("", -1, false, false)
@@ -209,7 +211,13 @@ internal class TunnelPlatform(
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) = publish(network)
             override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) = publish(network)
-            override fun onLost(network: Network) = publish(null)
+            override fun onLost(network: Network) {
+                // Un réseau qui n'est pas celui par défaut (Wi-Fi perdu alors
+                // que la 4G porte déjà le trafic) ne doit pas effacer
+                // l'interface : sinon sing-box repasse en « aucune connexion »
+                // et attend jusqu'à 10 minutes avant de réessayer.
+                if (network == defaultNetwork) publish(null)
+            }
         }
         val request = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)

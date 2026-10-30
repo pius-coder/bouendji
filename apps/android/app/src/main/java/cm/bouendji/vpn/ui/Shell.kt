@@ -98,7 +98,6 @@ fun VpnApp(
     initialHasConfiguration: Boolean,
     systemDark: Boolean,
     onTunnelToggle: () -> Unit,
-    onOpenSupport: () -> Unit,
     onOpenUrl: (String) -> Unit,
     onOpenVpnSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
@@ -145,7 +144,7 @@ fun VpnApp(
     LaunchedEffect(dark) { onSystemBars(dark) }
 
     val notice by ServerBus.notice.collectAsState()
-    val ctx = ShellContext(controller, tunnelState, tunnelDetail, engineAvailable, onOpenSupport)
+    val ctx = ShellContext(controller, tunnelState, tunnelDetail, engineAvailable)
 
     BackHandler(enabled = controller.screen != Screen.SPLASH) {
         if (!controller.back()) (context as? android.app.Activity)?.moveTaskToBack(true)
@@ -196,9 +195,31 @@ fun VpnApp(
                             else -> null
                         },
                         onAction = {
-                            if (noServer) onOpenSupport() else controller.selectServer(controller.preferredServer)
+                            if (noServer) controller.openSupport("aucun serveur ne répond") else controller.selectServer(controller.preferredServer)
                         },
                         onClose = { ServerBus.setNotice(null) },
+                    )
+                }
+
+                // Mise à jour publiée par le serveur (même emplacement que Geny :
+                // l'app prévient et installe elle-même l'APK signé).
+                val pendingUpdate = controller.update
+                AnimatedVisibility(
+                    pendingUpdate != null && bannerText == null &&
+                        controller.screen !in setOf(Screen.SPLASH, Screen.ONBOARDING),
+                    modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 10.dp, vertical = 4.dp),
+                    enter = slideInVertically { -it * 2 },
+                    exit = slideOutVertically { -it * 2 },
+                ) {
+                    val label = pendingUpdate?.latestVersionName
+                        ?.let { "Mise à jour $it disponible" }
+                        ?: "Mise à jour disponible"
+                    NoticeBanner(
+                        text = label,
+                        danger = false,
+                        action = if (controller.updateBusy) null else "Installer",
+                        onAction = { controller.installUpdate() },
+                        onClose = { controller.dismissUpdate() },
                     )
                 }
 
@@ -215,7 +236,6 @@ class ShellContext(
     val tunnel: TunnelState,
     val tunnelDetail: String?,
     val engineAvailable: Boolean,
-    val openSupport: () -> Unit,
 )
 
 @Composable

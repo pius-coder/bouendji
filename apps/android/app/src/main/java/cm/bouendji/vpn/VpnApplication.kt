@@ -38,7 +38,11 @@ class VpnApplication : Application() {
  * joindre le serveur) au lieu de planter au démarrage. L'erreur est levée au
  * premier appel réseau, avec un message qui nomme le champ fautif.
  */
-class AppContainer(application: Application) {
+class AppContainer(private val application: Application) {
+
+    val updateManager: cm.bouendji.vpn.net.UpdateManager by lazy {
+        cm.bouendji.vpn.net.UpdateManager(application, ApiClient.defaultHttpClient())
+    }
 
     val secureStore: SecureStore = SecureStore(application)
 

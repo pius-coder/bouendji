@@ -3,6 +3,7 @@ package cm.bouendji.vpn.vpn
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -15,9 +16,11 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import cm.bouendji.vpn.AppContainer
+import cm.bouendji.vpn.MainActivity
 import cm.bouendji.vpn.VpnApplication
 import cm.bouendji.vpn.brand.BrandTokens
 import cm.bouendji.vpn.config.SingBoxConfig
+import cm.bouendji.vpn.net.BundleFetch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -94,7 +97,16 @@ class VpnTunnelService : VpnService() {
         /** Une seule source pour l'adresse TUN : le service la pose, le moteur la lit. */
         const val TUN_ADDRESS = "172.19.0.1"
         const val TUN_PREFIX_LENGTH = 30
+        /** IPv6 : sans adresse ni route, le trafic IPv6 sort hors tunnel. */
+        const val TUN_ADDRESS_V6 = "fd00:1:fd00:1::1"
+        const val TUN_PREFIX_LENGTH_V6 = 64
         const val TUN_MTU = 1500
+
+        /** Fin des droits (abonnement), écrite par l'UI. Seule source de « expiré ». */
+        const val PREF_RIGHTS_END = "vpn.rightsEnd"
+
+        /** Vrai tant que ce service vit dans le processus (réconciliation au démarrage). */
+        @Volatile var alive: Boolean = false
 
         private val DNS_SERVERS = listOf("1.1.1.1", "1.0.0.1")
 
@@ -163,6 +175,7 @@ class VpnTunnelService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
+        alive = true
         createChannel()
     }
 
@@ -175,7 +188,8 @@ class VpnTunnelService : VpnService() {
 
             ACTION_SELECT -> {
                 val configId = intent.getStringExtra(EXTRA_CONFIG_ID) ?: ServerBus.AUTO
-                container.secureStore.putString(PREF_SERVER, configId)
+                // Jamais d'écriture chiffrée sur le thread principal du service.
+                scope.launch(Dispatchers.IO) { container.secureStore.putString(PREF_SERVER, configId) }
                 val plan = lastPlan
                 if (plan == null) stopIfIdle() else scope.launch { selectNow(plan, configId) }
                 return START_NOT_STICKY
@@ -227,10 +241,23 @@ class VpnTunnelService : VpnService() {
     }
 
     override fun onDestroy() {
+        alive = false
         reconnectJob?.cancel()
         expiryJob?.cancel()
         connectJob?.cancel()
+        supervisorJob?.cancel()
+        trafficJob?.cancel()
+        // Filet de sécurité : `teardown` couvre le chemin nominal. Ici on
+        // couvre la destruction décidée par Android (OOM, arrêt forcé) : sans
+        // cela, l'UI pouvait rester sur « Protégé » alors que le TUN venait de
+        // disparaître.
+        val wasRunning = lastPlan != null || TunnelStateBus.state.value != TunnelState.STOPPED
         closeTun()
+        lastPlan = null
+        if (wasRunning) publish(TunnelState.STOPPED, "Tunnel arrêté par le système.")
+        runCatching {
+            CoroutineScope(Dispatchers.IO).launch { container.tunnelEngine.stop() }
+        }
         scope.cancel()
         super.onDestroy()
     }
@@ -279,24 +306,23 @@ class VpnTunnelService : VpnService() {
             return
         }
 
-        val plan = SingBoxConfig.build(
-            payload = payload,
-            tun = SingBoxConfig.TunOptions(
-                address = "$TUN_ADDRESS/$TUN_PREFIX_LENGTH",
-                mtu = TUN_MTU,
-            ),
-            preferredConfigId = preferredConfigId(),
-            dnsProtection = container.secureStore.getString(PREF_DNS_PROTECTION) != "0",
-        )
+        val plan0 = buildPlan()
+        var plan = plan0
+        if (plan == null || plan.expiresAtMs <= System.currentTimeMillis()) {
+            // D67 : l'expiration d'un nœud déclenche un rafraîchissement.
+            // Elle ne vide jamais le coffre et ne coupe pas les droits.
+            publish(TunnelState.RECONNECTING, "Renouvellement des configurations…")
+            if (renewBundle()) plan = buildPlan()
+        }
         if (plan == null) {
-            container.vault.clear()
-            teardown(detail = "Aucun serveur utilisable : toutes les configurations ont expiré.", keepState = false)
+            // Ne jamais effacer le coffre sur un état transitoire : une URI
+            // illisible ou un bundle vide ne doit pas détruire une liste
+            // encore valable (D61/D67).
+            teardown(detail = "Aucun serveur utilisable pour l'instant.", keepState = false)
             return
         }
         if (plan.expiresAtMs <= System.currentTimeMillis()) {
-            container.vault.clear()
-            publish(TunnelState.SUBSCRIPTION_EXPIRED, "Abonnement expiré : aucune sortie valide.")
-            teardown(detail = null, keepState = true)
+            finishOnExpiry()
             return
         }
 
@@ -379,6 +405,7 @@ class VpnTunnelService : VpnService() {
         expiryJob?.cancel()
         supervisorJob?.cancel()
         trafficJob?.cancel()
+        runCatching { meter.persist() }
         if (lastPlan != null) {
             val api = runCatching { container.api }.getOrNull()
             if (api != null) CoroutineScope(Dispatchers.IO).launch { meter.flush(api, null) }
@@ -403,6 +430,62 @@ class VpnTunnelService : VpnService() {
 
     private fun preferredConfigId(): String? =
         container.secureStore.getString(PREF_SERVER)?.takeIf { it.isNotEmpty() && it != ServerBus.AUTO }
+
+    /** Construit le plan depuis le coffre, avec les options TUN du service. */
+    private fun buildPlan(): SingBoxConfig.TunnelPlan? {
+        val payload = container.vault.read() ?: return null
+        return SingBoxConfig.build(
+            payload = payload,
+            tun = SingBoxConfig.TunOptions(
+                address = "$TUN_ADDRESS/$TUN_PREFIX_LENGTH",
+                addressV6 = "$TUN_ADDRESS_V6/$TUN_PREFIX_LENGTH_V6",
+                mtu = TUN_MTU,
+            ),
+            preferredConfigId = preferredConfigId(),
+            dnsProtection = container.secureStore.getString(PREF_DNS_PROTECTION) != "0",
+        )
+    }
+
+    /**
+     * Retire un bundle frais. Ne remplace la liste que s'il est non vide et au
+     * moins aussi récent : un bundle vide est un retrait légitime côté serveur,
+     * mais D61 interdit de l'appliquer sans décision ; il ne doit pas non plus
+     * avancer l'ETag.
+     */
+    private suspend fun renewBundle(): Boolean {
+        val api = runCatching { container.api }.getOrNull() ?: return false
+        val fetch = runCatching { api.fetchBundle() }.getOrNull() ?: return false
+        if (fetch is BundleFetch.Fresh) {
+            val current = container.vault.read()
+            val usable = fetch.payload.configs.isNotEmpty()
+            val fresher = current == null || fetch.payload.revision >= current.revision
+            if (usable && fresher && container.vault.save(fetch.payload)) {
+                api.rememberBundleEtag(fetch.etag)
+            }
+            return true
+        }
+        return fetch is BundleFetch.NotModified
+    }
+
+    /** Vrai si le droit (abonnement) est terminé. Inconnu = pas expiré. */
+    private fun rightsExpired(): Boolean {
+        val raw = container.secureStore.getString(PREF_RIGHTS_END) ?: return false
+        val end = runCatching { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull() ?: return false
+        return end <= System.currentTimeMillis()
+    }
+
+    /**
+     * Plus de configuration utilisable. On distingue la fin des droits (à dire)
+     * de l'expiration des nœuds (à rafraîchir) : c'est D67.
+     */
+    private fun finishOnExpiry() {
+        if (rightsExpired()) {
+            publish(TunnelState.SUBSCRIPTION_EXPIRED, "Abonnement expiré : reconnexion impossible.")
+        } else {
+            publish(TunnelState.NO_CONNECTION, "Configurations expirées : actualisation impossible sans réseau.")
+        }
+        requestStop(detail = null, keepState = true)
+    }
 
     private fun stopIfIdle() {
         if (lastPlan == null && tun == null) stopSelf()
@@ -430,6 +513,9 @@ class VpnTunnelService : VpnService() {
                     meter.onTotals(it, if (TunnelStateBus.state.value == TunnelState.CONNECTED) 1 else 0)
                 }
                 ticks++
+                // Le cumul vit en mémoire : une écriture chiffrée toutes les
+                // 15 s au lieu de trois par seconde.
+                if (ticks % 15 == 0) meter.persist()
                 if (ticks % TELEMETRY_EVERY_TICKS == 0) meter.flush(container.api, ServerBus.active.value)
                 delay(1_000)
             }
@@ -562,7 +648,11 @@ class VpnTunnelService : VpnService() {
             .setSession(BrandTokens.appName)
             .setMtu(TUN_MTU)
             .addAddress(TUN_ADDRESS, TUN_PREFIX_LENGTH)
+            .addAddress(TUN_ADDRESS_V6, TUN_PREFIX_LENGTH_V6)
             .addRoute("0.0.0.0", 0)
+            // Sans cette route, l'IPv6 continue de sortir par l'interface
+            // physique : l'écran dit « Protégé » et l'adresse réelle fuit.
+            .addRoute("::", 0)
             .setBlocking(false)
 
         for (server in DNS_SERVERS) {
@@ -599,17 +689,24 @@ class VpnTunnelService : VpnService() {
         expiryJob?.cancel()
         val wait = expiresAtMs - System.currentTimeMillis()
         if (wait <= 0) {
-            publish(TunnelState.SUBSCRIPTION_EXPIRED, "Abonnement expiré.")
-            requestStop(detail = null, keepState = true)
+            scope.launch { renewThenReconnect() }
             return
         }
         expiryJob = scope.launch {
             delay(wait)
             if (!isActive) return@launch
-            container.vault.clear()
-            publish(TunnelState.SUBSCRIPTION_EXPIRED, "Abonnement expiré : reconnexion impossible.")
-            requestStop(detail = null, keepState = true)
+            renewThenReconnect()
         }
+    }
+
+    /**
+     * D67 : à l'échéance d'un nœud, on rafraîchit et on repart. On ne vide le
+     * coffre que si l'abonnement lui-même est terminé — et même dans ce cas,
+     * c'est `finishOnExpiry` qui décide, jamais une horloge de nœud.
+     */
+    private suspend fun renewThenReconnect() {
+        publish(TunnelState.RECONNECTING, "Renouvellement des configurations…")
+        if (renewBundle()) launchConnect(restart = true) else finishOnExpiry()
     }
 
     /* ------------------------------------------------------------ notification */
@@ -659,6 +756,27 @@ class VpnTunnelService : VpnService() {
             .setShowWhen(state == TunnelState.CONNECTED)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            // L'utilisateur peut couper depuis la notification : sans cela, il
+            // devait rouvrir l'app alors que le tunnel est justement ce qui
+            // pose problème.
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    this,
+                    0,
+                    Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            )
+            .addAction(
+                0,
+                "Déconnecter",
+                PendingIntent.getService(
+                    this,
+                    1,
+                    Intent(this, VpnTunnelService::class.java).setAction(ACTION_STOP),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            )
 
         if (state == TunnelState.CONNECTED && connectedSince > 0) {
             // La durée vit dans la notification, pas à côté du bouton.

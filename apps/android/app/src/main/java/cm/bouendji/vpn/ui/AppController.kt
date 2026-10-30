@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import cm.bouendji.vpn.AppContainer
+import cm.bouendji.vpn.BuildConfig
 import cm.bouendji.vpn.brand.BrandTokens
 import cm.bouendji.vpn.config.SingBoxConfig
 import cm.bouendji.vpn.net.ApiClient
@@ -111,7 +112,15 @@ class AppController(
             screen = previous
             return true
         }
-        if (screen != Screen.HOME && signedIn) {
+        // Un onglet a vidé la pile. Sans compte, le seul retour utile est
+        // l'écran de connexion : sinon le bouton « Retour » ne faisait rien
+        // (forfaits ouverts depuis l'écran d'inscription = impasse).
+        if (!signedIn && screen != Screen.AUTH && screen != Screen.ONBOARDING) {
+            forward = false
+            screen = Screen.AUTH
+            return true
+        }
+        if (signedIn && screen != Screen.HOME) {
             forward = false
             screen = Screen.HOME
             return true
@@ -141,6 +150,13 @@ class AppController(
     var order by mutableStateOf<ApiClient.OrderDto?>(null); private set
     /** Droits avec quota (consommé, restant, état) : `GET /v1/me/subscription`. */
     var quota by mutableStateOf<ApiClient.EntitlementDto?>(null); private set
+    /** Contacts d'exploitation de la marque, saisis dans le dashboard. */
+    var support by mutableStateOf<ApiClient.SupportDto?>(null); private set
+    /** Dernière version publiée, si elle est plus récente que l'APK installé. */
+    var update by mutableStateOf<ApiClient.CatalogAppDto?>(null); private set
+    var updateBusy by mutableStateOf(false); private set
+    /** Message d'exploitation publié par l'administrateur. */
+    var announcement by mutableStateOf<ApiClient.AnnouncementDto?>(null); private set
     var hasConfiguration by mutableStateOf(false); private set
 
     var busy by mutableStateOf(false); private set
@@ -206,6 +222,73 @@ class AppController(
         else -> "Connexion au service impossible. Vérifie ton réseau et réessaie."
     }
 
+    /**
+     * Ouvre le meilleur canal configuré par l'administrateur, avec un message
+     * prérempli : marque, version, code d'appareil et motif. Si rien n'est
+     * configuré, on le dit — on ne retombe jamais sur le `mailto:` de la
+     * plateforme injecté au build.
+     */
+    fun openSupport(detail: String? = null) {
+        val s = support
+        val code = runCatching { container.deviceAuth.deviceId()?.take(8)?.uppercase() }.getOrNull()
+        val message = buildString {
+            append("Bonjour, je suis sur ").append(BrandTokens.appName).append(" v").append(BrandTokens.appVersion)
+            if (!code.isNullOrBlank()) append(" · appareil ").append(code)
+            if (!detail.isNullOrBlank()) append(" · ").append(detail)
+        }
+        val text = runCatching { java.net.URLEncoder.encode(message, "UTF-8") }.getOrDefault("")
+        val url = s?.whatsapp?.takeIf { it.isNotBlank() }?.let { "https://wa.me/$it?text=$text" }
+            ?: s?.whatsappUrl?.takeIf { it.isNotBlank() }?.let { if (it.contains('?')) "$it&text=$text" else "$it?text=$text" }
+            ?: s?.call?.takeIf { it.isNotBlank() }
+            ?: s?.email?.takeIf { it.isNotBlank() }?.let { "mailto:$it?body=$text" }
+        if (url.isNullOrBlank()) {
+            showToast("Aucun contact configuré par ton administrateur.")
+            return
+        }
+        platform.openUrl(url)
+    }
+
+    /** Groupe ou canal de la communauté (distinct du support 1:1). */
+    fun openCommunityGroup() {
+        val url = support?.groupUrl?.takeIf { it.isNotBlank() }
+            ?: BrandTokens.communityWhatsappUrl.takeIf { it.isNotBlank() }
+        if (url.isNullOrBlank()) {
+            showToast("Aucun groupe configuré.")
+            return
+        }
+        platform.openUrl(url)
+    }
+
+    fun dismissUpdate() {
+        update = null
+    }
+
+    /**
+     * Télécharge l'APK publié, vérifie l'empreinte et la signature, puis ouvre
+     * l'installateur Android. Un APK d'un autre signataire est refusé.
+     */
+    fun installUpdate() {
+        val target = update ?: return
+        if (updateBusy) return
+        updateBusy = true
+        scope.launch {
+            val result = container.updateManager.downloadAndInstall(
+                cm.bouendji.vpn.net.UpdateManager.Target(
+                    versionCode = target.latestVersionCode,
+                    versionName = target.latestVersionName,
+                    url = target.updateUrl.orEmpty(),
+                    sha256 = target.updateSha256,
+                ),
+            )
+            updateBusy = false
+            when (result) {
+                is cm.bouendji.vpn.net.UpdateManager.Result.Started ->
+                    showToast("Téléchargé. Confirme l'installation dans Android.")
+                is cm.bouendji.vpn.net.UpdateManager.Result.Failed -> showToast(result.message)
+            }
+        }
+    }
+
     /* ------------------------------------------------------------- démarrage */
 
     fun boot() {
@@ -238,29 +321,35 @@ class AppController(
                         container.api.json.decodeFromString(ApiClient.EntitlementDto.serializer(), cachedQuota)
                     }.getOrNull()?.let { quota = it }
                 }
+                val cachedSupport = store.getString(KEY_CACHED_SUPPORT)
+                if (cachedSupport != null) {
+                    runCatching {
+                        container.api.json.decodeFromString(ApiClient.SupportDto.serializer(), cachedSupport)
+                    }.getOrNull()?.let { support = it }
+                }
                 Pair(store.getString(KEY_ONBOARDED) == "1", runCatching { container.api.hasSession() }.getOrDefault(false) || me != null)
             }
             signedIn = restored.second
+            // Réconciliation : un état « connecté » qui survit à la mort du
+            // service est un mensonge. Le service vit dans ce processus ; s'il
+            // n'est pas vivant, l'état retombe à STOPPED.
+            if (TunnelStateBus.state.value != TunnelState.STOPPED && !VpnTunnelService.alive) {
+                TunnelStateBus.publish(TunnelState.STOPPED, "Session précédente terminée.")
+            }
             // Fichier de secours reçu avant ou pendant le lancement : traité dès qu'il arrive.
             scope.launch { ImportInbox.pending.collect { if (it != null) importOffline() } }
-            // Écoute du retour de paiement profond (Fapshi)
-            scope.launch {
-                DeepLinkBus.paymentReturn.collect {
-                    refreshAll(refreshOrder = true)
-                    showToast("Paiement vérifié avec succès !")
-                    go(Screen.HOME)
-                }
-            }
+            // Retour de paiement (Fapshi). Le Channel garde l'événement même
+            // s'il arrive avant ce collecteur (démarrage à froid).
+            scope.launch { DeepLinkBus.paymentReturn.collect { orderId -> handlePaymentReturn(orderId) } }
             syncServersFromVault()
             // Le splash reste visible le temps d'une respiration, comme le prototype.
-            val refresh = scope.launch { refreshAll() }
+            refreshAll()
             delay(1_100)
             screen = when {
                 !restored.first -> Screen.ONBOARDING
                 !signedIn -> Screen.AUTH
                 else -> Screen.HOME
             }
-            refresh.join()
             if (screen == Screen.HOME && autoConnect && accessActive && hasConfiguration && !platform.needsVpnConsent() &&
                 TunnelStateBus.state.value == TunnelState.STOPPED
             ) {
@@ -274,17 +363,93 @@ class AppController(
         screen = if (signedIn) Screen.HOME else Screen.AUTH
     }
 
+    /**
+     * Retour de paiement. Le deep link ne prouve rien : n'importe quelle
+     * application peut l'émettre. On ne dit « activé » que si le serveur
+     * confirme la commande, et on privilégie la commande en attente.
+     */
+    private suspend fun handlePaymentReturn(orderId: String?) {
+        val target = orderId?.takeIf { it.isNotBlank() }
+            ?: order?.orderId
+            ?: store.getString(KEY_PENDING_ORDER)?.takeIf { it.isNotBlank() }
+        if (target == null) {
+            showToast("Retour de paiement reçu. Ouvre ton forfait pour vérifier.")
+            refreshAll()
+            return
+        }
+        val fresh = runCatching { withContext(Dispatchers.IO) { container.api.order(target, true) } }.getOrNull()
+        if (fresh == null) {
+            showToast("Paiement reçu, vérification impossible pour l'instant.")
+            refreshAll()
+            return
+        }
+        order = fresh
+        when {
+            fresh.activationStatus == "active" -> {
+                withContext(Dispatchers.IO) { store.putString(KEY_PENDING_ORDER, "") }
+                refreshAll(refreshOrder = true)
+                showToast("Paiement vérifié : accès activé.")
+                go(Screen.HOME)
+            }
+            fresh.status == "paid" -> {
+                refreshAll(refreshOrder = true)
+                showToast("Paiement reçu, activation en cours.")
+                go(Screen.ORDER_DONE)
+            }
+            else -> {
+                showToast("Paiement pas encore confirmé.")
+                go(Screen.ORDER_DONE)
+            }
+        }
+    }
+
+    /** Reprend une commande laissée en attente (app tuée après le paiement). */
+    private suspend fun resumePendingOrder() {
+        val id = store.getString(KEY_PENDING_ORDER)?.takeIf { it.isNotBlank() } ?: return
+        val fresh = runCatching { container.api.order(id, true) }.getOrNull() ?: return
+        order = fresh
+        when {
+            fresh.activationStatus == "active" -> {
+                store.putString(KEY_PENDING_ORDER, "")
+                refreshPrivate()
+            }
+            fresh.status in setOf("failed", "expired", "cancelled") -> store.putString(KEY_PENDING_ORDER, "")
+            else -> Unit
+        }
+    }
+
     fun refreshAll(refreshOrder: Boolean = false) {
         scope.launch {
             busy = true
             syncing = true
             try {
-                withTimeoutOrNull(4_000L) {
+                // Budget large : cinq appels séquentiels sur un réseau mobile
+                // camerounais ne tiennent pas en 4 s. Le splash ne l'attend
+                // plus (boot() ne fait plus `join()`), donc allonger ici ne
+                // bloque pas l'interface.
+                withTimeoutOrNull(30_000L) {
                     runCatching {
                         withContext(Dispatchers.IO) {
                             syncPendingRegistration()
                             runCatching {
-                                val fetchedPlans = container.api.plans(BrandTokens.appId).items
+                                val catalog = container.api.plans(BrandTokens.appId)
+                                val fetchedPlans = catalog.items
+                                // Contacts saisis par l'administrateur : ils
+                                // remplacent le mailto: injecté au build.
+                                support = catalog.support
+                                store.putString(
+                                    KEY_CACHED_SUPPORT,
+                                    container.api.json.encodeToString(ApiClient.SupportDto.serializer(), catalog.support),
+                                )
+                                val latest = catalog.app
+                                if (latest.latestVersionCode > BuildConfig.VERSION_CODE && !latest.updateUrl.isNullOrBlank()) {
+                                    val firstSeen = update?.latestVersionCode != latest.latestVersionCode
+                                    update = latest
+                                    if (firstSeen) container.updateManager.notifyAvailable(latest.latestVersionName)
+                                } else {
+                                    update = null
+                                }
+                                announcement = catalog.announcement
                                 if (fetchedPlans.isNotEmpty()) {
                                     plans = fetchedPlans
                                     store.putString(
@@ -297,12 +462,18 @@ class AppController(
                                 }
                             }
                             if (selectedPlanId == null) selectedPlanId = plans.firstOrNull { it.featured }?.id ?: plans.firstOrNull()?.id
-                            if (signedIn) refreshPrivate()
+                            if (signedIn) {
+                                refreshPrivate()
+                                resumePendingOrder()
+                            }
                             if (refreshOrder) order = order?.let { container.api.order(it.orderId, true) }
                             if (order?.activationStatus == "active") refreshPrivate()
                         }
                     }.onFailure { failure ->
-                        if (failure is ApiException && failure.status == 401 && signedIn && store.getString(KEY_PENDING_REGISTRATION) == null) {
+                        // `runCatching` avale l'annulation : sans ce relais,
+                        // un timeout ressemble à une panne réseau.
+                        if (failure is kotlinx.coroutines.CancellationException) throw failure
+                        if (failure is ApiException && failure.status == 401 && signedIn && store.getString(KEY_PENDING_REGISTRATION).isNullOrBlank()) {
                             signedIn = false
                             screen = Screen.AUTH
                         } else if (!(failure is ApiException && (failure.isDeviceRevoked || failure.needsSubscription))) {
@@ -338,13 +509,17 @@ class AppController(
         showToast("Compte synchronisé avec succès !")
     }
 
-    private suspend fun refreshPrivate() {
+    private suspend fun refreshPrivate(): Boolean {
+        var bundleOk = false
         val api = container.api
         reportConsumedBundles()
         val freshMe = runCatching { api.me() }.getOrNull()
         if (freshMe != null) {
             me = freshMe
             store.putString(KEY_CACHED_ME, container.api.json.encodeToString(ApiClient.MeResponse.serializer(), freshMe))
+            // Fin des droits : le service s'en sert pour distinguer « abonnement
+            // expiré » (à dire) de « nœuds expirés » (à rafraîchir), D67.
+            store.putString(VpnTunnelService.PREF_RIGHTS_END, freshMe.entitlement.endsAt.orEmpty())
         }
         runCatching { devices = api.devices().items }
         val freshQuota = runCatching { api.subscription().entitlement }.getOrNull()
@@ -357,14 +532,23 @@ class AppController(
         if (me?.entitlement?.active == true) {
             when (val bundle = runCatching { api.fetchBundle() }.getOrNull()) {
                 is BundleFetch.Fresh -> {
-                    if (bundle.payload.configs.isNotEmpty()) container.vault.save(bundle.payload)
+                    val current = container.vault.read()
+                    val usable = bundle.payload.configs.isNotEmpty()
+                    val fresher = current == null || bundle.payload.revision >= current.revision
+                    // L'ETag n'avance qu'après une écriture réussie : sinon un
+                    // bundle vide ou un échec de coffre bloque le client en 304.
+                    if (usable && fresher && container.vault.save(bundle.payload)) {
+                        api.rememberBundleEtag(bundle.etag)
+                        bundleOk = true
+                    }
                 }
-                BundleFetch.NotModified -> Unit
+                BundleFetch.NotModified -> bundleOk = true
                 null -> Unit
             }
         }
         hasConfiguration = !container.vault.isEmpty()
         syncServersFromVault()
+        return bundleOk
     }
 
     private fun loadPlans() = scope.launch {
@@ -429,7 +613,7 @@ class AppController(
                 screen = if (platform.needsVpnConsent()) Screen.VPN_AUTH else Screen.HOME
                 refreshAll()
             }.onFailure { ex ->
-                if (form.register && (ex is java.io.IOException || ex !is ApiException)) {
+                if (form.register && (ex is java.io.IOException || (ex is ApiException && ex.isNetwork))) {
                     val offlineUser = ApiClient.UserDto(
                         id = "local-" + java.util.UUID.randomUUID().toString().take(8),
                         email = "${phone.filter(Char::isDigit)}@${BrandTokens.appId}.bouendji.internal",
@@ -469,10 +653,21 @@ class AppController(
             withContext(Dispatchers.IO) {
                 runCatching { container.api.logout() }
                 container.vault.clear()
+                container.api.forgetBundleEtag()
+                // Sans ces purges, un redémarrage après déconnexion réaffichait
+                // le nom, le forfait, le quota et les appareils du compte
+                // précédent (boot() déduit `signedIn` de `me != null`).
+                store.remove(KEY_CACHED_ME)
+                store.remove(KEY_CACHED_QUOTA)
+                store.remove(KEY_PENDING_REGISTRATION)
+                store.remove(KEY_PENDING_ORDER)
+                store.remove(VpnTunnelService.PREF_RIGHTS_END)
             }
             signedIn = false; me = null; devices = emptyList(); stats = null; referral = null; order = null
+            quota = null
             hasConfiguration = false
             ServerBus.setServers(emptyList())
+            ServerBus.setNotice(null)
             stack.clear()
             screen = Screen.AUTH
             busy = false
@@ -482,6 +677,7 @@ class AppController(
     /* ------------------------------------------------------------- commande */
 
     fun startOrder() {
+        if (busy) return
         val plan = selectedPlan ?: return
         if (!signedIn) { go(Screen.AUTH); return }
         scope.launch {
@@ -489,13 +685,19 @@ class AppController(
             // Une plage n'est envoyée que si ce forfait la propose (sinon 400 côté serveur).
             val window = nightWindow?.takeIf { w -> plan.nightOptions.any { it.window == w } }
             val choice = customChoice(plan)
-            runCatching { withContext(Dispatchers.IO) { container.api.createOrder(plan.id, plan.revision, window, choice) } }
-                .onSuccess { created ->
-                    order = created
-                    go(Screen.ORDER_DONE)
-                    created.checkout?.url?.let(platform::openUrl)
-                }
+            val created = runCatching { withContext(Dispatchers.IO) { container.api.createOrder(plan.id, plan.revision, window, choice) } }
                 .onFailure { error = friendly(it) }
+                .getOrNull()
+            if (created == null) {
+                busy = false
+                return@launch
+            }
+            // Persistée avant l'ouverture du navigateur : si le processus meurt
+            // pendant le paiement, la commande reste vérifiable au redémarrage.
+            withContext(Dispatchers.IO) { store.putString(KEY_PENDING_ORDER, created.orderId) }
+            order = created
+            go(Screen.ORDER_DONE)
+            created.checkout?.url?.let(platform::openUrl)
             busy = false
         }
     }
@@ -509,12 +711,19 @@ class AppController(
                     order = fresh
                     when {
                         fresh.activationStatus == "active" -> {
+                            withContext(Dispatchers.IO) { store.putString(KEY_PENDING_ORDER, "") }
                             withContext(Dispatchers.IO) { runCatching { refreshPrivate() } }
                             showToast("Accès activé.")
                         }
                         fresh.status == "paid" -> showToast("Paiement reçu, activation en cours.")
-                        fresh.status == "failed" -> error = "Le paiement a échoué. Tu peux réessayer."
-                        fresh.status == "expired" -> error = "Le lien de paiement a expiré. Recommence la commande."
+                        fresh.status == "failed" -> {
+                            withContext(Dispatchers.IO) { store.putString(KEY_PENDING_ORDER, "") }
+                            error = "Le paiement a échoué. Tu peux réessayer."
+                        }
+                        fresh.status == "expired" -> {
+                            withContext(Dispatchers.IO) { store.putString(KEY_PENDING_ORDER, "") }
+                            error = "Le lien de paiement a expiré. Recommence la commande."
+                        }
                         else -> showToast("Paiement pas encore confirmé.")
                     }
                 }
@@ -543,7 +752,6 @@ class AppController(
 
     /** Hors tunnel, la liste vient du coffre : mêmes tags que le moteur (`nodesOf`). */
     fun syncServersFromVault() {
-        if (TunnelStateBus.state.value != TunnelState.STOPPED && ServerBus.servers.value.isNotEmpty()) return
         scope.launch {
             val nodes = withContext(Dispatchers.IO) {
                 container.vault.read()?.let { SingBoxConfig.nodesOf(it) }.orEmpty()
@@ -560,9 +768,10 @@ class AppController(
         if (!signedIn) { syncServersFromVault(); return }
         scope.launch {
             busy = true; error = null
-            runCatching { withContext(Dispatchers.IO) { refreshPrivate() } }
-                .onSuccess { showToast("Liste des serveurs mise à jour.") }
+            val updated = runCatching { withContext(Dispatchers.IO) { refreshPrivate() } }
                 .onFailure { error = friendly(it) }
+                .getOrDefault(false)
+            showToast(if (updated) "Liste des serveurs mise à jour." else "Liste inchangée : vérifie ta connexion.")
             busy = false
         }
     }
@@ -592,29 +801,37 @@ class AppController(
         if (directTesting) return
         scope.launch {
             directTesting = true
-            val nodes = withContext(Dispatchers.IO) { container.vault.read()?.let { SingBoxConfig.nodesOf(it) }.orEmpty() }
-            if (nodes.isEmpty()) {
-                showToast(if (accessActive) "Aucun serveur reçu pour l'instant." else "Active un forfait pour recevoir les serveurs.")
-                directTesting = false
-                return@launch
-            }
-            withContext(Dispatchers.IO) {
-                coroutineScope {
-                    val gate = Semaphore(4)
-                    nodes.map { node ->
-                        async {
-                            gate.withPermit {
-                                ServerBus.update(node.configId) { it.copy(probe = ProbeState.TESTING) }
-                                val ms = tcpConnectMs(node.host, node.port)
-                                ServerBus.update(node.configId) {
-                                    it.copy(latencyMs = ms, probe = if (ms != null) ProbeState.OK else ProbeState.FAILED, method = ProbeMethod.DIRECT)
+            try {
+                val nodes = withContext(Dispatchers.IO) { container.vault.read()?.let { SingBoxConfig.nodesOf(it) }.orEmpty() }
+                if (nodes.isEmpty()) {
+                    showToast(if (accessActive) "Aucun serveur reçu pour l'instant." else "Active un forfait pour recevoir les serveurs.")
+                    return@launch
+                }
+                withContext(Dispatchers.IO) {
+                    coroutineScope {
+                        val gate = Semaphore(4)
+                        nodes.map { node ->
+                            async {
+                                gate.withPermit {
+                                    ServerBus.update(node.configId) { it.copy(probe = ProbeState.TESTING) }
+                                    val ms = tcpConnectMs(node.host, node.port)
+                                    ServerBus.update(node.configId) {
+                                        it.copy(latencyMs = ms, probe = if (ms != null) ProbeState.OK else ProbeState.FAILED, method = ProbeMethod.DIRECT)
+                                    }
                                 }
                             }
-                        }
-                    }.awaitAll()
+                        }.awaitAll()
+                    }
                 }
+            } finally {
+                directTesting = false
+                // Une annulation (rotation, sortie d'écran) laissait des lignes
+                // en TESTING pour toujours : le bouton « Tester » restait
+                // désactivé jusqu'au redémarrage du processus.
+                ServerBus.servers.value
+                    .filter { it.probe == ProbeState.TESTING }
+                    .forEach { stale -> ServerBus.update(stale.configId) { it.copy(probe = ProbeState.UNKNOWN) } }
             }
-            directTesting = false
         }
     }
 
@@ -708,6 +925,8 @@ class AppController(
         const val KEY_CACHED_ME = "cache.me"
         const val KEY_CACHED_PLANS = "cache.plans"
         const val KEY_CACHED_QUOTA = "cache.quota"
+        const val KEY_CACHED_SUPPORT = "cache.support"
         const val KEY_PENDING_REGISTRATION = "offline.pending_reg"
+        const val KEY_PENDING_ORDER = "order.pending"
     }
 }

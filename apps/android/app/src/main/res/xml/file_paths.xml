@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Seul le dossier des mises à jour est exposé à l'installateur Android :
+  l'APK téléchargé depuis l'API, jamais le reste du stockage de l'app.
+-->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>
