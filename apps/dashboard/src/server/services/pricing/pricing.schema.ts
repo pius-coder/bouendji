@@ -82,7 +82,9 @@ export function pricingFormToBody(values: PricingFormValues): PricingUpdate {
       "24-04": toIntOrNull(values.night24_04),
       "20-04": toIntOrNull(values.night20_04),
     },
-    platformMarginBps: toBpsOrNull(values.platformMarginPercent),
+    // Une marge laissée vide vaut 0 % : sinon le plancher disparaît et le
+    // créateur affiche « 0 » (constaté en prod le 2026-10-30).
+    platformMarginBps: toBpsOrNull(values.platformMarginPercent) ?? 0,
     maxCommissionBps: toBpsOrNull(values.maxCommissionPercent),
     unlimitedCostPerDayXaf: toIntOrNull(values.unlimitedCostPerDayXaf ?? ""),
   };
@@ -95,7 +97,7 @@ export function pricingToFormValues(s: PricingSettings): PricingFormValues {
     night24_04: s.nightWindowCostXaf["24-04"] === null ? "" : String(s.nightWindowCostXaf["24-04"]),
     night20_04: s.nightWindowCostXaf["20-04"] === null ? "" : String(s.nightWindowCostXaf["20-04"]),
     unlimitedCostPerDayXaf: s.unlimitedCostPerDayXaf === null || s.unlimitedCostPerDayXaf === undefined ? "" : String(s.unlimitedCostPerDayXaf),
-    platformMarginPercent: s.platformMarginBps === null ? "" : String(s.platformMarginBps / 100),
+    platformMarginPercent: s.platformMarginBps === null ? "0" : String(s.platformMarginBps / 100),
     maxCommissionPercent: s.maxCommissionBps === null ? "" : String(s.maxCommissionBps / 100),
   };
 }
@@ -110,9 +112,9 @@ export function baseFloorXaf(
   quotaBytes: number,
   settings: Pick<PricingSettings, "costPerGbXaf" | "platformMarginBps">,
 ): number | null {
-  if (settings.costPerGbXaf === null || settings.platformMarginBps === null || quotaBytes <= 0) return null;
+  if (settings.costPerGbXaf === null || quotaBytes <= 0) return null;
   const gigabytes = Math.ceil(quotaBytes / BYTES_PER_GB);
-  return withMargin(gigabytes * settings.costPerGbXaf, settings.platformMarginBps);
+  return withMargin(gigabytes * settings.costPerGbXaf, settings.platformMarginBps ?? 0);
 }
 
 /** Plancher d'un forfait illimité : coût par jour × durée + marge. */
@@ -120,8 +122,8 @@ export function unlimitedFloorXaf(
   durationDays: number,
   settings: Pick<PricingSettings, "unlimitedCostPerDayXaf" | "platformMarginBps">,
 ): number | null {
-  if (settings.unlimitedCostPerDayXaf === null || settings.unlimitedCostPerDayXaf === undefined || settings.platformMarginBps === null || durationDays <= 0) return null;
-  return withMargin(durationDays * settings.unlimitedCostPerDayXaf, settings.platformMarginBps);
+  if (settings.unlimitedCostPerDayXaf === null || settings.unlimitedCostPerDayXaf === undefined || durationDays <= 0) return null;
+  return withMargin(durationDays * settings.unlimitedCostPerDayXaf, settings.platformMarginBps ?? 0);
 }
 
 /** Plancher d'une option de nuit : coût de la plage + marge. */
@@ -130,8 +132,8 @@ export function nightOptionFloorXaf(
   settings: Pick<PricingSettings, "nightWindowCostXaf" | "platformMarginBps">,
 ): number | null {
   const cost = settings.nightWindowCostXaf[window];
-  if (cost === null || settings.platformMarginBps === null) return null;
-  return withMargin(cost, settings.platformMarginBps);
+  if (cost === null) return null;
+  return withMargin(cost, settings.platformMarginBps ?? 0);
 }
 
 export interface PriceBreakdown {
@@ -153,10 +155,10 @@ export function breakdownBasePrice(
   priceXaf: number,
   settings: Pick<PricingSettings, "costPerGbXaf" | "platformMarginBps">,
 ): PriceBreakdown | null {
-  if (settings.costPerGbXaf === null || settings.platformMarginBps === null || quotaGb <= 0) return null;
+  if (settings.costPerGbXaf === null || quotaGb <= 0) return null;
   const gbs = Math.ceil(quotaGb);
   const costXaf = gbs * settings.costPerGbXaf;
-  const floorXaf = withMargin(costXaf, settings.platformMarginBps);
+  const floorXaf = withMargin(costXaf, settings.platformMarginBps ?? 0);
   const platformMarginXaf = Math.max(0, floorXaf - costXaf);
   const validPrice = Number.isFinite(priceXaf) && priceXaf > 0 ? Math.floor(priceXaf) : 0;
   const aboveFloor = validPrice >= floorXaf;

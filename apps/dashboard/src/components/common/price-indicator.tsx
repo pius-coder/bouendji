@@ -1,14 +1,11 @@
 "use client";
 
-import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatXaf } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { BYTES_PER_GB } from "@/server/services/plans/plans.schema";
 import {
   baseFloorXaf,
-  breakdownBasePrice,
   nightOptionFloorXaf,
   unlimitedFloorXaf,
   type NightWindow,
@@ -22,14 +19,16 @@ function toNightWindow(value: string): NightWindow {
 }
 
 /**
- * Barre visuelle de répartition d'un prix de forfait (coût serveur, marge plateforme,
- * part de l'admin) avec calcul en direct du prix plancher, du gain par vente et
- * bouton « Utiliser le plancher » lorsque le prix saisi est trop bas.
+ * Affiche **uniquement les planchers** dans le créateur de forfait :
+ * - plancher du prix de jour (ou de l'illimité selon la durée) ;
+ * - plancher du supplément nuit s'il est proposé.
+ *
+ * Aucune commission, aucun gain, aucune répartition : l'admin voit le minimum
+ * à respecter, et le bouton « Utiliser le plancher » si son prix est en dessous.
  */
 export function PriceIndicator({
   quotaGb,
   priceXaf,
-  commissionBps,
   pricing,
   isUnlimited = false,
   durationDays = 1,
@@ -42,7 +41,8 @@ export function PriceIndicator({
 }: {
   quotaGb: number;
   priceXaf: number;
-  commissionBps: number;
+  /** Conservé pour compatibilité des appelants ; plus affiché. */
+  commissionBps?: number;
   pricing: PricingSettings;
   isUnlimited?: boolean;
   durationDays?: number;
@@ -59,107 +59,18 @@ export function PriceIndicator({
   const floorXaf = isUnlimited
     ? (unlimitedFloorXaf(durationDays, pricing) ?? 0)
     : (baseFloorXaf(quotaBytes, pricing) ?? 0);
-
-  const breakdown = isUnlimited
-    ? (() => {
-        const costXaf = (pricing.unlimitedCostPerDayXaf ?? 0) * durationDays;
-        const platformMarginXaf = Math.max(0, floorXaf - costXaf);
-        const gainXaf = Math.max(0, safePrice - floorXaf);
-        return {
-          costXaf,
-          platformMarginXaf,
-          floorXaf,
-          priceXaf: safePrice,
-          aboveFloor: safePrice >= floorXaf,
-          gainXaf,
-        };
-      })()
-    : (breakdownBasePrice(safeQuota, safePrice, pricing) ?? {
-        costXaf: 0,
-        platformMarginXaf: 0,
-        floorXaf,
-        priceXaf: safePrice,
-        aboveFloor: safePrice >= floorXaf,
-        gainXaf: Math.max(0, safePrice - floorXaf),
-      });
-  const belowFloor = !breakdown.aboveFloor;
-  // Commission réellement versée à l'admin : `commissionFor` côté API
-  // (services/payments.ts:255) — un pourcentage du prix de vente, plafonné,
-  // et non le gain au-dessus du plancher.
-  const commissionBpsCapped = Math.max(0, Math.min(commissionBps, pricing.maxCommissionBps ?? 3000));
-  const commissionXaf = Math.floor((safePrice * commissionBpsCapped) / 10_000);
-  const totalBase = Math.max(1, safePrice, floorXaf);
-  const serverPct = Math.min(100, Math.round((breakdown.costXaf / totalBase) * 100));
-  const platformPct = Math.min(100 - serverPct, Math.round((breakdown.platformMarginXaf / totalBase) * 100));
-  const adminPct = Math.max(0, 100 - serverPct - platformPct);
+  const belowFloor = safePrice < floorXaf;
 
   const windowKey = toNightWindow(nightWindowHours);
   const nightFloor = hasNightOption ? (nightOptionFloorXaf(windowKey, pricing) ?? 0) : 0;
   const safeNightPrice = Number.isFinite(nightPriceXaf) && (nightPriceXaf ?? 0) >= 0 ? (nightPriceXaf ?? 0) : 0;
   const nightBelowFloor = hasNightOption && safeNightPrice < nightFloor;
-  const nightGainXaf = hasNightOption ? Math.max(0, safeNightPrice - nightFloor) : 0;
 
   return (
     <div className={cn("flex flex-col gap-3 rounded-section border border-separator bg-muted/40 p-3.5", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="cursor-help text-subhead font-medium text-foreground underline decoration-dotted underline-offset-4">
-                Prix minimum (plancher) : {formatXaf(floorXaf)}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>
-              {isUnlimited
-                ? `Prix minimum qui couvre l'infrastructure (${formatXaf(pricing.unlimitedCostPerDayXaf ?? 0)}/j) et la marge plateforme (${(((pricing.platformMarginBps ?? 0) / 100)).toFixed(0)} %).`
-                : `Prix minimum qui couvre l'infrastructure (${formatXaf(pricing.costPerGbXaf ?? 0)}/Go) et la marge plateforme (${(((pricing.platformMarginBps ?? 0) / 100)).toFixed(0)} %).`}
-            </TooltipContent>
-          </Tooltip>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                className={cn(
-                  "cursor-help rounded-full px-2.5 py-0.5 text-footnote font-semibold tabular-nums",
-                  belowFloor
-                    ? "bg-destructive/15 text-destructive"
-                    : "bg-positive/15 text-positive",
-                )}
-              >
-                Votre commission : {formatXaf(commissionXaf)} / vente ({(commissionBpsCapped / 100).toFixed(0)} %)
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>
-              30 % du prix de vente, versés sur votre Mobile Money. La plateforme conserve le reste ; le prix plancher couvre l'infrastructure.
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
-
-      {/* Barre de répartition */}
-      <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-background">
-        <div
-          className="bg-muted-foreground/55 transition-all"
-          style={{ width: `${serverPct}%` }}
-          title={`Coût serveur : ${formatXaf(breakdown.costXaf)}`}
-        />
-        <div
-          className="bg-accent transition-all"
-          style={{ width: `${platformPct}%` }}
-          title={`Marge plateforme : ${formatXaf(breakdown.platformMarginXaf)}`}
-        />
-        <div
-          className={cn("transition-all", belowFloor ? "bg-destructive" : "bg-positive")}
-          style={{ width: `${adminPct}%` }}
-          title={`Au-dessus du plancher : ${formatXaf(breakdown.gainXaf)}`}
-        />
-      </div>
-
-      {/* Le récapitulatif « Serveur / Plateforme / Votre commission » a été
-          retiré du créateur de forfait : l'admin ne voit que le plancher et
-          l'alerte s'il passe en dessous. */}
+      <span className="text-subhead font-medium text-foreground">
+        Prix minimum (plancher) : {formatXaf(floorXaf)}
+      </span>
 
       {belowFloor ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-footnote text-destructive">
@@ -181,18 +92,13 @@ export function PriceIndicator({
       ) : null}
 
       {hasNightOption ? (
-        <div className="border-t border-separator pt-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-footnote">
-            <span className="text-muted-foreground">
-              Supplément nuit ({windowKey}) · Plancher :{" "}
-              <strong className="font-medium text-foreground">{formatXaf(nightFloor)}</strong>
-            </span>
-            <span className={cn("font-semibold tabular-nums", nightBelowFloor ? "text-destructive" : "text-positive")}>
-              Gain nuit : +{formatXaf(nightGainXaf)} / vente
-            </span>
-          </div>
+        <div className="flex flex-col gap-2 border-t border-separator pt-2.5">
+          <span className="text-footnote text-muted-foreground">
+            Supplément nuit ({windowKey}) · Plancher :{" "}
+            <strong className="font-medium text-foreground">{formatXaf(nightFloor)}</strong>
+          </span>
           {nightBelowFloor && onUseNightFloor ? (
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-footnote text-destructive">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-footnote text-destructive">
               <span>Le supplément nuit est sous le plancher ({formatXaf(nightFloor)}).</span>
               <Button
                 type="button"
