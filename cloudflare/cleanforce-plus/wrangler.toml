@@ -1,0 +1,13 @@
+name = "cleanforce-plus"
+main = "worker.js"
+compatibility_date = "2026-10-30"
+
+# Les anciennes pages statiques ne servent plus que de repli si l'API est
+# injoignable. Les domaines personnalisés (www + un sous-domaine par marque)
+# restent attachés au Worker lors d'un nouveau déploiement.
+[assets]
+directory = "./assets"
+binding = "ASSETS"
+# Le Worker doit d'abord s'exécuter pour rendre la page depuis l'API ; sinon
+# l'asset `/index.html` est servi avant lui et masque le rendu dynamique.
+run_worker_first = true
