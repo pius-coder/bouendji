@@ -197,22 +197,37 @@ export async function loadEntitlement(db: Queryable, userId: string): Promise<En
       [userId],
     )) > 0;
 
-    if (isOwner) {
+    const isCommunityAdmin = Number(await db.scalar(
+      `SELECT count(*)::int FROM users u
+       JOIN admin_users a ON (
+         (a.email IS NOT NULL AND lower(a.email) = lower(u.email))
+         OR (a.whatsapp_number IS NOT NULL AND u.phone LIKE '%' || a.whatsapp_number)
+       )
+       JOIN community_memberships m ON m.admin_user_id = a.id AND m.community_id = u.community_id
+       WHERE u.id = $1 AND m.role = 'community_admin' AND m.status = 'active' AND a.active = true`,
+      [userId],
+    )) > 0;
+
+    // Accès administrateur : illimité dans la seule application de sa communauté.
+    const lifetime = isOwner
+      ? { code: "owner-unlimited", name: "Accès Propriétaire (Illimité)" }
+      : { code: "admin-unlimited", name: "Accès Administrateur (Illimité)" };
+    if (isOwner || isCommunityAdmin) {
       const farFuture = new Date(Date.now() + 3650 * 86400 * 1000).toISOString();
       return {
         subscription: {
           id: "owner-lifetime",
           planId: "owner-plan",
-          planCode: "owner-unlimited",
-          planName: "Accès Propriétaire (Illimité)",
+          planCode: lifetime.code,
+          planName: lifetime.name,
           startsAt: new Date().toISOString(),
           endsAt: farFuture,
           deviceLimit: 99,
         },
         entitlement: {
           active: true,
-          planCode: "owner-unlimited",
-          planName: "Accès Propriétaire (Illimité)",
+          planCode: lifetime.code,
+          planName: lifetime.name,
           endpointTier: "paid-gcp",
           startsAt: new Date().toISOString(),
           endsAt: farFuture,
