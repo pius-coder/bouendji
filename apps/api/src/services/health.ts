@@ -24,11 +24,18 @@
  * ici, l'alerte appartient à l'appelant (§4.6).
  */
 import type { Queryable } from "../db.js";
+import { escapeHtml, notifyRecipients, telegramEnabled } from "./telegram.js";
 
 export type EndpointHealth = "unknown" | "healthy" | "degraded" | "down";
 
 /** Fenêtre du verdict (§1.3) : dix minutes. */
 export const HEALTH_WINDOW_MINUTES = 10;
+
+/**
+ * Une sonde serveur plus vieille que cette fenêtre n'est plus considérée comme
+ * l'état courant : on retombe sur les rapports des téléphones.
+ */
+export const PROBE_WINDOW_MINUTES = 15;
 
 /** Chemin 1 (§1.3) : trois appareils **distincts** en échec. */
 export const DOWN_QUORUM = 3;
@@ -132,7 +139,63 @@ export async function setHealth(
   );
   if (rows.length === 0) return false;
   await bumpPoolRevision(db);
+  // Alerte seulement : aucun retrait automatique du nœud. L'envoi est
+  // volontairement détaché du verdict pour qu'un Telegram lent ou coupé ne
+  // retarde jamais la télémétrie.
+  void alertTransition(db, endpointId, health, reason);
   return true;
+}
+
+/** Traduction courte d'une raison technique pour le bot. */
+export function healthReasonLabel(reason: string | null): string {
+  if (!reason) return "état inchangé";
+  if (reason === "probe") return "sonde serveur : point d'entrée injoignable";
+  if (reason === "probe:clients") return "sonde serveur OK, mais plusieurs téléphones échouent";
+  if (reason === "probation") return "fin de probation";
+  if (reason === "witness") return "témoin différentiel : un téléphone échoue ici et réussit ailleurs";
+  if (reason === "manual") return "forçage manuel depuis le dashboard";
+  const m = /^reports:(\d+)$/.exec(reason);
+  if (m) return `${m[1]} téléphone(s) en échec sur ce nœud`;
+  return reason;
+}
+
+const HEALTH_LABEL: Record<EndpointHealth, string> = {
+  healthy: "EN SERVICE",
+  degraded: "DÉGRADÉ",
+  down: "HORS SERVICE",
+  unknown: "NON MESURÉ",
+};
+
+/**
+ * Prévient les destinataires Telegram à chaque transition. Ne lève jamais :
+ * une alerte ne doit pas casser le chemin de télémétrie.
+ */
+async function alertTransition(
+  db: Queryable,
+  endpointId: string,
+  health: EndpointHealth,
+  reason: string | null,
+): Promise<void> {
+  try {
+    if (!telegramEnabled() || health === "unknown") return;
+    const row = await db.one<{ label: string }>(
+      "SELECT label FROM endpoints WHERE id = $1",
+      [endpointId],
+    );
+    if (!row) return;
+    await notifyRecipients(
+      db,
+      [
+        `<b>${escapeHtml(String(row.label))} : ${HEALTH_LABEL[health]}</b>`,
+        "",
+        escapeHtml(healthReasonLabel(reason)),
+        "",
+        "Le nœud reste servi : aucun retrait automatique, alerte uniquement.",
+      ].join("\n"),
+    );
+  } catch {
+    // Silencieux par contrat.
+  }
 }
 
 /**
@@ -167,6 +230,8 @@ export async function reconcileHealth(
     differential: boolean | string | number | null;
     current_health: EndpointHealth | null;
     down_since: Date | string | null;
+    probe_ok: boolean | string | number | null;
+    probed_at: Date | string | null;
   }>(
     `WITH recent AS (
        SELECT device_id, config_id, ok
@@ -185,7 +250,9 @@ export async function reconcileHealth(
             (SELECT count(DISTINCT device_id) FROM mine WHERE NOT ok) AS doubters,
             (SELECT count(*) FROM witness) > 0                        AS differential,
             (SELECT health FROM endpoints WHERE id = $1)              AS current_health,
-            (SELECT down_since FROM endpoints WHERE id = $1)          AS down_since`,
+            (SELECT down_since FROM endpoints WHERE id = $1)          AS down_since,
+            (SELECT probe_ok FROM endpoints WHERE id = $1)            AS probe_ok,
+            (SELECT probed_at FROM endpoints WHERE id = $1)           AS probed_at`,
     [configId, windowMinutes, WITNESS_FAILURES],
   );
 
@@ -195,14 +262,27 @@ export async function reconcileHealth(
   // `'t'` ou `1`. Normaliser évite un verdict qui dépend du driver.
   const differential = row?.differential === true || row?.differential === "t" || row?.differential === 1;
 
-  const decision = decideHealth({
-    successes,
-    doubters,
-    differential,
-    current: (row?.current_health as EndpointHealth | null) ?? "unknown",
-    downSince: row?.down_since ? new Date(row.down_since) : null,
-    now: new Date(),
-  });
+  // Sonde serveur fraîche : elle tranche la joignabilité. Les téléphones ne
+  // peuvent plus condamner un nœud que le serveur vient de joindre ; au pire
+  // ils le classent « dégradé ».
+  const probeOk = row?.probe_ok === true || row?.probe_ok === "t" || row?.probe_ok === 1;
+  const probedAt = row?.probed_at ? new Date(row.probed_at).getTime() : null;
+  const probeFresh = probedAt !== null && Date.now() - probedAt <= PROBE_WINDOW_MINUTES * 60_000;
+
+  const decision = probeFresh
+    ? !probeOk
+      ? { health: "down" as const, reason: "probe" }
+      : differential || doubters >= DOWN_QUORUM
+        ? { health: "degraded" as const, reason: "probe:clients" }
+        : { health: "healthy" as const, reason: "probe" }
+    : decideHealth({
+        successes,
+        doubters,
+        differential,
+        current: (row?.current_health as EndpointHealth | null) ?? "unknown",
+        downSince: row?.down_since ? new Date(row.down_since) : null,
+        now: new Date(),
+      });
   if (!decision) return null;
   return {
     configId,

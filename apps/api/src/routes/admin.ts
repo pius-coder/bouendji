@@ -46,6 +46,7 @@ import { issueOfflineBundle } from "../services/offlineBundles.js";
 import { MAX_COMMISSION_BPS, planRevision } from "../services/payments.js";
 import { checkTerms, planTermsDto, planTermsSchema, planTermsSql, replaceNightOptions, resolveTerms } from "../services/planTerms.js";
 import { assertAboveFloor, loadPricingSettings } from "../services/pricing.js";
+import { probeAndRecord } from "../services/probe.js";
 
 const PREFIX = "/v1/admin";
 
@@ -830,6 +831,11 @@ function endpointDto(row: Row) {
     latencyMs: row.latency_ms === null || row.latency_ms === undefined ? null : Number(row.latency_ms),
     lastSeenAt: iso(row.last_seen_at),
     expiresAt: iso(row.expires_at),
+    /** Sonde serveur (2026-10-30) : dernière mesure réelle du point d'entrée. */
+    probeOk: row.probe_ok === null || row.probe_ok === undefined ? null : row.probe_ok === true,
+    probeLatencyMs: row.probe_latency_ms === null || row.probe_latency_ms === undefined ? null : Number(row.probe_latency_ms),
+    probeError: (row.probe_error as string | null) ?? null,
+    probedAt: iso(row.probed_at),
   };
 }
 
@@ -2279,7 +2285,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     authorize(admin, "endpoint.read", null);
     const rows = await db.query<Row>(
       `SELECT id, label, host, port, protocol, transport, security, region, tier, capacity, in_use,
-              status, health, down_since, down_reason, latency_ms, last_seen_at, expires_at
+              status, health, down_since, down_reason, latency_ms, last_seen_at, expires_at,
+              probe_ok, probe_latency_ms, probe_error, probed_at
          FROM endpoints ORDER BY created_at DESC LIMIT 200`,
     );
     const revision = await db.scalar<number>("SELECT revision FROM pool_state WHERE id = 'pool'");
@@ -2517,8 +2524,22 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
   });
 
   /**
-   * Purge manuelle des nœuds expirés (D140).
-   * Supprime de la base tous les endpoints dans l'état 'expired' ou dont l'expiration est passée.
+   * Test réel d'un nœud (2026-10-30) : le serveur ouvre une connexion TCP vers
+   * `host:port`, écrit la mesure et applique le verdict combiné (serveur +
+   * téléphones). C'est la réponse à « aucun test n'est possible ».
+   */
+  app.post<{ Params: { endpointId: string } }>(`${PREFIX}/endpoints/:endpointId/test`, async (req) => {
+    const admin = await requireAdmin(db, req);
+    authorize(admin, "endpoint.write", null);
+    const result = await probeAndRecord(db, req.params.endpointId);
+    if (!result) throw fail.notFound("Nœud introuvable.");
+    return result;
+  });
+
+  /**
+   * Purge manuelle des nœuds expirés (D140, révisé 2026-10-30).
+   * Ne supprime **que** `status = 'expired'` : depuis D145, `expires_at` est une
+   * date d'affichage, jamais une autorisation de supprimer un nœud actif.
    */
   app.post(`${PREFIX}/endpoints/purge-expired`, async (req) => {
     const admin = await requireAdmin(db, req);
@@ -2529,7 +2550,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     await db.tx(async (q) => {
       const deleted = await q.query<Row>(
         `DELETE FROM endpoints
-          WHERE status = 'expired' OR expires_at < now()
+          WHERE status = 'expired'
           RETURNING id`,
       );
       count = deleted.length;

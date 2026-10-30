@@ -488,12 +488,15 @@ export async function heartbeat(
 }
 
 /**
- * La liste vivante (D47/D141/D145) : `free-labs` reste borné à son pool ;
- * `paid-gcp` reçoit les deux pools. Jamais un nœud `down`. Depuis D145, la
- * fin de validité **ne retire plus personne** : un nœud reste servi tant que
- * son statut est `active` et que les clients ne le déclarent pas mort —
- * aucune désactivation automatique, l'expiration ne sert qu'à l'affichage
- * et aux rappels de créneaux. Sortir un nœud est un geste manuel (console).
+ * La liste vivante (D47/D141/D145, révisé 2026-10-30) : `free-labs` reste borné
+ * à son pool ; `paid-gcp` reçoit les deux pools. **Aucun nœud n'est retiré
+ * automatiquement**, même `down` : le verdict sert à l'affichage et à l'alerte
+ * Telegram, pas à la censure du bundle. Depuis D145, la fin de validité ne
+ * retire plus personne non plus : un nœud reste servi tant que son statut est
+ * `active`. Sortir un nœud est un geste manuel (console).
+ *
+ * L'ordre reste utile : `healthy` d'abord, puis `unknown`, `degraded`, et
+ * `down` en dernier (les clients qui savent basculer évitent les derniers).
  *
  * La seconde signature (`servedEndpoints(db, limit)`) est l'appel historique des
  * bundles hors ligne : elle reste valable et sert le tier gratuit.
@@ -511,8 +514,7 @@ export async function servedEndpoints(
     `SELECT * FROM endpoints
       WHERE status = 'active'
         AND ($2 = 'paid-gcp' OR tier = $2)
-        AND health <> 'down'
-      ORDER BY CASE health WHEN 'healthy' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END,
+      ORDER BY CASE health WHEN 'healthy' THEN 0 WHEN 'unknown' THEN 1 WHEN 'degraded' THEN 2 ELSE 3 END,
                latency_ms ASC NULLS LAST,
                created_at ASC
       LIMIT $1`,

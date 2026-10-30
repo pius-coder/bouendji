@@ -4,6 +4,7 @@ import { env } from "./config.js";
 import { createDb } from "./db.js";
 import { purgeExpired, purgedTotal } from "./services/maintenance.js";
 import { checkPoolExpiry, newPoolWatchState } from "./services/poolWatch.js";
+import { probeActiveEndpoints } from "./services/probe.js";
 import { startXuiWorker } from "./services/xuiWorker.js";
 
 /**
@@ -17,6 +18,7 @@ import { startXuiWorker } from "./services/xuiWorker.js";
  */
 
 const SWEEP_INTERVAL_MS = 60_000;
+const PROBE_INTERVAL_MS = 5 * 60_000;
 const SHUTDOWN_GRACE_MS = 15_000;
 
 /**
@@ -64,6 +66,26 @@ async function sweep(): Promise<void> {
   }
 }
 
+let probing = false;
+
+/**
+ * Sonde serveur périodique (2026-10-30). Elle donne au propriétaire un état
+ * mesuré même sans téléphone connecté. Elle n'écrit jamais `status` : un nœud
+ * hors service reste servi, l'alerte part sur Telegram (voir health.setHealth).
+ */
+async function probeTick(): Promise<void> {
+  if (probing) return;
+  probing = true;
+  try {
+    const count = await probeActiveEndpoints(db);
+    if (count > 0) app.log.info({ count }, "sonde serveur des nœuds terminée");
+  } catch (err) {
+    app.log.error({ err }, "sonde serveur en échec");
+  } finally {
+    probing = false;
+  }
+}
+
 try {
   await app.listen({ host: env.host, port: env.port });
 } catch (err) {
@@ -78,6 +100,18 @@ const timer = setInterval(() => {
 // Never keep the process alive just for the sweep.
 timer.unref();
 
+const probeTimer = setInterval(() => {
+  void probeTick();
+}, PROBE_INTERVAL_MS);
+probeTimer.unref();
+
+// Première mesure peu après le démarrage : le pool est renseigné sans attendre
+// cinq minutes ni le premier téléphone.
+const firstProbe = setTimeout(() => {
+  void probeTick();
+}, 20_000);
+firstProbe.unref();
+
 let shuttingDown = false;
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
@@ -85,6 +119,8 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   shuttingDown = true;
   app.log.info({ signal }, "arrêt demandé : fermeture des connexions");
   clearInterval(timer);
+  clearInterval(probeTimer);
+  clearTimeout(firstProbe);
 
   const force = setTimeout(() => {
     app.log.error("arrêt forcé : des requêtes ne se terminent pas");

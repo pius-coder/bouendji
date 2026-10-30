@@ -246,7 +246,7 @@ test("servedEndpoints borne le gratuit et ouvre les deux pools au payant (D141)"
   assert.equal(limited.length, 1);
 });
 
-test("un nœud health='down' est absent du bundle (D47)", async () => {
+test("un nœud health='down' reste servi, en dernier (aucun retrait automatique)", async () => {
   const control = await publishNode("tier-up-control", { tier: "free-labs" });
   const dying = await publishNode("tier-down-node", { tier: "free-labs" });
   await db.query(
@@ -260,12 +260,18 @@ test("un nœud health='down' est absent du bundle (D47)", async () => {
   const ids = plaintext.configs.map((config: { id: string }) => config.id);
 
   assert.ok(ids.includes(control.endpointId), "un nœud sain reste servi");
-  assert.ok(!ids.includes(dying.endpointId), "un nœud down ne sort jamais dans un bundle");
+  // Règle 2026-10-30 : le verdict ne censure plus le bundle. Un nœud marqué
+  // `down` reste servi (l'app peut basculer), l'alerte part sur Telegram.
+  assert.ok(ids.includes(dying.endpointId), "un nœud down reste dans le bundle");
+  assert.ok(
+    ids.indexOf(control.endpointId) < ids.indexOf(dying.endpointId),
+    "le nœud down est classé après les nœuds sains",
+  );
   assert.equal(res.body.configCount, plaintext.configs.length);
 
-  // Et il n'est pas non plus dans la liste servie, donc pas dans un futur bundle.
+  // Et il reste dans la liste vivante, donc dans les futurs bundles.
   const served = await servedEndpoints(db, "free-labs");
-  assert.ok(!served.some((row) => row.id === dying.endpointId));
+  assert.ok(served.some((row) => row.id === dying.endpointId), "aucun retrait automatique de la liste servie");
 });
 
 test("le heartbeat ne lève pas un 'down', il peut poser 'healthy' (D47)", async () => {
@@ -443,13 +449,14 @@ test("un 304 n'est renvoyé que si l'enveloppe calculée n'est pas expirée (D48
   assert.equal(cached.status, 304, "une enveloppe vivante reste servie en 304");
   assert.equal(cached.text, "");
 
-  // Tous les nœuds accessibles tombent : le pool est vide, donc
-  // l'enveloppe calculée naît expirée (`expiresAt = issuedAt`).
-  await db.query("UPDATE endpoints SET health='down', down_since=now(), down_reason='manual'");
+  // Aucun nœud actif : le pool est vide (un nœud `down` resterait servi, mais
+  // un nœud retiré manuellement passe en `expired`). L'enveloppe calculée
+  // naît expirée (`expiresAt = issuedAt`).
+  await db.query("UPDATE endpoints SET status='expired', health='down', down_since=now(), down_reason='manual'");
 
   const first = await paidAccount.client("GET", BUNDLE);
   assert.equal(first.status, 200, first.text);
-  assert.equal(first.body.configCount, 0, "aucun nœud accessible sain : la liste est vide, pas inventée");
+  assert.equal(first.body.configCount, 0, "aucun nœud actif : la liste est vide, pas inventée");
   assert.equal(first.body.expiresAt, first.body.issuedAt, "une enveloppe sans configuration naît expirée");
 
   const etag = String(first.headers.etag);

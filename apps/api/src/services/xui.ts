@@ -259,7 +259,6 @@ export async function nightRowsFor(
        FROM endpoints e
        JOIN night_slots ns ON ns.id = e.night_slot_id
       WHERE e.status = 'active'
-        AND e.health <> 'down'
         AND ns.slot = ANY($1::text[])
         AND ns.ends_at > now()
       ORDER BY ns.starts_at, e.created_at`,
