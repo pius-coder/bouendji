@@ -173,6 +173,31 @@ exigeraient sinon un rebuild des 8 APK.
 | E. Firebase Remote Config | oui | oui | projet, dépendance, hors Play | surdimensionné |
 | F. Profil signé Ed25519 | oui | oui | complexité | plus tard si besoin |
 
+## Implémentation — 2026-10-29
+
+Vérifié :
+
+- **API** : `GET /v1/apps/:appId/plans` renvoie désormais `app.minVersionCode`,
+  `support` et `legal` (`routes/catalog.ts`). `supportDto` ne lit **jamais**
+  `apps.support_url` : il n'expose que `communities.contact_whatsapp`,
+  `apps.support_email` et `communities.whatsapp_group_url`. Le `mailto:` de la
+  plateforme ne peut donc plus être servi.
+- Contrat `R6_ROUTE_DOCS` mis à jour, `openapi.json` régénéré.
+- `tsc -p tsconfig.json --noEmit` : **aucune sortie**.
+- `node --import tsx --test test/admin.test.ts test/r6.test.ts` : **37/37**.
+- **Android** : `ApiClient.SupportDto`/`LegalDto`, cache `cache.support`,
+  `AppController.openSupport()` (message prérempli avec marque, version, code
+  d'appareil), `openCommunityGroup()`. Profile, Intro, Auth et la bannière
+  utilisent ce canal ; **plus aucune référence UI à `BrandTokens.supportUrl`**.
+- `:app:testDebugUnitTest` : **8/8** (`SingBoxConfigTest`).
+- `:app:assembleDebug` : **BUILD SUCCESSFUL**, APK 159,4 Mo (x86_64 retiré).
+
+Non fait : déploiement de l'API en production, saisie du numéro dans le
+dashboard pour Gregor44, test sur appareil (téléphone déconnecté).
+
+Décision appliquée : `support.source = "none"` ⇒ l'app affiche « Non configuré
+par ton administrateur » et n'ouvre plus le `mailto:` de la plateforme.
+
 ## Décisions à prendre
 
 1. Support 1:1 WhatsApp comme canal principal, e-mail en dernier recours ?
