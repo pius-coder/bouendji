@@ -37,9 +37,12 @@ const MAX_QUERY_VALUE = 200;
  * blanche. Pas de `:` (pas de paramètre de chemin), pas de `.` ni de `..`, pas de segment vide.
  */
 export function bffTargetPath(segments: readonly string[]): string | null {
-  if (segments.length === 0 || segments.length > MAX_SEGMENTS) return null;
-  if (!segments.every((segment) => SEGMENT.test(segment))) return null;
-  const path = `${BFF_API_ROOT}/${segments.join("/")}`;
+  // Le navigateur appelle `/api/bff/v1/admin/...` : le préfixe est déjà dans l'URL.
+  // Sans ce retrait, la liste blanche ne voit jamais `/v1/admin/...` et renvoie « Ressource inconnue ».
+  const rest = segments[0] === "v1" && segments[1] === "admin" ? segments.slice(2) : segments;
+  if (rest.length === 0 || rest.length > MAX_SEGMENTS) return null;
+  if (!rest.every((segment) => SEGMENT.test(segment))) return null;
+  const path = `${BFF_API_ROOT}/${rest.join("/")}`;
   const allowed = BFF_READ_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
   return allowed ? path : null;
 }
