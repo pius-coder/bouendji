@@ -877,3 +877,32 @@ Saitrix (nebula) : �cran d'auth sans onglets ni grand titre, compact et non scro
   `vpn-dashboard-seven.vercel.app`). Sauvegarde DB avant :
   `vpn-db-2026-10-29-avant-dashboard-updates.sql.gz`. Le déploiement Vercel a
   exigé de forcer IPv4 (voir `deploiement-dashboard-api`).
+
+- **D147** (2026-10-30) — **Nouveau régime réseau : sonde serveur + rapports
+  téléphones, aucun retrait automatique, alerte Telegram seule.** Livré dans
+  le lot `eb1a092` (api/prod-hardening) et déployé en prod (vpn-api Dokku) :
+  1. **Sonde TCP serveur** (`services/probe.ts`, migration `102_endpoint_probe` :
+     colonnes `probe_ok`, `probe_latency_ms`, `probe_error`, `probed_at`) — toutes
+     les 5 min sur les nœuds **actifs seulement** (les expirés ne sont pas
+     sondés) + une sonde au démarrage du serveur.
+  2. **Verdict combiné** (`services/health.ts`) : le verdict serveur est
+     prioritaire si la sonde date de moins de 15 min ; sinon verdict des
+     téléphones (fenêtre 10 min). Une sonde qui revient à la normale déclenche
+     une alerte Telegram de retour, raison `probe:ok` (« point d'entrée
+     joignable »).
+  3. **Aucun retrait automatique** (D145 confirmé et étendu) :
+     `servedEndpoints`/`nightRowsFor` ne filtrent plus `health='down'` — un nœud
+     `down` reste servi ; l'ordre de service devient `healthy`, `unknown`,
+     `degraded`, `down`. La purge manuelle est limitée à `status='expired'` ;
+     `expires_at` n'autorise plus aucune suppression. Alerte Telegram seule,
+     jamais de désactivation.
+  4. **Route admin** `POST /v1/admin/endpoints/:id/test` : sonde à la demande
+     depuis le dashboard.
+  Vérifié : tsc sans sortie, **358/358 tests API** ; migration 102 appliquée
+  en prod, colonnes `probe_*` présentes ; sonde de démarrage prod du
+  2026-10-30 07:46:52 UTC : **13/13 nœuds actifs OK, latences 82–93 ms** ;
+  `readyz` → 401 (clé requise), `openapi.json` → 200 ; healthchecks Dokku OK
+  (port 5000). Sauvegarde DB avant :
+  `vpn-db-2026-10-30-avant-sonde-reseau.sql.gz`. Reste à faire côté dashboard
+  (voir `reseau-audit-2026-10-30` §5 #5) : afficher `down_reason` + résultat
+  sonde, bouton « Tester ce nœud », restauration depuis `unknown`, fraîcheur.

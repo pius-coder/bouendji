@@ -109,6 +109,28 @@ Avec 3 appareils dans cet état, **tous les nœuds sains passent `down`**.
 | 5 | Dashboard : afficher `down_reason` traduit + probation restante ; « Rétablir » depuis `unknown` ; purge limitée à `status='expired'` ; journal réseau visible ; fraîcheur/polling | Reprise du contrôle |
 | 6 | App : file de rapports priorisée et non silencieuse ; télémétrie : `configId` inconnu ignoré au lieu de perdre le lot | Moins de trous de mesure |
 
+## 6. Livré le 2026-10-30 (D147, lot `eb1a092`, déployé en prod)
+
+- **#1 fait** : `POST /v1/admin/endpoints/:id/test` (sonde TCP à la demande,
+  `admin.ts`) — le bouton dashboard reste à faire.
+- **#2 fait (variante)** : sonde serveur **périodique toutes les 5 min** + au
+  démarrage (`probe.ts`, migration `102_endpoint_probe`), actifs seulement.
+  Décision explicite du propriétaire : la périodicité remplace la sonde unique
+  au `ready` ; D51 (pas de cron lourd) reste respecté (une simple boucle TCP).
+- **#3/#4 intégrés au verdict combiné** (`health.ts`) : verdict serveur
+  prioritaire si sonde < 15 min, sinon téléphones (fenêtre 10 min) ; retour
+  signalé par alerte Telegram raison `probe:ok`.
+- **Aucun retrait automatique** : `servedEndpoints`/`nightRowsFor` servent
+  aussi les nœuds `down` (ordre `healthy`, `unknown`, `degraded`, `down`) ;
+  purge manuelle limitée à `status='expired'`.
+- **Vérifié en prod** : migration 102 appliquée, colonnes `probe_*` présentes,
+  sonde de démarrage 07:46:52 UTC : 13/13 actifs OK (82–93 ms) ; `readyz` → 401,
+  `openapi.json` → 200 ; 358/358 tests API.
+
+- **Reste à faire** (§5 #5 côté dashboard uniquement) : `down_reason` traduit +
+  résultat sonde/latence, bouton « Tester ce nœud », restauration depuis
+  `unknown`, purge limitée, fraîcheur/polling. §5 #6 (app : file de rapports)
+  non traité.
 ## Fichiers sources des audits
 
 - `knowledge/agents/audit-reseau-api/notes/audit.md`
