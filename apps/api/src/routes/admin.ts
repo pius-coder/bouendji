@@ -44,8 +44,20 @@ import { generateTemporaryPassword, isWhatsappGroupUrl, normalizeWhatsappNumber,
 import { bumpPoolRevision, poolRevision } from "../services/endpoints.js";
 import { issueOfflineBundle } from "../services/offlineBundles.js";
 import { MAX_COMMISSION_BPS, planRevision } from "../services/payments.js";
-import { checkTerms, planTermsDto, planTermsSchema, planTermsSql, replaceNightOptions, resolveTerms } from "../services/planTerms.js";
+import {
+  checkTerms,
+  MAX_DURATION_MINUTES,
+  MINUTES_PER_DAY,
+  planDurationMinutes,
+  planTermsDto,
+  planTermsSchema,
+  planTermsSql,
+  replaceNightOptions,
+  resolveDuration,
+  resolveTerms,
+} from "../services/planTerms.js";
 import { assertAboveFloor, loadPricingSettings } from "../services/pricing.js";
+import { COUPON_PLAN_CODE } from "../services/coupons.js";
 import { probeAndRecord } from "../services/probe.js";
 
 const PREFIX = "/v1/admin";
@@ -293,7 +305,13 @@ type Capability =
   | "pricing.manage"
   | "xui.manage"
   | "night_slot.manage"
-  | "presence.read";
+  | "presence.read"
+  /** 104 : types de coupon (libellé, durée) — owner seul. */
+  | "coupon_type.manage"
+  /** 104 : émettre ou annuler un coupon pour un abonné de la communauté. */
+  | "coupon.issue"
+  /** 105 : accorder un forfait payé en direct, voir les impayés, verser à la plateforme. */
+  | "manual_grant.manage";
 
 /**
  * Matrice appliquée, rôle par rôle (knowledge/40-money/roles-and-commissions.md,
@@ -327,6 +345,9 @@ type Capability =
  * | pricing.manage        | oui   | non             | non     | non     |
  * | xui.manage            | oui   | non             | non     | non     |
  * | presence.read         | oui   | non             | non     | non     |
+ * | coupon_type.manage    | oui   | non             | non     | non     |
+ * | coupon.issue          | oui   | sa communauté   | non     | non     |
+ * | manual_grant.manage   | oui   | sa communauté   | non     | non     |
  *
  * Rôle plateforme `reseau` (D120, cumulable avec `owner`) : endpoint.read,
  * endpoint.write, night_slot.manage, et rien d'autre. Son rôle ne donne aucune
@@ -411,6 +432,15 @@ export function permitted(admin: AdminContext, capability: Capability, community
     case "offline_bundle.issue":
       return local === "community_admin" || local === "support";
     case "audit.read":
+      return local === "community_admin";
+    case "coupon_type.manage":
+      // Décision owner 1 : seul l'owner définit les types (court-circuit plus haut).
+      return false;
+    case "coupon.issue":
+      // Décision owner 2 : les administrateurs de la communauté de l'abonné.
+      return local === "community_admin";
+    case "manual_grant.manage":
+      // 105 : owner ou community_admin de la communauté de l'abonné (sa dette).
       return local === "community_admin";
     default:
       return false;
@@ -1011,7 +1041,10 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       name: z.string().trim().min(2).max(80),
       description: z.string().trim().max(500).optional(),
       priceXaf: z.number().int().min(1).max(10_000_000),
-      durationDays: z.number().int().min(1).max(3650),
+      /** Exactement un de `durationDays` / `durationMinutes` (103), contrôlé par `resolveDuration`. */
+      durationDays: z.number().int().min(1).max(3650).optional(),
+      /** 103 : forfait à la minute (1 h = 60). */
+      durationMinutes: z.number().int().min(1).max(MAX_DURATION_MINUTES).optional(),
       deviceLimit: z.number().int().min(1).max(10).optional(),
       badge: z.string().trim().max(40).nullable().optional(),
       featured: z.boolean().optional(),
@@ -1037,6 +1070,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       code: row.code as string,
       price_xaf: row.price_xaf as number,
       duration_days: row.duration_days as number,
+      duration_minutes: (row.duration_minutes as number | null | undefined) ?? null,
       device_limit: row.device_limit as number,
       active: row.active === true,
       family: terms.family,
@@ -1052,6 +1086,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       description: row.description as string,
       priceXaf: Number(row.price_xaf),
       durationDays: Number(row.duration_days),
+      /** 103 : durée réelle ; `durationDays × 1440` pour un forfait en jours. */
+      durationMinutes: planDurationMinutes(row),
       deviceLimit: Number(row.device_limit),
       badge: (row.badge as string | null) ?? null,
       featured: row.featured === true,
@@ -1071,12 +1107,13 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     const appRow = await mustApp(db, req.params.appId);
     const communityId = scopedCommunity(admin, String(appRow.community_id)) as string;
     authorize(admin, "community.read", communityId);
+    // 104 : le forfait caché qui porte les coupons n'est pas une offre à gérer.
     const rows = await db.query<Row>(
       `SELECT p.*, ${planTermsSql("p")}
          FROM plans p
-        WHERE p.app_id = $1
+        WHERE p.app_id = $1 AND p.code <> $2
         ORDER BY p.sort_order ASC, p.price_xaf ASC`,
-      [req.params.appId],
+      [req.params.appId, COUPON_PLAN_CODE],
     );
     return { items: rows.map(planDtoR6) };
   });
@@ -1087,6 +1124,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     const communityId = scopedCommunity(admin, String(appRow.community_id)) as string;
     authorize(admin, "plan.manage", communityId);
     const input = parseBody(planCreateR6Schema, req.body);
+    const duration = resolveDuration(input);
     const terms = resolveTerms(input);
     checkTerms(terms);
     // D132 / D97 : l'illimité est servi par le pool partagé `free-labs`, jamais par 3x-ui.
@@ -1100,13 +1138,13 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
           priceXaf: input.priceXaf,
           nightOptions: terms.nightOptions,
           family: terms.family,
-          durationDays: input.durationDays,
+          durationDays: duration.minutes === null ? duration.days : duration.minutes / MINUTES_PER_DAY,
         });
         await q.query(
           `INSERT INTO plans (id, app_id, code, name, description, price_xaf, duration_days,
                               device_limit, badge, featured, active, sort_order, endpoint_tier,
-                              family, quota_bytes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+                              family, quota_bytes, duration_minutes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
           [
             id,
             req.params.appId,
@@ -1114,7 +1152,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
             input.name,
             input.description ?? "",
             input.priceXaf,
-            input.durationDays,
+            duration.days,
             input.deviceLimit ?? 1,
             input.badge ?? null,
             input.featured ?? false,
@@ -1123,6 +1161,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
             createTier,
             terms.family,
             terms.quotaBytes,
+            duration.minutes,
           ],
         );
         await replaceNightOptions(q, id, terms.nightOptions);
@@ -1167,7 +1206,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     // D127 : l'offre sur mesure se règle par `/apps/:appId/custom-offer` ; ici,
     // seuls les champs d'affichage restent modifiables.
     if (currentTerms.family === "custom") {
-      const termFields = ["family", "quotaBytes", "nightOptions", "priceXaf", "durationDays", "endpointTier"] as const;
+      const termFields = ["family", "quotaBytes", "nightOptions", "priceXaf", "durationDays", "durationMinutes", "endpointTier"] as const;
       if (termFields.some((field) => input[field] !== undefined)) {
         throw fail.conflict("Offre sur mesure : modifiez ses prix depuis l'écran Forfait sur mesure.");
       }
@@ -1203,7 +1242,16 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     const name = input.name ?? (before.name as string);
     const description = input.description ?? (before.description as string);
     const priceXaf = input.priceXaf ?? Number(before.price_xaf);
-    const durationDays = input.durationDays ?? Number(before.duration_days);
+    // 103 : une modification de durée fixe soit des jours (minutes remises à NULL), soit des minutes.
+    const durationChanged = input.durationDays !== undefined || input.durationMinutes !== undefined;
+    const duration = durationChanged
+      ? resolveDuration(input)
+      : {
+          days: Number(before.duration_days),
+          minutes: before.duration_minutes === null || before.duration_minutes === undefined ? null : Number(before.duration_minutes),
+        };
+    const durationDays = duration.days;
+    const durationMinutes = duration.minutes;
     const deviceLimit = input.deviceLimit ?? Number(before.device_limit);
     const badge = input.badge !== undefined ? input.badge : ((before.badge as string | null) ?? null);
     const featured = input.featured ?? before.featured === true;
@@ -1228,7 +1276,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       input.quotaBytes !== undefined ||
       input.family !== undefined ||
       input.nightOptions !== undefined ||
-      (terms.family === "unlimited" && input.durationDays !== undefined);
+      (terms.family === "unlimited" && durationChanged);
 
     await db.tx(async (q) => {
       if (termsChanged) {
@@ -1237,14 +1285,14 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
           priceXaf,
           nightOptions: terms.nightOptions,
           family: terms.family,
-          durationDays,
+          durationDays: durationMinutes === null ? durationDays : durationMinutes / MINUTES_PER_DAY,
         });
       }
       await q.query(
         `UPDATE plans
             SET name = $2, description = $3, price_xaf = $4, duration_days = $5,
                 device_limit = $6, badge = $7, featured = $8, active = $9, sort_order = $10,
-                endpoint_tier = $11, family = $12, quota_bytes = $13
+                endpoint_tier = $11, family = $12, quota_bytes = $13, duration_minutes = $14
           WHERE id = $1`,
         [
           req.params.planId,
@@ -1260,6 +1308,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
           endpointTier,
           terms.family,
           terms.quotaBytes,
+          durationMinutes,
         ],
       );
       if (input.nightOptions !== undefined || family !== current.family) {
@@ -1274,6 +1323,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
           name: before.name,
           priceXaf: Number(before.price_xaf),
           durationDays: Number(before.duration_days),
+          durationMinutes: planDurationMinutes(before),
           active: before.active,
           family: current.family,
           quotaBytes: current.quotaBytes,
@@ -1283,6 +1333,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
           name,
           priceXaf,
           durationDays,
+          durationMinutes: durationMinutes ?? durationDays * MINUTES_PER_DAY,
           active,
           family: terms.family,
           quotaBytes: terms.quotaBytes,

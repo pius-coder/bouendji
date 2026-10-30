@@ -139,3 +139,45 @@ export async function replaceNightOptions(q: Queryable, planId: string, options:
     );
   }
 }
+
+/* ------------------------------------------------- durée en minutes (103) */
+
+export const MINUTES_PER_DAY = 1440;
+/** Borne haute de `plans.duration_minutes` (365 jours), même valeur que la contrainte SQL. */
+export const MAX_DURATION_MINUTES = 525_600;
+
+/**
+ * Durée réelle d'un forfait en minutes : `duration_minutes` si renseignée,
+ * sinon `duration_days × 1440` (comportement historique).
+ */
+export function planDurationMinutes(row: { duration_minutes?: unknown; duration_days?: unknown }): number {
+  const minutes = row.duration_minutes;
+  if (minutes !== null && minutes !== undefined && Number.isFinite(Number(minutes))) return Number(minutes);
+  return Number(row.duration_days) * MINUTES_PER_DAY;
+}
+
+/** Jours affichés pour une durée en minutes : arrondi au jour supérieur, au moins 1. */
+export function daysForMinutes(minutes: number): number {
+  return Math.max(1, Math.ceil(minutes / MINUTES_PER_DAY));
+}
+
+/**
+ * Résout la saisie admin : exactement un de `durationDays` / `durationMinutes`.
+ * Renvoie les valeurs à écrire dans `plans` (`duration_minutes` NULL pour une
+ * durée en jours, ce qui garde le comportement des forfaits existants).
+ */
+export function resolveDuration(input: { durationDays?: number | undefined; durationMinutes?: number | undefined }): {
+  days: number;
+  minutes: number | null;
+} {
+  const hasDays = input.durationDays !== undefined;
+  const hasMinutes = input.durationMinutes !== undefined && input.durationMinutes !== null;
+  if (hasDays === hasMinutes) {
+    throw fail.validation({ durationDays: "Indiquez soit durationDays, soit durationMinutes." });
+  }
+  if (hasMinutes) {
+    const minutes = input.durationMinutes as number;
+    return { days: daysForMinutes(minutes), minutes };
+  }
+  return { days: input.durationDays as number, minutes: null };
+}

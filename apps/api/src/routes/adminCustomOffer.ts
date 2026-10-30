@@ -76,6 +76,8 @@ function offerDto(row: Row | null) {
       code: row.code as string,
       price_xaf: row.price_xaf as number,
       duration_days: row.duration_days as number,
+      // 103 : l'offre sur mesure se règle en jours (curseurs) ; NULL en pratique.
+      duration_minutes: (row.duration_minutes as number | null | undefined) ?? null,
       device_limit: row.device_limit as number,
       active: row.active === true,
       family: plan.family,

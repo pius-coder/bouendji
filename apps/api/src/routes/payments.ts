@@ -17,6 +17,7 @@ import type { Database } from "../db.js";
 import { ApiFailure, fail } from "../lib/errors.js";
 import { handleWebhookEvent, payloadHash, reconcilePayment, loadOrder, loadOrderByProviderRef } from "../services/payments.js";
 import { getMockPaymentStatus, setMockPaymentStatus, type MockPaymentStatus } from "../services/mockPayments.js";
+import { findSettlementForWebhook, reconcileSettlement } from "../services/manualGrants.js";
 
 /* ------------------------------------------------------------------ utils */
 
@@ -324,6 +325,24 @@ export function registerPaymentRoutes(app: FastifyInstance, db: Database): void 
         throw fail.validation({ providerRef: "Référence de transaction ou de commande requise." });
       }
 
+      /*
+       * 105 : un versement de communauté (`settlements`) passe par le même
+       * webhook. Reconnu par sa référence, il n'obtient que la réconciliation —
+       * revérifiée chez le fournisseur, idempotente. Le flux des commandes
+       * ci-dessous est inchangé.
+       */
+      const settlementId = await findSettlementForWebhook(db, { providerRef, externalId: orderId });
+      if (settlementId) {
+        const settled = await reconcileSettlement(db, { settlementId, reportedAmountXaf: readAmount(body) });
+        return {
+          received: true,
+          duplicate: !settled.changed,
+          settlementId: settled.settlement.id,
+          status: settled.settlement.status,
+          settledGrants: settled.settledGrants,
+        };
+      }
+
       const raw = req.rawBody ?? JSON.stringify(body);
       const eventId = firstString(body, ["eventId", "event_id"]) ?? payloadHash(raw);
 
@@ -345,6 +364,28 @@ export function registerPaymentRoutes(app: FastifyInstance, db: Database): void 
       };
     },
   );
+
+  /* ----------------------------------------------------- avis avant paiement */
+
+  // Page d'avis affichée avant la redirection vers le prestataire (ex. Orange
+  // Money indisponible). Le lien ramène au vrai paiement, stocké sur la commande.
+  app.get("/pay/notice/:orderId", async (req: FastifyRequest<{ Params: { orderId: string } }>, reply) => {
+    const order = await loadOrder(db, String(req.params.orderId ?? "").trim());
+    if (!order || !order.payment_url || !env.paymentNotice) {
+      throw fail.notFound("Commande introuvable.");
+    }
+    const notice = escapeHtml(env.paymentNotice);
+    const target = escapeHtml(order.payment_url);
+    return reply.type("text/html; charset=utf-8").send(`<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paiement — information</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;background:#f5f7fb;color:#0b1220}
+main{max-width:420px;padding:24px;margin:16px;background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+h1{font-size:20px;margin:0 0 12px}p{line-height:1.5;margin:0 0 20px}
+a.btn{display:block;text-align:center;padding:14px;border-radius:12px;background:#0a5cf0;color:#fff;text-decoration:none;font-weight:600}</style>
+</head><body><main><h1>Paiement</h1><p>${notice}</p>
+<a class="btn" href="${target}" rel="noopener">Continuer vers le paiement</a></main></body></html>`);
+  });
 
   /* --------------------------------------------------------- retour paiement */
 

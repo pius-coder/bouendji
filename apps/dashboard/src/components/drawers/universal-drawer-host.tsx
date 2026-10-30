@@ -119,7 +119,16 @@ export async function UniversalDrawerHost({
         return {
           title: detail.name || detail.phone || detail.email,
           subtitle: `Abonné · ${shortId(detail.id)}`,
-          body: <SubscriberSheetBody detail={detail} offlineBundles={userBundles} />,
+          body: (
+            <SubscriberSheetBody
+              detail={detail}
+              offlineBundles={userBundles}
+              caps={{
+                coupons: can(me, "coupons.issue", detail.communityId ?? communityId ?? null),
+                grants: can(me, "manual_grants.manage", detail.communityId ?? communityId ?? null),
+              }}
+            />
+          ),
         };
       } catch {
         return {

@@ -31,6 +31,18 @@ export const STATUS: Record<string, { label: string; tone: StatusTone }> = {
   expired: { label: "Expiré", tone: "neutral" },
   available: { label: "Disponible", tone: "info" },
   reversed: { label: "Annulée", tone: "neutral" },
+  // 104 : coupons de réduction (préfixés : `revoked`/`expired` ont déjà un autre sens).
+  coupon_issued: { label: "Émis", tone: "info" },
+  coupon_redeemed: { label: "Utilisé", tone: "success" },
+  coupon_revoked: { label: "Annulé", tone: "neutral" },
+  coupon_expired: { label: "Expiré", tone: "neutral" },
+  // 105 : accès manuels (préfixés : `paid`/`pending` ont déjà un sens « commande »).
+  grant_owed: { label: "À régulariser", tone: "warning" },
+  grant_settled: { label: "Réglé", tone: "success" },
+  settlement_pending: { label: "Lien envoyé", tone: "warning" },
+  settlement_paid: { label: "Versé", tone: "success" },
+  settlement_failed: { label: "Échoué", tone: "danger" },
+  settlement_needs_review: { label: "À vérifier", tone: "danger" },
 };
 
 const PILL: Record<StatusTone, string> = {

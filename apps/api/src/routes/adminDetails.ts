@@ -476,7 +476,9 @@ export function registerAdminDetailRoutes(app: FastifyInstance, db: Database): v
               COUNT(*) FILTER (WHERE ${sameMonth})                              AS month_count,
               COALESCE(SUM(o.amount_xaf) FILTER (WHERE ${sameMonth}), 0)        AS month_amount
          FROM orders o
-        WHERE o.community_id = $1 AND o.status = 'paid' AND o.paid_at IS NOT NULL`,
+        WHERE o.community_id = $1 AND o.status = 'paid' AND o.paid_at IS NOT NULL
+          -- 104 : un coupon utilisé (commande à 0 XAF) n'est pas une vente.
+          AND o.provider <> 'coupon'`,
       [communityId],
     );
 

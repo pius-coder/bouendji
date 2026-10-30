@@ -7,6 +7,9 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { EntityLink } from "@/components/drawers/entity-link";
 import { OfflineStatusBadge } from "@/components/offline/offline-status-badge";
 import { offlineFileStatus, shortId } from "@/components/offline/offline-status";
+import { SubscriberManualGrant } from "@/components/manual-grants/subscriber-manual-grant";
+import { SubscriberCoupons } from "@/components/subscribers/subscriber-coupons";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatBytes, formatDateTime, formatXaf, NO_VALUE } from "@/lib/format";
 import type { OfflineBundleState } from "@/server/services/devices/devices.schema";
@@ -16,15 +19,23 @@ import type { SubscriberDetail } from "@/server/services/subscribers/subscribers
  * Contenu de la fiche abonné (`?abonne=id`) chargée via `GET /v1/admin/users/:userId`.
  * Onglets : Résumé · Appareils · Commandes · Secours.
  * Chaque appareil ou commande est cliquable et ouvre directement son propre tiroir.
+ * « Gérer » (104) ouvre la génération de coupon de réduction pour cet abonné.
+ * « Accorder un forfait » (105) enregistre un forfait payé en direct à l'administrateur.
  */
 export function SubscriberSheetBody({
   detail,
   offlineBundles = [],
+  caps = { coupons: false },
 }: {
   detail: SubscriberDetail;
   offlineBundles?: readonly OfflineBundleState[];
+  caps?: { coupons: boolean; grants?: boolean };
 }) {
   const { subscription, usage, devices, recentOrders } = detail;
+  const [manageOpen, setManageOpen] = React.useState(false);
+  const [grantOpen, setGrantOpen] = React.useState(false);
+  const canManage = caps.coupons && !detail.deleted;
+  const canGrant = caps.grants === true && !detail.deleted;
   const state = detail.deleted ? "deleted" : detail.emailVerified ? "verified" : "unverified";
   const bytesUsed = usage ? usage.bytesUp + usage.bytesDown : 0;
 
@@ -35,10 +46,57 @@ export function SubscriberSheetBody({
           <StatusBadge status={state} />
           {subscription ? <StatusBadge status={subscription.status} /> : null}
         </div>
-        <span className="text-footnote text-muted-foreground">
-          Inscrit le {formatDateTime(detail.createdAt)}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-footnote text-muted-foreground">
+            Inscrit le {formatDateTime(detail.createdAt)}
+          </span>
+          {canManage ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-expanded={manageOpen}
+              onClick={() => setManageOpen((v) => !v)}
+            >
+              <Icon name="pen" className="size-4" />
+              Gérer
+            </Button>
+          ) : null}
+          {canGrant ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-expanded={grantOpen}
+              onClick={() => setGrantOpen((v) => !v)}
+            >
+              <Icon name="wallet" className="size-4" />
+              Accorder un forfait
+            </Button>
+          ) : null}
+        </div>
       </div>
+
+      {canGrant && grantOpen ? (
+        <div className="rounded-section border border-separator bg-muted/40 p-4">
+          <h4 className="mb-1 text-subhead font-semibold text-foreground">Accorder un forfait</h4>
+          <p className="mb-3 text-footnote text-muted-foreground">
+            L&apos;abonné vous a payé en direct (Orange Money, MTN ou autre). L&apos;accès est immédiat ; le prix du forfait est dû
+            à la plateforme jusqu&apos;à votre versement.
+          </p>
+          <SubscriberManualGrant userId={detail.id} communityId={detail.communityId ?? null} />
+        </div>
+      ) : null}
+
+      {canManage && manageOpen ? (
+        <div className="rounded-section border border-separator bg-muted/40 p-4">
+          <h4 className="mb-1 text-subhead font-semibold text-foreground">Coupon de réduction</h4>
+          <p className="mb-3 text-footnote text-muted-foreground">
+            Accès illimité offert pour la durée du type choisi. À usage unique, lié à ce compte.
+          </p>
+          <SubscriberCoupons userId={detail.id} />
+        </div>
+      ) : null}
 
       {subscription ? (
         <div className="rounded-section border border-separator bg-muted/40 p-3.5">

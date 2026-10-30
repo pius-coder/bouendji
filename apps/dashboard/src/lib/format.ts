@@ -21,6 +21,19 @@ export function formatTime(date: Date): string {
   return `${TIME.format(date)} UTC`;
 }
 
+/** Durée en minutes -> « 30 min », « 1 h », « 1 h 30 », « 2 j », « 1 j 2 h ». */
+export function formatDurationMinutes(minutes: number): string {
+  if (!Number.isFinite(minutes) || minutes <= 0) return NO_VALUE;
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const rest = minutes % 60;
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days} j`);
+  if (hours > 0) parts.push(`${hours} h`);
+  if (rest > 0) parts.push(days === 0 && hours > 0 ? String(rest).padStart(2, "0") : `${rest} min`);
+  return parts.join(" ");
+}
+
 /** Points de base -> pourcentage lisible (250 -> "2,5 %"). */
 export function formatBps(bps: number): string {
   return `${(bps / 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} %`;

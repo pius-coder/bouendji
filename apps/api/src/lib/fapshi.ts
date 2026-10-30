@@ -9,6 +9,8 @@ export interface CreatePaymentInput {
   userId: string;
   appName: string;
   redirectUrl: string;
+  /** 105 : libellé affiché chez Fapshi. Absent : `<app> — abonnement` (commandes, inchangé). */
+  message?: string;
 }
 
 export interface CreatePaymentResult {
@@ -103,7 +105,7 @@ class FapshiProvider implements PaymentProvider {
         userId: input.userId,
         externalId: input.orderId,
         redirectUrl: input.redirectUrl,
-        message: `${input.appName} — abonnement`,
+        message: input.message ?? `${input.appName} — abonnement`,
       }),
     });
     const link = body.link ?? body.paymentUrl;

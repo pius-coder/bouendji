@@ -363,7 +363,8 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
               code: str("Code stable."),
               name: str("Nom."),
               priceXaf: int("Prix en XAF."),
-              durationDays: int("Durée en jours."),
+              durationDays: int("Durée en jours (arrondie au jour supérieur pour un forfait à la minute)."),
+              durationMinutes: int("Durée réelle en minutes (103)."),
               deviceLimit: int("Appareils inclus."),
               revision: int("Révision à renvoyer à la commande."),
             }),
@@ -791,7 +792,7 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
     tags: ["administration"],
     security: ADMIN_SECURITY,
     params: PARAM_APP_ID,
-    response: withErrors({ 200: jsonResponse("Forfaits.", { properties: { items: arrayOf(shape({ id: str("Forfait."), code: str("Code."), priceXaf: int("Prix."), durationDays: int("Durée."), active: { type: "boolean" } }), "Forfaits.") } }) }),
+    response: withErrors({ 200: jsonResponse("Forfaits.", { properties: { items: arrayOf(shape({ id: str("Forfait."), code: str("Code."), priceXaf: int("Prix."), durationDays: int("Durée."), durationMinutes: int("Durée en minutes."), active: { type: "boolean" } }), "Forfaits.") } }) }),
   },
 
   "POST /v1/admin/apps/:appId/plans": {
@@ -803,13 +804,15 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
     body: {
       type: "object",
       additionalProperties: false,
-      required: ["code", "name", "priceXaf", "durationDays"],
+      // 103 : exactement un de `durationDays` / `durationMinutes` (contrôlé par la route).
+      required: ["code", "name", "priceXaf"],
       properties: {
         code: str("Code stable, minuscules et tirets.", { example: "1-jour" }),
         name: str("Nom.", { example: "1 jour" }),
         description: str("Description."),
         priceXaf: int("Prix en XAF.", { example: 300, minimum: 1 }),
         durationDays: int("Durée en jours.", { example: 1, minimum: 1 }),
+        durationMinutes: int("Durée en minutes (1 h = 60), à la place de durationDays.", { example: 60, minimum: 1, maximum: 525600 }),
         deviceLimit: int("Appareils inclus.", { minimum: 1, maximum: 10 }),
         badge: str("Badge affiché."),
         featured: { type: "boolean" },
@@ -826,7 +829,7 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
     tags: ["administration"],
     security: ADMIN_SECURITY,
     params: { type: "object", required: ["planId"], properties: { planId: str("Forfait.") } },
-    body: { type: "object", additionalProperties: false, properties: { name: str("Nom."), priceXaf: int("Prix."), durationDays: int("Durée."), deviceLimit: int("Appareils."), badge: str("Badge."), featured: { type: "boolean" }, active: { type: "boolean" }, sortOrder: int("Ordre.") } },
+    body: { type: "object", additionalProperties: false, properties: { name: str("Nom."), priceXaf: int("Prix."), durationDays: int("Durée."), durationMinutes: int("Durée en minutes."), deviceLimit: int("Appareils."), badge: str("Badge."), featured: { type: "boolean" }, active: { type: "boolean" }, sortOrder: int("Ordre.") } },
     response: withErrors({ 200: jsonResponse("Forfait mis à jour.", { properties: { id: str("Forfait."), revision: int("Nouvelle révision.") } }) }),
   },
 
@@ -1256,6 +1259,7 @@ const R6_ROUTE_DOCS: Record<string, RouteDoc> = {
               name: str("Nom."),
               priceXaf: int("Prix du forfait, hors plage de nuit."),
               durationDays: int("Durée."),
+              durationMinutes: int("Durée réelle en minutes."),
               deviceLimit: int("Appareils."),
               endpointTier: str("`free-labs` (illimité) ou `paid-gcp` (limité)."),
               family: str("`limited` ou `limited_night`."),

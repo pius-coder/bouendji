@@ -14,7 +14,7 @@ import type { FastifyInstance } from "fastify";
 import type { Database, Row } from "../db.js";
 import { fail } from "../lib/errors.js";
 import { planRevision } from "../services/payments.js";
-import { activeNightOptions, planTermsDto, planTermsSql } from "../services/planTerms.js";
+import { activeNightOptions, planDurationMinutes, planTermsDto, planTermsSql } from "../services/planTerms.js";
 import {
   assertChoiceAllowed,
   customChoiceSchema,
@@ -88,7 +88,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: Database): void 
     if (!appRow) throw fail.notFound("Application introuvable.");
 
     const rows = await db.query<Row>(
-      `SELECT p.id, p.app_id, p.code, p.name, p.description, p.price_xaf, p.duration_days, p.device_limit,
+      `SELECT p.id, p.app_id, p.code, p.name, p.description, p.price_xaf, p.duration_days, p.duration_minutes, p.device_limit,
               p.badge, p.featured, p.sort_order, p.active, p.endpoint_tier,
               ${planTermsSql("p")}
          FROM plans p
@@ -138,6 +138,8 @@ export function registerCatalogRoutes(app: FastifyInstance, db: Database): void 
           description: row.description as string,
           priceXaf: Number(row.price_xaf),
           durationDays: Number(row.duration_days),
+          /** 103 : durée réelle en minutes (`durationDays × 1440` pour un forfait en jours). */
+          durationMinutes: planDurationMinutes(row),
           deviceLimit: Number(row.device_limit),
           badge: (row.badge as string | null) ?? null,
           featured: row.featured === true,
@@ -156,6 +158,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: Database): void 
             code: row.code as string,
             price_xaf: Number(row.price_xaf),
             duration_days: Number(row.duration_days),
+            duration_minutes: (row.duration_minutes as number | null | undefined) ?? null,
             device_limit: Number(row.device_limit),
             active: row.active === true,
             family: terms.family,

@@ -24,11 +24,11 @@
  */
 import type { Database, Queryable, Row } from "../db.js";
 import { env } from "../config.js";
-import { addDays, addMinutes, newId, sha256Hex } from "../lib/crypto.js";
+import { addMinutes, newId, sha256Hex } from "../lib/crypto.js";
 import { ApiFailure, fail } from "../lib/errors.js";
 import { payments as defaultProvider, type PaymentProvider, type ProviderPaymentStatus } from "../lib/fapshi.js";
 import { commissionCapBps, loadPricingSettings, type NightWindow } from "./pricing.js";
-import { activeNightOptions, planTermsSql } from "./planTerms.js";
+import { activeNightOptions, MINUTES_PER_DAY, planDurationMinutes, planTermsSql } from "./planTerms.js";
 import {
   assertChoiceAllowed,
   customPriceXaf,
@@ -58,6 +58,8 @@ export interface PlanRow {
   description: string;
   price_xaf: number;
   duration_days: number;
+  /** 103 : durée réelle en minutes, NULL = `duration_days × 1440`. */
+  duration_minutes?: number | null;
   device_limit: number;
   active: boolean;
   community_id: string;
@@ -106,6 +108,9 @@ export interface OrderRow {
   quota_bytes: number | string | null;
   /* D127 : durée choisie (offre sur mesure), NULL ailleurs */
   order_duration_days: number | null;
+  /** 103 : durée figée à l'achat en minutes (NULL = durée du forfait). */
+  order_duration_minutes?: number | null;
+  plan_duration_minutes?: number | null;
 }
 
 export interface OrderDto {
@@ -191,6 +196,8 @@ export interface PlanTermsRow {
   code: string;
   price_xaf: number | string;
   duration_days: number | string;
+  /** 103 : présente seulement pour un forfait à la minute. */
+  duration_minutes?: number | string | null;
   device_limit: number | string;
   active: boolean;
   family?: string | null;
@@ -227,6 +234,11 @@ export function planRevision(plan: PlanTermsRow): number {
   // existants ne change pas (les apps déjà installées la comparent).
   const custom = customRevisionMaterial(customTermsFromJson(plan.custom_terms));
   if (custom) material.push(custom);
+  // 103 : idem pour la durée en minutes, ajoutée seulement quand elle est
+  // renseignée ; un forfait en jours garde exactement sa révision.
+  if (plan.duration_minutes !== null && plan.duration_minutes !== undefined) {
+    material.push(`m:${Number(plan.duration_minutes)}`);
+  }
   const joined = material.join("|");
   let hash = 0x811c9dc5;
   for (let i = 0; i < joined.length; i += 1) {
@@ -283,6 +295,7 @@ export function toOrderDto(order: OrderRow): OrderDto {
       code: order.plan_code,
       price_xaf: order.plan_price,
       duration_days: order.duration_days,
+      duration_minutes: order.plan_duration_minutes ?? null,
       device_limit: order.device_limit,
       active: order.plan_active,
       family: order.plan_family,
@@ -311,7 +324,9 @@ export function toOrderDto(order: OrderRow): OrderDto {
   // Après `paid`, l'absence de `checkout` est ce qui empêche l'app de
   // réafficher un bouton « Repayer ».
   if ((status === "created" || status === "pending") && order.payment_url && expiresAt) {
-    dto.checkout = { url: order.payment_url, expiresAt };
+    // Avec un avis (PAYMENT_NOTICE), l'app ouvre d'abord la page d'avis, qui renvoie vers le vrai paiement.
+    const url = env.paymentNotice ? `${env.publicBaseUrl}/pay/notice/${order.id}` : order.payment_url;
+    dto.checkout = { url, expiresAt };
   }
   if (order.failure_reason && status !== "paid") {
     dto.failureCode = failureCodeOf(order.failure_reason);
@@ -337,6 +352,7 @@ export const ORDER_SELECT = /* sql */ `
          o.status, o.provider, o.provider_ref, o.payment_url, o.commission_bps, o.commission_xaf,
          o.utm, o.failure_reason, o.created_at, o.paid_at, o.activated_at, o.expires_at,
          o.night_window, o.quota_bytes, o.duration_days AS order_duration_days,
+         o.duration_minutes AS order_duration_minutes, p.duration_minutes AS plan_duration_minutes,
          p.code AS plan_code, p.name AS plan_name, p.duration_days, p.device_limit,
          p.price_xaf AS plan_price, p.active AS plan_active,
          ${planTermsSql("p", "plan_")}
@@ -372,7 +388,7 @@ export async function createOrder(
   if (!user || user.deleted_at) throw fail.unauthenticated("Compte indisponible.");
 
   const plan = await db.one<PlanRow>(
-    `SELECT p.id, p.app_id, p.code, p.name, p.description, p.price_xaf, p.duration_days,
+    `SELECT p.id, p.app_id, p.code, p.name, p.description, p.price_xaf, p.duration_days, p.duration_minutes,
             p.device_limit, p.active, a.community_id, c.commission_bps,
             ${planTermsSql("p")}
        FROM plans p
@@ -435,6 +451,9 @@ export async function createOrder(
         ? null
         : Number(plan.quota_bytes);
   const durationDays = customTerms && choice ? choice.days : null;
+  // 103 : la durée en minutes est figée à l'achat (NULL pour un forfait en jours).
+  const durationMinutes =
+    customTerms && choice ? null : plan.duration_minutes === null || plan.duration_minutes === undefined ? null : Number(plan.duration_minutes);
   // Total calculé côté serveur : prix du forfait + prix de la plage.
   const amount = basePrice + (option?.priceXaf ?? 0);
 
@@ -449,8 +468,8 @@ export async function createOrder(
   await db.query(
     `INSERT INTO orders (id, user_id, app_id, plan_id, community_id, amount_xaf, currency, status,
                          provider, commission_bps, commission_xaf, utm, created_at, expires_at,
-                         night_window, quota_bytes, duration_days)
-     VALUES ($1, $2, $3, $4, $5, $6, 'XAF', 'pending', $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15)`,
+                         night_window, quota_bytes, duration_days, duration_minutes)
+     VALUES ($1, $2, $3, $4, $5, $6, 'XAF', 'pending', $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16)`,
     [
       orderId,
       user.id,
@@ -469,6 +488,7 @@ export async function createOrder(
       nightWindow,
       quotaBytes,
       durationDays,
+      durationMinutes,
     ],
   );
 
@@ -561,35 +581,15 @@ export async function activateOrder(db: Database, orderId: string): Promise<bool
       return false;
     }
 
-    // Renouvellement : la nouvelle période s'empile après l'abonnement actif
-    // plutôt que d'écraser les jours déjà payés.
-    const current = await q.one<Row>(
-      `SELECT ends_at FROM subscriptions
-        WHERE user_id = $1 AND status = 'active' AND ends_at > now()
-        ORDER BY ends_at DESC LIMIT 1`,
-      [order.user_id],
-    );
-
-    const now = new Date();
-    const startsAt = current?.ends_at ? new Date(current.ends_at as string | Date) : now;
-    const from = startsAt.getTime() > now.getTime() ? startsAt : now;
-    const endsAt = addDays(from, Number(order.order_duration_days ?? order.duration_days));
-
     // Quota et plage copiés depuis la commande (figés à l'achat, R6).
-    await q.query(
-      `INSERT INTO subscriptions (id, user_id, plan_id, order_id, status, starts_at, ends_at, quota_bytes, night_window)
-       VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8)`,
-      [
-        newId(),
-        order.user_id,
-        order.plan_id,
-        orderId,
-        from,
-        endsAt,
-        order.quota_bytes === null || order.quota_bytes === undefined ? null : Number(order.quota_bytes),
-        order.night_window,
-      ],
-    );
+    await insertSubscriptionPeriod(q, {
+      userId: order.user_id,
+      planId: order.plan_id,
+      orderId,
+      minutes: orderDurationMinutes(order),
+      quotaBytes: order.quota_bytes === null || order.quota_bytes === undefined ? null : Number(order.quota_bytes),
+      nightWindow: order.night_window,
+    });
     await q.query("UPDATE orders SET activated_at = now() WHERE id = $1 AND activated_at IS NULL", [orderId]);
 
     // Commission calculée depuis la commande (taux figé à l'achat et déjà
@@ -856,4 +856,56 @@ export async function refundOrder(
 /** Empreinte stable d'un corps de webhook, sans jamais journaliser le corps. */
 export function payloadHash(raw: string): string {
   return sha256Hex(raw);
+}
+
+/**
+ * Écrit la période d'un abonnement. Renouvellement : la nouvelle période
+ * s'empile après l'abonnement actif le plus tardif du compte plutôt que
+ * d'écraser le temps déjà acquis ; sinon elle commence maintenant.
+ *
+ * Seule source de cette règle de dates : l'activation d'une commande
+ * (`activateOrder`) et l'utilisation d'un coupon (104, `services/coupons.ts`)
+ * l'appellent toutes deux, dans leur propre transaction.
+ */
+export async function insertSubscriptionPeriod(
+  q: Queryable,
+  input: {
+    userId: string;
+    planId: string;
+    orderId: string;
+    minutes: number;
+    quotaBytes: number | null;
+    nightWindow: string | null;
+  },
+): Promise<{ subscriptionId: string; startsAt: Date; endsAt: Date }> {
+  const current = await q.one<Row>(
+    `SELECT ends_at FROM subscriptions
+      WHERE user_id = $1 AND status = 'active' AND ends_at > now()
+      ORDER BY ends_at DESC LIMIT 1`,
+    [input.userId],
+  );
+
+  const now = new Date();
+  const startsAt = current?.ends_at ? new Date(current.ends_at as string | Date) : now;
+  const from = startsAt.getTime() > now.getTime() ? startsAt : now;
+  const endsAt = addMinutes(from, input.minutes);
+  const subscriptionId = newId();
+
+  await q.query(
+    `INSERT INTO subscriptions (id, user_id, plan_id, order_id, status, starts_at, ends_at, quota_bytes, night_window)
+     VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8)`,
+    [subscriptionId, input.userId, input.planId, input.orderId, from, endsAt, input.quotaBytes, input.nightWindow],
+  );
+  return { subscriptionId, startsAt: from, endsAt };
+}
+
+/**
+ * 103 : durée réelle d'une commande en minutes. Ordre : minutes figées à
+ * l'achat, jours figés à l'achat (offre sur mesure, D127), puis durée du
+ * forfait (`duration_minutes`, sinon `duration_days × 1440`).
+ */
+export function orderDurationMinutes(order: Pick<OrderRow, "order_duration_minutes" | "order_duration_days" | "plan_duration_minutes" | "duration_days">): number {
+  if (order.order_duration_minutes !== null && order.order_duration_minutes !== undefined) return Number(order.order_duration_minutes);
+  if (order.order_duration_days !== null && order.order_duration_days !== undefined) return Number(order.order_duration_days) * MINUTES_PER_DAY;
+  return planDurationMinutes({ duration_minutes: order.plan_duration_minutes, duration_days: order.duration_days });
 }

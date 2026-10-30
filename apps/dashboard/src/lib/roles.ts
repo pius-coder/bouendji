@@ -49,7 +49,13 @@ export type Capability =
   | "pricing.manage"
   | "xui.manage"
   | "presence.read"
-  | "audit.read";
+  | "audit.read"
+  /** 104 : types de coupon, owner seul. */
+  | "coupons.types"
+  /** 104 : générer / annuler un coupon pour un abonné (API `coupon.issue`). */
+  | "coupons.issue"
+  /** 105 : accorder un forfait payé en direct, impayés, versement (API `manual_grant.manage`). */
+  | "manual_grants.manage";
 
 /** Ce qu'il faut pour décider : le contexte admin, `platformRoles` quand l'API le fournit. */
 export type RoleSource = Pick<AdminMe, "platformRole" | "memberships"> & { platformRoles?: readonly string[] };
@@ -98,6 +104,7 @@ export function can(me: RoleSource, capability: Capability, communityId: string 
     case "build.approve":
     case "presence.read":
     case "community.manage":
+    case "coupons.types":
       // Owner seul (le court-circuit ci-dessus le couvre ; ici, rien d'autre).
       return false;
     case "onboarding.self":
@@ -150,6 +157,12 @@ export function can(me: RoleSource, capability: Capability, communityId: string 
     case "network.write":
       return false;
     case "audit.read":
+      return local === "community_admin";
+    case "coupons.issue":
+      // coupon.issue : owner ou community_admin de la communauté de l'abonné.
+      return local === "community_admin";
+    case "manual_grants.manage":
+      // manual_grant.manage : owner ou community_admin de la communauté (sa dette envers la plateforme).
       return local === "community_admin";
   }
 }

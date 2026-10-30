@@ -64,6 +64,8 @@ export const env = {
   refreshTokenTtlDays: int(process.env.REFRESH_TOKEN_TTL_DAYS, 45),
   allowedOrigins: (process.env.ALLOWED_ORIGINS ?? "http://localhost:5173,http://localhost:8080").split(","),
   paymentProvider: (process.env.PAYMENT_PROVIDER ?? "mock") as "mock" | "fapshi",
+  /** Avis affiché avant la redirection vers le paiement (ex. Orange Money indisponible). Vide = aucun avis. */
+  paymentNotice: (process.env.PAYMENT_NOTICE ?? "").trim(),
   fapshi: {
     baseUrl: process.env.FAPSHI_BASE_URL ?? "https://live.fapshi.com",
     apiUser: process.env.FAPSHI_API_USER ?? "",

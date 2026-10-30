@@ -106,6 +106,8 @@ export function buildNav(me: RoleSource, communityId: string | null): NavModel {
     [
       can(me, "payouts.read", null) ? { href: "/payouts", label: "Versements", icon: "wallet" as const } : null,
       inCommunity && can(me, "money.read", communityId) ? { href: scoped("commissions"), label: "Commissions", icon: "receipt" as const } : null,
+      // 105 : accès accordés à la main, dus à la plateforme jusqu'au versement.
+      inCommunity && can(me, "manual_grants.manage", communityId) ? { href: scoped("manual-grants"), label: "Impayés", icon: "wallet" as const } : null,
     ],
   );
 
@@ -124,6 +126,7 @@ export function buildNav(me: RoleSource, communityId: string | null): NavModel {
           { href: "/communities", label: "Communautés", icon: "building" as const },
           { href: "/admins", label: "Administrateurs", icon: "shield" as const },
           { href: "/pricing", label: "Tarifs et marges", icon: "tag" as const },
+          { href: "/coupons", label: "Types de coupon", icon: "tag" as const },
         ]
       : [],
   );

@@ -8,7 +8,9 @@ import { AdminsService } from "./admins/admins.service";
 import { AuditService } from "./audit/audit.service";
 import { BuildsService } from "./builds/builds.service";
 import { CommunitiesService } from "./communities/communities.service";
+import { CouponsService } from "./coupons/coupons.service";
 import { DevicesService } from "./devices/devices.service";
+import { ManualGrantsService } from "./manual-grants/manual-grants.service";
 import { NetworkService } from "./network/network.service";
 import { OnboardingService } from "./onboarding/onboarding.service";
 import { OrdersService } from "./orders/orders.service";
@@ -33,6 +35,8 @@ export function createServices(deps: BaseServiceDeps) {
     builds: new BuildsService(deps),
     pricing: new PricingService(deps),
     onboarding: new OnboardingService(deps),
+    coupons: new CouponsService(deps),
+    manualGrants: new ManualGrantsService(deps),
   };
 }
 
