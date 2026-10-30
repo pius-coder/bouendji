@@ -478,6 +478,7 @@ test("GET builds — liste de la marque, jamais de spec", async () => {
     assert.deepEqual(Object.keys(item).sort(), [
       "apkUrl",
       "createdAt",
+      "downloadPageUrl",
       "id",
       "rejectReason",
       "sha256",
@@ -486,6 +487,11 @@ test("GET builds — liste de la marque, jamais de spec", async () => {
       "versionCode",
       "versionName",
     ]);
+    assert.equal(
+      item.downloadPageUrl,
+      "https://communaute-builds-a.cleanforceplus.online",
+      "le lien partagé est la page Cloudflare, pas l'APK",
+    );
   }
   assert.equal(list.text.includes("apiBaseUrl"), false);
   assert.equal(list.text.includes("offlineBundleSigningKeyB64"), false);

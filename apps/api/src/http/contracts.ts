@@ -623,7 +623,7 @@ export const ROUTE_DOCS: Record<string, RouteDoc> = {
     tags: ["administration"],
     security: ADMIN_SECURITY,
     params: PARAM_APP_ID,
-    response: withErrors({ 200: jsonResponse("Builds.", { properties: { items: arrayOf(shape({ id: str("Build."), status: str("Statut."), versionCode: int("Version."), sha256: str("Empreinte."), apkUrl: str("Lien de l'APK.") }), "Builds.") } }) }),
+    response: withErrors({ 200: jsonResponse("Builds.", { properties: { items: arrayOf(shape({ id: str("Build."), status: str("Statut."), versionCode: int("Version."), sha256: str("Empreinte."), apkUrl: str("Lien de l'APK."), downloadPageUrl: str("Page de téléchargement publique (Cloudflare), lien à partager.") }), "Builds.") } }) }),
   },
 
   "POST /v1/internal/builds/:id/callback": {

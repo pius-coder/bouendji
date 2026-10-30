@@ -94,6 +94,17 @@ export const env = {
     callbackSecret: process.env.BUILD_CALLBACK_SECRET ?? "",
   },
   /**
+   * Pages de téléchargement publiques (Worker `cleanforce-plus`).
+   *
+   * Le domaine porte le slug de la communauté en sous-domaine :
+   * `https://<slug>.cleanforceplus.online`. Le lien partagé aux clients est
+   * cette page, jamais l'URL brute de l'APK sur R2 : une nouvelle version
+   * publiée apparaît sans réécrire le lien.
+   */
+  downloadPages: {
+    domain: process.env.DOWNLOAD_PAGES_DOMAIN ?? "cleanforceplus.online",
+  },
+  /**
    * Clé d'accès de la console (D54). Elle protège les données et l'inscription,
    * pas les octets d'un export statique. Vide = dev uniquement : le garde-fou
    * de production ci-dessous refuse de démarrer sans elle.

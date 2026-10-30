@@ -39,6 +39,7 @@ import { requireAdmin, roleInCommunity, type AdminContext } from "../lib/auth.js
 import { apiOrigin, buildBrandSpec, MAX_VERSION_CODE, type BrandManifest } from "../lib/brand.js";
 import { newId } from "../lib/crypto.js";
 import { ApiFailure, fail } from "../lib/errors.js";
+import { downloadPageUrl } from "../services/downloadPages.js";
 import { escapeHtml, notifyRecipients } from "../services/telegram.js";
 
 const PREFIX = "/v1/admin";
@@ -223,7 +224,7 @@ async function communityOf(q: Queryable, appRow: Row): Promise<Row | null> {
  * Projection de la file. `spec` n'est **pas** sélectionné en base : la seule
  * façon fiable de ne pas le fuiter est de ne pas le lire.
  */
-function buildDto(row: Row) {
+function buildDto(row: Row, pageUrl: string | null = null) {
   return {
     id: String(row.id),
     status: String(row.status),
@@ -231,6 +232,11 @@ function buildDto(row: Row) {
     versionName: (row.version_name as string | null) ?? null,
     sha256: (row.sha256 as string | null) ?? null,
     apkUrl: (row.apk_url as string | null) ?? null,
+    /**
+     * Lien à partager aux clients : la page Cloudflare de la marque, pas le
+     * fichier sur R2. `null` quand la communauté n'a pas de slug publiable.
+     */
+    downloadPageUrl: pageUrl,
     rejectReason: (row.reject_reason as string | null) ?? null,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
@@ -393,7 +399,14 @@ export function registerBuildRoutes(app: FastifyInstance, db: Database): void {
         LIMIT 100`,
       [appRow.id],
     );
-    return { items: rows.map(buildDto) };
+    // Le lien public est calculé depuis le slug de la communauté : une seule
+    // source, et le dashboard n'a jamais à reconstruire l'URL lui-même.
+    const community = await db.one<{ slug: string }>(
+      "SELECT slug FROM communities WHERE id = $1",
+      [appRow.community_id],
+    );
+    const pageUrl = downloadPageUrl(community?.slug);
+    return { items: rows.map((row) => buildDto(row, pageUrl)) };
   });
 
   /* ------------------------------------ valider une demande (owner, dispatch) */
