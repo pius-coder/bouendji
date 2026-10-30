@@ -107,6 +107,23 @@ fun planDurationLabel(plan: ApiClient.PlanDto): String {
     }
 }
 
+/** 104 : durée d'un coupon (« 1 h », « 2 h », « 30 min », « 1 h 30 », au-delà d'un jour en jours). */
+fun minutesLabel(minutes: Int): String {
+    if (minutes <= 0) return "—"
+    if (minutes >= 1440 && minutes % 1440 == 0) return durationLabel(minutes / 1440)
+    val h = minutes / 60
+    val m = minutes % 60
+    return when {
+        h == 0 -> "$m min"
+        m == 0 -> "$h h"
+        else -> "$h h ${m.toString().padStart(2, '0')}"
+    }
+}
+
+/** Saisie du code : majuscules, alphabet du serveur (sans 0/O ni 1/I/L), tirets tolérés. */
+private fun couponInput(raw: String): String =
+    raw.uppercase().filter { it in "ABCDEFGHJKMNPQRSTUVWXYZ23456789-" }.take(20)
+
 private fun planSummary(plan: ApiClient.PlanDto) =
     "${planDurationLabel(plan)} · ${plan.deviceLimit} appareil${if (plan.deviceLimit > 1) "s" else ""}"
 
@@ -201,6 +218,9 @@ fun PlansScreen(ctx: ShellContext) {
                     }
                 }
 
+                // 104 : coupon de réduction émis par un administrateur pour ce compte.
+                CouponEntry(c)
+
                 GroupHeader("Inclus dans chaque forfait")
                 Group {
                     ListRow("Illimité de nuit en option", icon = Ic.Infinity, iconColor = t.accent, sub = "20 h-24 h, 24 h-4 h ou 20 h-4 h")
@@ -224,6 +244,43 @@ fun PlansScreen(ctx: ShellContext) {
             )
         }
     }
+}
+
+/**
+ * Entrée « Coupon de réduction » (104) : un champ, un bouton « Valider ». Le
+ * serveur vérifie tout (compte, usage unique, expiration, appareil) ; l'app
+ * n'affiche que sa réponse.
+ */
+@Composable
+private fun CouponEntry(c: AppController) {
+    val t = LocalTokens.current
+    GroupHeader("Coupon de réduction")
+    if (!c.signedIn) {
+        Group { ListRow("Me connecter pour utiliser un coupon", icon = Ic.Key, iconColor = t.accent, chevron = true, onClick = { c.go(Screen.AUTH) }) }
+        return
+    }
+    Group {
+        cm.bouendji.vpn.ui.kit.FormRow(
+            label = "Code",
+            value = c.couponCode,
+            onValue = { c.couponCode = couponInput(it) },
+            placeholder = "XXXX-XXXX-XXXX",
+            keyboard = androidx.compose.ui.text.input.KeyboardType.Ascii,
+            invalid = c.couponError != null,
+            mono = true,
+        )
+    }
+    Spacer(Modifier.height(10.dp))
+    Btn(
+        "Valider",
+        c::redeemCoupon,
+        Modifier.fillMaxWidth(),
+        kind = BtnKind.TINTED,
+        enabled = c.couponCode.isNotBlank(),
+        busy = c.couponBusy,
+    )
+    GroupFooter(c.couponError, danger = true)
+    GroupFooter(c.couponDone ?: "Code reçu d'un administrateur : une seule utilisation, sur ce compte et sur cet appareil.")
 }
 
 /**

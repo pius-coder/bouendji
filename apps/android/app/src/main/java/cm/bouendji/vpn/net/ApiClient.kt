@@ -311,6 +311,16 @@ class ApiClient(
         return decode(authed("POST", ApiPaths.ORDERS, body), "commande", OrderDto.serializer())
     }
 
+    /**
+     * 104 : coupon de réduction. Le serveur le lie au compte de la session et à
+     * l'appareil de la session (celui de l'enrôlement) : rien d'autre que le
+     * code ne part dans le corps.
+     */
+    suspend fun redeemCoupon(code: String): CouponRedeemResponse {
+        val body = json.encodeToString(CouponRedeemRequest.serializer(), CouponRedeemRequest(code = code))
+        return decode(authed("POST", ApiPaths.ME_COUPON_REDEEM, body), "coupon", CouponRedeemResponse.serializer())
+    }
+
     suspend fun order(orderId: String, refresh: Boolean = false): OrderDto {
         val path = ApiPaths.ORDERS + "/" + orderId + if (refresh) "?refresh=1" else ""
         return decode(authed("GET", path, null), "commande", OrderDto.serializer())
@@ -794,6 +804,18 @@ class ApiClient(
     )
 
     @Serializable
+    private data class CouponRedeemRequest(val code: String)
+
+    @Serializable
+    data class CouponRedeemedDto(val id: String, val label: String, val durationMinutes: Int)
+
+    @Serializable
+    data class CouponPeriodDto(val startsAt: String, val endsAt: String)
+
+    @Serializable
+    data class CouponRedeemResponse(val coupon: CouponRedeemedDto, val subscription: CouponPeriodDto)
+
+    @Serializable
     data class MoneyDto(val amount: Int, val currency: String = "XAF")
 
     @Serializable
@@ -956,5 +978,6 @@ object ApiPaths {
     const val ME_SUBSCRIPTION = "/v1/me/subscription"
     const val ME_DEVICES = "/v1/me/devices"
     const val ME_DEVICE_ACTIVATE = "/v1/me/devices/current/activate"
+    const val ME_COUPON_REDEEM = "/v1/me/coupons/redeem"
     const val BUNDLE = "/v1/configuration-bundles/current"
 }

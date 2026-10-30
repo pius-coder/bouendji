@@ -9,10 +9,12 @@ import cm.bouendji.vpn.BuildConfig
 import cm.bouendji.vpn.brand.BrandTokens
 import cm.bouendji.vpn.config.SingBoxConfig
 import cm.bouendji.vpn.net.ApiClient
+import cm.bouendji.vpn.net.ApiCodes
 import cm.bouendji.vpn.net.ApiException
 import cm.bouendji.vpn.net.BundleFetch
 import cm.bouendji.vpn.offline.ImportInbox
 import cm.bouendji.vpn.offline.OfflineBundle
+import cm.bouendji.vpn.ui.screens.minutesLabel
 import cm.bouendji.vpn.vpn.ProbeMethod
 import cm.bouendji.vpn.vpn.ProbeState
 import cm.bouendji.vpn.vpn.ServerBus
@@ -753,6 +755,53 @@ class AppController(
 
     fun reopenCheckout() {
         order?.checkout?.url?.let(platform::openUrl)
+    }
+
+    /* ------------------------------------------------------- coupon (104) */
+
+    /** Saisie du code, écran Forfaits. Jamais persistée. */
+    var couponCode by mutableStateOf("")
+    var couponBusy by mutableStateOf(false); private set
+    var couponError by mutableStateOf<String?>(null); private set
+    var couponDone by mutableStateOf<String?>(null); private set
+
+    fun redeemCoupon() {
+        if (couponBusy) return
+        if (!signedIn) { go(Screen.AUTH); return }
+        val code = couponCode.trim()
+        if (code.isEmpty()) { couponError = "Saisis le code reçu."; couponDone = null; return }
+        scope.launch {
+            couponBusy = true; couponError = null; couponDone = null
+            runCatching { withContext(Dispatchers.IO) { container.api.redeemCoupon(code) } }
+                .onSuccess { redeemed ->
+                    couponCode = ""
+                    couponDone = "Coupon validé : ${redeemed.coupon.label}, ${minutesLabel(redeemed.coupon.durationMinutes)} d'accès illimité."
+                    // Droits et configuration relus par le chemin habituel (bundle compris).
+                    withContext(Dispatchers.IO) { runCatching { refreshPrivate() } }
+                    showToast("Coupon validé.")
+                }
+                .onFailure { couponError = couponMessage(it) }
+            couponBusy = false
+        }
+    }
+
+    /** Raisons renvoyées par `POST /v1/me/coupons/redeem` (`details.reason`). */
+    fun couponMessage(error: Throwable): String {
+        if (error !is ApiException) return friendly(error)
+        return when (error.details["reason"]) {
+            "COUPON_INVALID" -> "Code invalide. Vérifie la saisie."
+            "COUPON_USED" -> "Ce code a déjà été utilisé."
+            "COUPON_EXPIRED" -> "Ce code a expiré. Demande un nouveau coupon."
+            "COUPON_REVOKED" -> "Ce code a été annulé."
+            "COUPON_DEVICE_USED" -> "Cet appareil a déjà utilisé un coupon."
+            "COUPON_ACTIVE" -> "Un coupon est déjà actif sur ton compte. Réessaie quand il sera terminé."
+            "PAID_PLAN_ACTIVE" -> "Tu as déjà un forfait actif ou prévu : le coupon n'est utilisable qu'une fois ton forfait terminé."
+            else -> when {
+                error.status == 429 -> "Trop d'essais. Réessaie dans quelques minutes."
+                error.code == ApiCodes.VALIDATION_FAILED -> "Code invalide. Vérifie la saisie."
+                else -> friendly(error)
+            }
+        }
     }
 
     /* ------------------------------------------------------------- appareils */
