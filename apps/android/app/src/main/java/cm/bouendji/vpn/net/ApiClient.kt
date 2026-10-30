@@ -726,6 +726,8 @@ class ApiClient(
         val description: String,
         val priceXaf: Int,
         val durationDays: Int,
+        /** 103 : durée réelle en minutes ; absente sur une API ancienne (alors `durationDays`). */
+        val durationMinutes: Int? = null,
         val deviceLimit: Int,
         val badge: String? = null,
         val featured: Boolean = false,

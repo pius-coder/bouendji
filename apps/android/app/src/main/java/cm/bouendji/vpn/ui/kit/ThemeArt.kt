@@ -185,7 +185,7 @@ private fun DrawScope.round(art: Art, kind: Guil, color: Color) {
                 drawLine(color, outer[i], inner[(i + 1) % 6], 1f * px)
             }
         }
-        Art.GUILLOCHE -> Unit
+        Art.GUILLOCHE, Art.LINE -> Unit
     }
 }
 
@@ -272,6 +272,11 @@ private fun DrawScope.fill(art: Art, color: Color) {
                 y += s
                 row++
             }
+        }
+        // Ligne (Solo) : le fil vertical, 3 dp, à 24 dp du bord gauche.
+        Art.LINE -> {
+            val x = 24f * d
+            drawLine(color, Offset(x, 0f), Offset(x, h), 3f * d)
         }
         Art.GUILLOCHE -> Unit
     }

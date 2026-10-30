@@ -91,8 +91,24 @@ fun durationLabel(days: Int): String = when {
     else -> "$days jours"
 }
 
+/**
+ * 103 : durée d'un forfait. Sous un jour, en heures ou minutes (« 1 h », « 2 h »,
+ * « 30 min », « 1 h 30 ») ; sinon l'affichage en jours habituel.
+ */
+fun planDurationLabel(plan: ApiClient.PlanDto): String {
+    val minutes = plan.durationMinutes
+    if (minutes == null || minutes <= 0 || minutes >= 1440) return durationLabel(plan.durationDays)
+    val h = minutes / 60
+    val m = minutes % 60
+    return when {
+        h == 0 -> "$m min"
+        m == 0 -> "$h h"
+        else -> "$h h ${m.toString().padStart(2, '0')}"
+    }
+}
+
 private fun planSummary(plan: ApiClient.PlanDto) =
-    "${durationLabel(plan.durationDays)} · ${plan.deviceLimit} appareil${if (plan.deviceLimit > 1) "s" else ""}"
+    "${planDurationLabel(plan)} · ${plan.deviceLimit} appareil${if (plan.deviceLimit > 1) "s" else ""}"
 
 /** Mot de la carte : celui de la marque, sinon son nom. */
 private val cardWord: String get() = BrandTokens.memberWord.ifBlank { BrandTokens.appName.uppercase() }
@@ -107,12 +123,14 @@ fun PlansScreen(ctx: ShellContext) {
     val c = ctx.c
     val t = LocalTokens.current
     val asTab = c.signedIn
+    val ligne = cm.bouendji.vpn.ui.IS_LIGNE
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            NavBar(backLabel = if (asTab) null else "Retour", onBack = if (asTab) null else ({ c.back() }))
-            ScreenColumn(cta = true, tabs = asTab) {
+            if (ligne) NavBar(backLabel = "Retour", onBack = { c.back() })
+            else NavBar(backLabel = if (asTab) null else "Retour", onBack = if (asTab) null else ({ c.back() }))
+            ScreenColumn(cta = true, tabs = asTab && !ligne) {
                 LargeTitle("Forfaits")
-                MemberCard(serial = serialOf(c.me?.user?.id))
+                if (!ligne) MemberCard(serial = serialOf(c.me?.user?.id))
 
                 // D45 : le type de serveurs se choisit à l'achat. Le sélecteur n'apparaît
                 // que si la marque vend les deux types.
@@ -128,7 +146,7 @@ fun PlansScreen(ctx: ShellContext) {
                 val unlimitedPlans = c.plans.filter { it.isUnlimited }
                 val customPlan = c.plans.firstOrNull { it.isCustom }
 
-                if (customPlan != null) {
+                if (customPlan != null && !ligne) {
                     GroupHeader("Compose ton forfait ou passe à l'illimité")
                     CustomBuilder(
                         c = c,
@@ -137,7 +155,7 @@ fun PlansScreen(ctx: ShellContext) {
                         selected = customPlan.id == c.selectedPlan?.id,
                         onSelect = { c.selectedPlanId = customPlan.id },
                     )
-                } else if (unlimitedPlans.isNotEmpty()) {
+                } else if (unlimitedPlans.isNotEmpty() && !ligne) {
                     GroupHeader("Forfaits illimités")
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         unlimitedPlans.forEach { plan ->
@@ -155,7 +173,29 @@ fun PlansScreen(ctx: ShellContext) {
                 if (c.plans.isEmpty()) {
                     Group { T(if (c.busy) "Chargement des forfaits…" else "Aucun forfait disponible pour le moment.", color = t.label2, size = 15.sp, modifier = Modifier.padding(16.dp, 30.dp)) }
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (ligne) {
+                    // Solo : liste verticale de rangées pleine largeur séparées par des filets (spec §3).
+                    val rows = classic + unlimitedPlans
+                    if (rows.isNotEmpty()) Group {
+                        rows.forEachIndexed { i, plan ->
+                            if (i > 0) Divider(16.dp)
+                            LigneRow(plan, selected = plan.id == c.selectedPlan?.id) { c.selectedPlanId = plan.id }
+                        }
+                    }
+                    // Choix personnalisé en dernière rangée dépliable.
+                    if (customPlan != null) {
+                        var open by rememberSaveable { androidx.compose.runtime.mutableStateOf(customPlan.id == c.selectedPlan?.id) }
+                        GroupHeader("Sur mesure")
+                        Group { ListRow("Composer mon forfait", icon = Ic.Infinity, iconColor = t.accent, chevron = true, onClick = { open = !open; if (open) c.selectedPlanId = customPlan.id }) }
+                        if (open) CustomBuilder(
+                            c = c,
+                            plan = customPlan,
+                            unlimitedPlans = emptyList(),
+                            selected = customPlan.id == c.selectedPlan?.id,
+                            onSelect = { c.selectedPlanId = customPlan.id },
+                        )
+                    }
+                } else Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     classic.forEach { plan ->
                         Bill(plan, selected = plan.id == c.selectedPlan?.id) { c.selectedPlanId = plan.id }
                     }
@@ -175,7 +215,7 @@ fun PlansScreen(ctx: ShellContext) {
                 GroupFooter(c.error, danger = true)
             }
         }
-        CtaBar(aboveTabs = asTab) {
+        CtaBar(aboveTabs = asTab && !ligne) {
             val plan = c.selectedPlan
             BlockBtn(
                 if (plan != null) "Continuer · ${fcfa(c.estimateXaf(plan))} FCFA" else "Continuer",
@@ -307,7 +347,7 @@ private fun UnlimitedCard(plan: ApiClient.PlanDto, selected: Boolean, onSelect: 
                     }
                 }
             }
-            T("${durationLabel(plan.durationDays)} · Data illimitée", size = 13.sp, color = t.label2)
+            T("${planDurationLabel(plan)} · Data illimitée", size = 13.sp, color = t.label2)
         }
         Column(horizontalAlignment = Alignment.End) {
             T(fcfa(plan.priceXaf), size = 20.sp, weight = FontWeight.Bold, family = Fonts.display, color = t.label)
@@ -460,6 +500,25 @@ private fun Bill(plan: ApiClient.PlanDto, selected: Boolean, onSelect: () -> Uni
             if (plan.description.isNotBlank()) T(plan.description, color = t.label3, size = 12.sp, maxLines = 2)
         }
         Box(Modifier.padding(end = 16.dp)) { RadioDot(selected) }
+    }
+}
+
+/** Solo : rangée plate, prix depuis l'API (`priceXaf`) en monospace, sans carte. */
+@Composable
+private fun LigneRow(plan: ApiClient.PlanDto, selected: Boolean, onSelect: () -> Unit) {
+    val t = LocalTokens.current
+    val num = cm.bouendji.vpn.ui.theme.numberFamily(cm.bouendji.vpn.ui.theme.LocalStyle.current)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(role = Role.RadioButton, onClick = onSelect).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        RadioDot(selected)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            T(plan.name, size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+            T(planSummary(plan), color = t.label2, size = 13.sp, maxLines = 2)
+        }
+        T(fcfa(plan.priceXaf) + " FCFA", size = 15.sp, weight = FontWeight.SemiBold, family = num, color = if (selected) t.accent else t.label, maxLines = 1)
     }
 }
 

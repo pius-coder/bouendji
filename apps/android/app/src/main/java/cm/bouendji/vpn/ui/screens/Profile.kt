@@ -89,9 +89,13 @@ fun ProfileScreen(ctx: ShellContext) {
     val t = LocalTokens.current
     val me = c.me
     Column(Modifier.fillMaxSize()) {
-        NavBar(trailing = { IconBtn(Ic.Gear, "Paramètres", { c.go(Screen.SETTINGS) }) })
-        ScreenColumn(tabs = true) {
-            LargeTitle("Profil")
+        if (cm.bouendji.vpn.ui.IS_LIGNE) {
+            NavBar(backLabel = "Accueil", onBack = { c.back() }, trailing = { cm.bouendji.vpn.ui.kit.Btn("Réglages", { c.go(Screen.SETTINGS) }, kind = BtnKind.PLAIN, height = 36.dp) })
+        } else {
+            NavBar(trailing = { IconBtn(Ic.Gear, "Paramètres", { c.go(Screen.SETTINGS) }) })
+        }
+        ScreenColumn(tabs = !cm.bouendji.vpn.ui.IS_LIGNE) {
+            LargeTitle(if (cm.bouendji.vpn.ui.IS_LIGNE) "Mon compte" else "Profil")
             Group {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     Avatar(initialsOf(me?.user?.name), size = 60.dp)
@@ -131,6 +135,11 @@ fun ProfileScreen(ctx: ShellContext) {
                 Divider(58.dp)
                 ListRow("Paramètres", icon = Ic.Gear, iconColor = Color(0xFF6E7A72), chevron = true, onClick = { c.go(Screen.SETTINGS) })
             }
+            // Solo : la feuille « Moi » porte aussi la déconnexion, en dernier, en rouge.
+            if (cm.bouendji.vpn.ui.IS_LIGNE) {
+                Spacer(Modifier.height(20.dp))
+                Group { ListRow("Se déconnecter", destructive = true, onClick = c::logout) }
+            }
         }
     }
 }
@@ -142,7 +151,7 @@ fun SettingsScreen(ctx: ShellContext) {
     val c = ctx.c
     val t = LocalTokens.current
     Column(Modifier.fillMaxSize()) {
-        NavBar(backLabel = "Profil", onBack = { c.back() })
+        NavBar(backLabel = if (cm.bouendji.vpn.ui.IS_LIGNE) "Mon compte" else "Profil", onBack = { c.back() })
         ScreenColumn {
             LargeTitle("Paramètres")
 
@@ -217,7 +226,7 @@ fun SubscriptionScreen(ctx: ShellContext) {
     val subscription = c.me?.subscription
     val active = entitlement?.active == true
     Column(Modifier.fillMaxSize()) {
-        NavBar(backLabel = "Profil", onBack = { c.back() })
+        NavBar(backLabel = if (cm.bouendji.vpn.ui.IS_LIGNE) "Mon compte" else "Profil", onBack = { c.back() })
         ScreenColumn {
             LargeTitle("Abonnement")
             Banknote(height = 196.dp) {
@@ -275,7 +284,7 @@ fun DevicesScreen(ctx: ShellContext) {
     val current = c.devices.firstOrNull { it.current }
     val others = c.devices.filter { !it.current }
     Column(Modifier.fillMaxSize()) {
-        NavBar(backLabel = "Profil", onBack = { c.back() })
+        NavBar(backLabel = if (cm.bouendji.vpn.ui.IS_LIGNE) "Mon compte" else "Profil", onBack = { c.back() })
         ScreenColumn {
             LargeTitle("Mes appareils")
             GroupHeader("Cet appareil")
@@ -322,7 +331,7 @@ fun InviteScreen(ctx: ShellContext) {
     val t = LocalTokens.current
     val code = c.referral?.code
     Column(Modifier.fillMaxSize()) {
-        NavBar(backLabel = "Profil", onBack = { c.back() })
+        NavBar(backLabel = if (cm.bouendji.vpn.ui.IS_LIGNE) "Mon compte" else "Profil", onBack = { c.back() })
         ScreenColumn(centered = true) {
             Mascot(alt = true, modifier = Modifier.width(150.dp).padding(top = 6.dp, bottom = 10.dp))
             DisplayTitle("Invite tes proches.", align = TextAlign.Center)

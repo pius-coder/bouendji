@@ -16,6 +16,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cm.bouendji.vpn.brand.BrandTokens
+import cm.bouendji.vpn.ui.CtaBar
 import cm.bouendji.vpn.ui.COUNTRIES
 import cm.bouendji.vpn.ui.Screen
 import cm.bouendji.vpn.ui.ScreenColumn
@@ -162,7 +163,64 @@ private fun AuthScreenClassic(ctx: ShellContext) {
 
 @Composable
 fun AuthScreen(ctx: ShellContext) {
-    if (BrandTokens.themeId == "nebula") AuthScreenNebula(ctx) else AuthScreenClassic(ctx)
+    when {
+        BrandTokens.themeId == "nebula" -> AuthScreenNebula(ctx)
+        cm.bouendji.vpn.ui.IS_LIGNE -> AuthScreenLigne(ctx)
+        else -> AuthScreenClassic(ctx)
+    }
+}
+
+/** Solo : l'étape « Ton compte » du fil, dépliée sur place ; inscription par défaut. */
+@Composable
+private fun AuthScreenLigne(ctx: ShellContext) {
+    val c = ctx.c
+    val t = LocalTokens.current
+    val form = c.authForm
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.statusBarsPadding()) {
+            ScreenColumn(cta = true) {
+                Spacer(Modifier.height(20.dp))
+                cm.bouendji.vpn.ui.screens.FilSteps(c, current = 0)
+                Spacer(Modifier.height(18.dp))
+                T(if (form.register) "Crée ton compte" else "Connecte-toi", size = 26.sp, weight = FontWeight.Black)
+                Spacer(Modifier.height(12.dp))
+                Group {
+                    ListRow("Pays", value = COUNTRIES[form.countryIndex].first, chevron = true, onClick = { c.sheet = "country" })
+                    if (form.register) {
+                        Divider()
+                        FormRow("Nom", form.fullName, { c.authForm = c.authForm.copy(fullName = it) }, "Nom complet")
+                    }
+                    Divider()
+                    FormRow("WhatsApp", form.phone, { c.authForm = c.authForm.copy(phone = it) }, "6XX XX XX XX", KeyboardType.Phone, prefix = "+${COUNTRIES[form.countryIndex].second}")
+                    Divider()
+                    FormRow("Mot de passe", form.password, { c.authForm = c.authForm.copy(password = it) }, "Mot de passe", KeyboardType.Password, password = true)
+                    if (form.register) {
+                        Divider()
+                        FormRow("Parrain", form.referral, { c.authForm = c.authForm.copy(referral = it.uppercase()) }, "Facultatif", mono = true)
+                    }
+                }
+                c.error?.let {
+                    Spacer(Modifier.height(6.dp))
+                    T(it, color = t.danger, size = 13.sp)
+                }
+                Spacer(Modifier.height(10.dp))
+                Row {
+                    Btn("Voir les forfaits", { c.go(Screen.PLANS) }, kind = BtnKind.PLAIN, height = 40.dp)
+                    Btn("Aide", { c.openSupport("connexion") }, kind = BtnKind.PLAIN, height = 40.dp)
+                }
+            }
+        }
+        CtaBar {
+            BlockBtn(if (form.register) "Créer mon compte" else "Se connecter", c::authenticate, busy = c.busy)
+            Row(
+                Modifier.fillMaxWidth().clickable { c.authForm = form.copy(register = !form.register); c.error = null }.padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                T(if (form.register) "Déjà un compte ? " else "Nouveau ici ? ", size = 14.sp, color = t.label2)
+                T(if (form.register) "Se connecter" else "S'inscrire", size = 14.sp, weight = FontWeight.SemiBold, color = t.accentText)
+            }
+        }
+    }
 }
 
 /** Nebula : sans onglets ni grand titre, compact, bascule Inscription/Connexion sous le bouton. */

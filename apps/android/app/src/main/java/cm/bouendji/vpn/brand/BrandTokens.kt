@@ -51,6 +51,8 @@ object BrandTokens {
         NEBULA("nebula"),
         /** Blanc glacé et cyan, facettes de cristal. */
         GLACIER("glacier"),
+        /** Solo : un fil vertical bleu, une seule action (design-solo-2026-10-30). */
+        LIGNE("ligne"),
         ;
 
         companion object {
@@ -60,27 +62,27 @@ object BrandTokens {
     }
 
     /** Identifiant du thème injecté au build. */
-    const val themeId: String = "billet"
+    const val themeId: String = "ligne"
 
     val theme: Theme = Theme.fromId(themeId)
 
     /** Nom affiché (barre de titre, notification, écran « à propos »). */
-    const val appName: String = "Bouendji VPN"
+    const val appName: String = "Solo VPN"
 
     /** Doit rester égal à `applicationId` dans `build.gradle.kts`. */
-    const val packageName: String = "com.bouendji.vpn"
+    const val packageName: String = "cm.solo.vpn"
 
     /** Base d'API : **sans** chemin (la signature couvre le chemin exact), https obligatoire. */
     const val apiBaseUrl: String = "https://api.numzer0.store"
 
     /** Ligne `apps.id` côté serveur. Sans elle, `/v1/auth/register` refuse la requête. */
-    const val appId: String = "f3d5ee21-55f5-4885-bf6a-ba3af77ec70b"
+    const val appId: String = "f7bc9530-b783-4dce-9305-0465d534ea0b"
 
     /** Contact de l'administrateur de la marque, affiché quand plus rien ne passe (D19). */
-    const val supportUrl: String = "mailto:support@henshins.online"
+    const val supportUrl: String = "https://chat.whatsapp.com/KmhlhwdeTuV8npb7KKEktB"
 
     /** Couleur d'accent `#RRGGBB`, ou `null` pour suivre le thème. */
-    val accent: String? = null
+    val accent: String? = "#0A5CF0"
 
     /**
      * Clé publique Ed25519 (SPKI DER, base64) qui signe les bundles hors-ligne.
@@ -92,14 +94,14 @@ object BrandTokens {
     const val defaultLocale: String = "fr"
 
     /** Mot de la carte de membre (« NJI » chez Bouendji). Vide = pas de carte nommée. */
-    const val memberWord: String = "NJI"
+    const val memberWord: String = ""
 
     /** Communauté de la marque, affichée dans Aide et Connexion. Vide = rangée masquée. */
     const val communityWhatsappUrl: String = ""
     const val communityTelegramUrl: String = ""
 
     /** Version d'app envoyée à l'enrôlement. Remplacée par le build si besoin. */
-    const val appVersion: String = "1.0.0-beta.2"
+    const val appVersion: String = "1.0.0-beta.1"
 
     private val PLACEHOLDERS = setOf("api.invalid", "support.invalid")
 

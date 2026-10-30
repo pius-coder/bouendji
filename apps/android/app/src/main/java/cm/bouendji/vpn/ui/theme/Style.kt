@@ -28,9 +28,11 @@ enum class Decor {
     TERMINAL,
     /** Autocollant : trait épais d'encre, ombre portée dure décalée. */
     STICKER,
+    /** Ligne (Solo) : rangées pleine largeur séparées d'un filet 1 dp, angles vifs, fil vertical bleu. */
+    LINE,
 }
 
-enum class Art { GUILLOCHE, ORBITS, TYPE, RADAR, BURST, KENTE, STARS, FACETS }
+enum class Art { GUILLOCHE, ORBITS, TYPE, RADAR, BURST, KENTE, STARS, FACETS, LINE }
 
 enum class PowerShape { CIRCLE, SQUIRCLE, SQUARE, OCTAGON, BLOB, DIAMOND, PILL, HEXAGON }
 
@@ -114,7 +116,24 @@ fun styleFor(theme: BrandTokens.Theme): Style = when (theme) {
     BrandTokens.Theme.SAHEL -> sahel()
     BrandTokens.Theme.NEBULA -> nebula()
     BrandTokens.Theme.GLACIER -> glacier()
+    BrandTokens.Theme.LIGNE -> ligne()
 }
+
+/** Solo : système uniquement, titres Black, angles vifs, seul le bouton est une pilule. */
+private fun ligne() = Style(
+    display = FontFamily.SansSerif, displayWeight = FontWeight.Black, body = FontFamily.SansSerif,
+    titleUppercase = false, titleSpacing = -.6f, radius = 0.dp,
+    buttonShape = RoundedCornerShape(28.dp), chipShape = RoundedCornerShape(0.dp),
+    decor = Decor.LINE, art = Art.LINE, power = PowerShape.PILL, headerPrefix = "", stroke = 1.dp,
+    slides = listOf(
+        "Un fil,\nune action." to "Crée ton compte, choisis ton forfait, connecte-toi.",
+        "Tout est\nsur la ligne." to "Chaque étape s'allume quand la précédente est faite.",
+        "Un bouton,\nc'est tout." to "Ton trafic passe chiffré dès que tu appuies.",
+    ),
+)
+
+/** Chiffres (durée, latence, jours restants) : à chasse fixe pour Solo, sinon police du texte. */
+fun numberFamily(style: Style): FontFamily = if (style.decor == Decor.LINE) FontFamily.Monospace else style.body
 
 private fun sahel() = Style(
     display = FontFamily.Serif, displayWeight = FontWeight.Bold, body = FontFamily.SansSerif,

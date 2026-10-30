@@ -232,6 +232,20 @@ private fun seedFor(theme: BrandTokens.Theme, dark: Boolean): Seed = when (theme
         goldText = Color(0xFF475569), danger = Color(0xFFC0283F), inkIcon = Color(0xFF1E3A4C),
         noteStart = Color(0xFFDDF3FA), noteEnd = Color(0xFFC3E7F3), noteInk = Color(0xFF0B4A5E),
     )
+    // Ligne (Solo) : blanc, bleu #0A5CF0 ; en sombre l'accent passe à #4D8BFF (spec §1, §5).
+    BrandTokens.Theme.LIGNE -> if (dark) Seed(
+        bg = Color(0xFF070B14), surface = Color(0xFF111827), surfaceElev = Color(0xFF111827),
+        ink = Color(0xFFEEF2FA), accent = Color(0xFF4D8BFF), accentText = Color(0xFF4D8BFF),
+        onAccent = Color(0xFF070B14), mint = Color(0xFF12805C), gold = Color(0xFF9AA4B8),
+        goldText = Color(0xFF9AA4B8), danger = Color(0xFFD92D20), inkIcon = Color(0xFF9AA4B8),
+        noteStart = Color(0xFF111827), noteEnd = Color(0xFF111827), noteInk = Color(0xFFEEF2FA),
+    ) else Seed(
+        bg = Color(0xFFFFFFFF), surface = Color(0xFFF5F7FB), surfaceElev = Color(0xFFFFFFFF),
+        ink = Color(0xFF0B1220), accent = Color(0xFF0A5CF0), accentText = Color(0xFF0848BF),
+        onAccent = Color.White, mint = Color(0xFF12805C), gold = Color(0xFF5A6478),
+        goldText = Color(0xFF5A6478), danger = Color(0xFFD92D20), inkIcon = Color(0xFF5A6478),
+        noteStart = Color(0xFFE6EEFE), noteEnd = Color(0xFFE6EEFE), noteInk = Color(0xFF0B1220),
+    )
 }
 
 private fun parseHex(hex: String): Color? = runCatching {

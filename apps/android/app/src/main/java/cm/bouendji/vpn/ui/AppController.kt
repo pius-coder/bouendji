@@ -39,7 +39,13 @@ import java.net.Socket
 /** Les écrans du prototype lelexxl2a2 (`data-screen`), moins le code d'accès (D40). */
 enum class Screen { SPLASH, ONBOARDING, AUTH, VPN_AUTH, HOME, SERVERS, PLANS, ORDER, ORDER_DONE, PROFILE, SETTINGS, SUBSCRIPTION, DEVICES, INVITE, HELP }
 
-val TABS = listOf(Screen.HOME, Screen.SERVERS, Screen.PLANS, Screen.PROFILE)
+/** Racines de navigation. Solo (thème Ligne) n'a pas d'onglets : seul l'Accueil est une racine. */
+val TABS: List<Screen> =
+    if (BrandTokens.theme == BrandTokens.Theme.LIGNE) listOf(Screen.HOME)
+    else listOf(Screen.HOME, Screen.SERVERS, Screen.PLANS, Screen.PROFILE)
+
+/** Solo : un fil unique (Fil, compte, forfait, connexion), pas de barre d'onglets. */
+val IS_LIGNE: Boolean get() = BrandTokens.theme == BrandTokens.Theme.LIGNE
 
 enum class Appearance(val label: String) { AUTO("Système"), LIGHT("Clair"), DARK("Sombre") }
 
@@ -348,6 +354,7 @@ class AppController(
             screen = when {
                 !restored.first -> Screen.ONBOARDING
                 !signedIn -> Screen.AUTH
+                IS_LIGNE && !accessActive -> Screen.PLANS
                 else -> Screen.HOME
             }
             if (screen == Screen.HOME && autoConnect && accessActive && hasConfiguration && !platform.needsVpnConsent() &&
@@ -360,7 +367,11 @@ class AppController(
 
     fun finishOnboarding() {
         scope.launch(Dispatchers.IO) { store.putString(KEY_ONBOARDED, "1") }
-        screen = if (signedIn) Screen.HOME else Screen.AUTH
+        screen = when {
+            !signedIn -> Screen.AUTH
+            IS_LIGNE && !accessActive -> Screen.PLANS
+            else -> Screen.HOME
+        }
     }
 
     /**
@@ -610,7 +621,15 @@ class AppController(
                 if (form.register) sheet = "welcome"
                 authForm = authForm.copy(password = "")
                 stack.clear()
-                screen = if (platform.needsVpnConsent()) Screen.VPN_AUTH else Screen.HOME
+                // Solo : lire l'entitlement frais avant de choisir l'écran, sinon un
+                // compte déjà abonné passait par Forfaits (me encore nul à ce stade).
+                if (IS_LIGNE) runCatching { withContext(Dispatchers.IO) { refreshPrivate() } }
+                screen = when {
+                    // Solo : le forfait se choisit avant l'accueil (spec design-solo §2.4).
+                    IS_LIGNE && me?.entitlement?.active != true -> Screen.PLANS
+                    platform.needsVpnConsent() -> Screen.VPN_AUTH
+                    else -> Screen.HOME
+                }
                 refreshAll()
             }.onFailure { ex ->
                 if (form.register && (ex is java.io.IOException || (ex is ApiException && ex.isNetwork))) {

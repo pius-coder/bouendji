@@ -13,6 +13,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -83,6 +84,8 @@ private val RUNNING = setOf(TunnelState.CONNECTING, TunnelState.RECONNECTING, Tu
 
 @Composable
 fun HomeScreen(ctx: ShellContext) {
+    // Solo : accueil propre, structuré en trois blocs (forfait, serveur, connexion).
+    if (cm.bouendji.vpn.ui.IS_LIGNE) { HomeLigne(ctx); return }
     val c = ctx.c
     val t = LocalTokens.current
     val state = ctx.tunnel
@@ -148,17 +151,28 @@ fun HomeScreen(ctx: ShellContext) {
             Modifier.fillMaxWidth().statusBarsPadding().height(44.dp).padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Avatar(initialsOf(c.me?.user?.name), onClick = { c.go(Screen.PROFILE) })
+            if (cm.bouendji.vpn.ui.IS_LIGNE) {
+                T(cm.bouendji.vpn.brand.BrandTokens.appName, size = 17.sp, weight = FontWeight.Black, maxLines = 1)
+            } else {
+                Avatar(initialsOf(c.me?.user?.name), onClick = { c.go(Screen.PROFILE) })
+            }
             Spacer(Modifier.weight(1f))
             val entitlement = c.me?.entitlement
             when {
-                !c.signedIn -> Unit
+                !c.signedIn || cm.bouendji.vpn.ui.IS_LIGNE -> Unit
                 entitlement?.active == true -> Capsule(entitlement.planName ?: "Actif") { c.go(Screen.SUBSCRIPTION) }
                 c.me?.subscription != null -> Capsule("Expiré", danger = true) { c.go(Screen.PLANS) }
                 else -> Capsule("Sans forfait", danger = true) { c.go(Screen.PLANS) }
             }
+            // Solo : plus d'onglet Profil, la feuille « Moi » plein écran s'ouvre d'ici.
+            if (cm.bouendji.vpn.ui.IS_LIGNE && c.signedIn) {
+                cm.bouendji.vpn.ui.kit.Btn("≡ Moi", { c.go(Screen.PROFILE) }, kind = cm.bouendji.vpn.ui.kit.BtnKind.PLAIN, height = 44.dp)
+            }
         }
-        ScreenColumn(tabs = true) {
+        val ligne = cm.bouendji.vpn.ui.IS_LIGNE
+        val numFamily = if (ligne) cm.bouendji.vpn.ui.theme.numberFamily(LocalStyle.current) else Fonts.mono
+        Box(Modifier.weight(1f)) {
+        ScreenColumn(tabs = !ligne) {
             Column(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 T(if (firstName != null) "Bonjour, $firstName" else "Bonjour", color = t.label2, size = 15.sp, weight = FontWeight.Medium)
                 Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -168,9 +182,9 @@ fun HomeScreen(ctx: ShellContext) {
                 T(sub, color = t.label2, size = 15.sp, align = TextAlign.Center, maxLines = 2)
             }
 
-            PowerControl(state, c.reduceMotion, ::onPower)
+            if (!ligne) PowerControl(state, c.reduceMotion, ::onPower)
 
-            T(
+            if (!ligne) T(
                 when (state) {
                     TunnelState.STOPPED, TunnelState.SUBSCRIPTION_EXPIRED, TunnelState.DEVICE_REVOKED -> "Touche pour te protéger"
                     TunnelState.CONNECTED -> "Touche pour te déconnecter"
@@ -212,7 +226,7 @@ fun HomeScreen(ctx: ShellContext) {
                     "%02d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60),
                     size = 30.sp,
                     weight = FontWeight.Medium,
-                    family = Fonts.mono,
+                    family = numFamily,
                     align = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                 )
@@ -267,11 +281,42 @@ fun HomeScreen(ctx: ShellContext) {
                         trailing = {
                             if (shown?.latencyMs != null) {
                                 Bars(shown.latencyMs)
-                                T("${shown.latencyMs} ms", color = t.label2, size = 14.sp, family = Fonts.mono)
+                                T("${shown.latencyMs} ms", color = t.label2, size = 14.sp, family = numFamily)
                             }
                         },
                     )
                 }
+            }
+            // Solo : rangée forfait à la place de la capsule (spec §3).
+            if (ligne && c.signedIn) {
+                val ent = c.me?.entitlement
+                GroupHeader("Forfait")
+                Group {
+                    when {
+                        ent?.active == true -> ListRow(
+                            ent.planName ?: "Actif", icon = Ic.Card, iconColor = t.accent, sub = "Abonnement actif",
+                            trailing = { T("${ent.daysRemaining} j", color = t.label2, size = 14.sp, family = numFamily) },
+                            chevron = true, onClick = { c.go(Screen.SUBSCRIPTION) },
+                        )
+                        c.me?.subscription != null -> ListRow("Expiré", icon = Ic.Card, iconColor = t.danger, sub = "Choisir un forfait", chevron = true, onClick = { c.go(Screen.PLANS) })
+                        else -> ListRow("Sans forfait", icon = Ic.Card, iconColor = t.danger, sub = "Choisir un forfait", chevron = true, onClick = { c.go(Screen.PLANS) })
+                    }
+                }
+            }
+        }
+        }
+        // Solo : bouton connexion = pilule pleine largeur en bas, zone pouce (spec §3).
+        if (ligne) {
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
+                cm.bouendji.vpn.ui.kit.BlockBtn(
+                    when (state) {
+                        TunnelState.CONNECTED -> "Déconnecter"
+                        TunnelState.CONNECTING, TunnelState.RECONNECTING -> "Annuler"
+                        else -> "Connecter"
+                    },
+                    ::onPower,
+                    kind = if (state == TunnelState.CONNECTED) cm.bouendji.vpn.ui.kit.BtnKind.TINTED else cm.bouendji.vpn.ui.kit.BtnKind.FILLED,
+                )
             }
         }
     }
@@ -360,4 +405,170 @@ fun gigabytes(bytes: Long): String {
     val gb = bytes / 1_000_000_000.0
     val text = if (gb >= 10) "%.0f".format(java.util.Locale.FRANCE, gb) else "%.1f".format(java.util.Locale.FRANCE, gb)
     return "$text Go"
+}
+
+/* ------------------------------------------------------------ Solo (Ligne) */
+
+/**
+ * Accueil Solo : trois blocs numérotés, chacun dit à quoi il sert.
+ * 1 Mon forfait (payer / prolonger, bouton explicite), 2 Mon serveur, 3 Ma connexion.
+ * Barre haute : logo + nom, et « Mon compte » écrit en toutes lettres (pas d'icône).
+ * Mêmes fonctions que l'accueil classique : power, durée, débit, latence, quota, serveurs.
+ */
+@Composable
+private fun HomeLigne(ctx: ShellContext) {
+    val c = ctx.c
+    val t = LocalTokens.current
+    val num = cm.bouendji.vpn.ui.theme.numberFamily(LocalStyle.current)
+    val state = ctx.tunnel
+    val servers by ServerBus.servers.collectAsState()
+    val activeId by ServerBus.active.collectAsState()
+    val traffic by ServerBus.traffic.collectAsState()
+    val since by TunnelStateBus.since.collectAsState()
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(state) { while (state in RUNNING) { now = System.currentTimeMillis(); delay(1_000) } }
+    var lastTotals by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+    var rates by remember { mutableStateOf(0.0 to 0.0) }
+    LaunchedEffect(traffic) {
+        val current = traffic ?: run { lastTotals = null; rates = 0.0 to 0.0; return@LaunchedEffect }
+        lastTotals?.let { p ->
+            rates = ((current.downloadBytes - p.second).coerceAtLeast(0) * 8 / 1_000_000.0) to
+                ((current.uploadBytes - p.first).coerceAtLeast(0) * 8 / 1_000_000.0)
+        }
+        lastTotals = current.uploadBytes to current.downloadBytes
+    }
+    val shown = servers.firstOrNull { it.configId == activeId } ?: servers.firstOrNull { it.configId == c.preferredServer }
+    val ent = c.me?.entitlement
+    val active = ent?.active == true
+    val busyState = state == TunnelState.CONNECTING || state == TunnelState.RECONNECTING
+
+    fun onPower() {
+        when {
+            !ctx.engineAvailable -> c.showToast("Moteur VPN indisponible sur cet appareil.")
+            !c.signedIn -> c.go(Screen.AUTH)
+            c.deviceRevoked -> c.sheet = "revoked"
+            state in RUNNING -> c.platform.toggleTunnel()
+            !c.accessActive -> c.go(Screen.PLANS)
+            !c.hasConfiguration -> { c.showToast("Réception de ta configuration…"); c.refreshAll() }
+            else -> c.platform.toggleTunnel()
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        // Barre haute : identité à gauche, compte en toutes lettres à droite.
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            BrandIcon(32)
+            T(cm.bouendji.vpn.brand.BrandTokens.appName, size = 18.sp, weight = FontWeight.Black, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            if (c.signedIn) cm.bouendji.vpn.ui.kit.Btn("Mon compte", { c.go(Screen.PROFILE) }, kind = cm.bouendji.vpn.ui.kit.BtnKind.TINTED, height = 36.dp)
+        }
+        Box(Modifier.weight(1f)) {
+            ScreenColumn {
+                // État en grand, sans décor.
+                val (title, sub, color) = when (state) {
+                    TunnelState.CONNECTED -> Triple("Protégé", shown?.let { "Ton trafic passe par ${Regions.countryName(it.region)}." } ?: "Ton trafic est chiffré.", t.accent)
+                    TunnelState.CONNECTING -> Triple("Connexion…", ctx.tunnelDetail ?: "Ouverture du tunnel sécurisé.", t.gold)
+                    TunnelState.RECONNECTING -> Triple("Reconnexion…", ctx.tunnelDetail ?: "Recherche d'un serveur qui répond.", t.gold)
+                    TunnelState.NO_CONNECTION -> Triple("Aucun serveur", "Aucun serveur ne répond. Nouvel essai automatique.", t.danger)
+                    TunnelState.SUBSCRIPTION_EXPIRED -> Triple("Forfait expiré", "Paie un forfait pour te reconnecter.", t.danger)
+                    TunnelState.DEVICE_REVOKED -> Triple("Appareil retiré", "Contacte le support pour le réactiver.", t.danger)
+                    TunnelState.STOPPED -> Triple("Non protégé", ctx.tunnelDetail?.takeIf { it.isNotBlank() } ?: "Ton trafic n'est pas chiffré.", t.danger)
+                }
+                Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp)) {
+                    T(title, color = color, size = 34.sp, weight = FontWeight.Black, letterSpacing = (-.8).sp)
+                    T(sub, color = t.label2, size = 15.sp, maxLines = 2)
+                    if (state == TunnelState.CONNECTED && since > 0) {
+                        val s = ((now - since) / 1_000).coerceAtLeast(0)
+                        T("%02d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60), size = 28.sp, weight = FontWeight.Medium, family = num, modifier = Modifier.padding(top = 6.dp))
+                        val used = traffic?.let { it.uploadBytes + it.downloadBytes } ?: 0L
+                        val (uv, uu) = bytesLabel(used)
+                        T("↓ ${mbps(rates.first)} Mb/s   ↑ ${mbps(rates.second)} Mb/s   · $uv $uu", color = t.label2, size = 13.sp, family = num)
+                    }
+                }
+
+                // 1. Mon forfait — c'est ici qu'on paie.
+                GroupHeader("1 · Mon forfait")
+                Group {
+                    when {
+                        active -> ListRow(
+                            ent!!.planName ?: "Forfait actif", icon = Ic.Card, iconColor = t.accent,
+                            sub = "Actif — détails et échéance",
+                            trailing = { T("${ent.daysRemaining} j restants", color = t.label2, size = 14.sp, family = num) },
+                            chevron = true, onClick = { c.go(Screen.SUBSCRIPTION) },
+                        )
+                        c.me?.subscription != null -> ListRow("Forfait expiré", icon = Ic.Card, iconColor = t.danger, sub = "Paie un forfait pour te reconnecter.")
+                        else -> ListRow("Aucun forfait actif", icon = Ic.Card, iconColor = t.danger, sub = "Sans forfait, la connexion est impossible.")
+                    }
+                    val order = c.order
+                    if (order != null && order.status == "pending") {
+                        cm.bouendji.vpn.ui.kit.Divider(58.dp)
+                        ListRow("Paiement en attente", icon = Ic.Refresh, iconColor = t.gold, sub = "Vérifier ou rouvrir la page de paiement", chevron = true, onClick = { c.go(Screen.ORDER_DONE) })
+                    }
+                }
+                val quota = c.quota
+                val total = quota?.quotaBytes
+                if (quota != null && total != null && total > 0) {
+                    val left = quota.remainingBytes ?: (total - quota.usedBytes).coerceAtLeast(0)
+                    val exhausted = quota.state == "exhausted" || left <= 0
+                    cm.bouendji.vpn.ui.kit.GroupFooter(if (exhausted) "Data épuisée : paie un nouveau forfait." else "${gigabytes(left)} restants sur ${gigabytes(total)}", danger = exhausted)
+                }
+                Spacer(Modifier.height(10.dp))
+                cm.bouendji.vpn.ui.kit.BlockBtn(
+                    if (active) "Prolonger mon forfait (payer)" else "Payer un forfait",
+                    { c.go(Screen.PLANS) },
+                    kind = if (active) cm.bouendji.vpn.ui.kit.BtnKind.TINTED else cm.bouendji.vpn.ui.kit.BtnKind.FILLED,
+                )
+
+                // 2. Mon serveur.
+                GroupHeader("2 · Mon serveur")
+                Group {
+                    if (servers.isEmpty()) {
+                        ListRow("Aucun serveur reçu", icon = Ic.Globe, iconColor = t.inkIcon,
+                            sub = if (c.accessActive) "La liste arrive avec ta configuration." else "Les serveurs arrivent après le paiement.",
+                            chevron = c.accessActive, onClick = if (c.accessActive) ({ c.go(Screen.SERVERS) }) else null)
+                    } else {
+                        val auto = c.preferredServer == ServerBus.AUTO
+                        ListRow(
+                            label = if (shown != null) Regions.countryName(shown.region) else "Automatique",
+                            sub = if (auto) "Choix automatique — toucher pour changer" else "Toucher pour changer de serveur",
+                            leading = { if (shown != null) Flag(shown.region) else Icon(Ic.Bolt, t.accentText, size = 20.dp) },
+                            chevron = true,
+                            onClick = { c.go(Screen.SERVERS) },
+                            trailing = { if (shown?.latencyMs != null) T("${shown.latencyMs} ms", color = t.label2, size = 14.sp, family = num) },
+                        )
+                        cm.bouendji.vpn.ui.kit.Divider(58.dp)
+                        val testing = servers.any { it.probe == cm.bouendji.vpn.vpn.ProbeState.TESTING }
+                        ListRow(if (testing) "Test en cours…" else "Tester la vitesse des serveurs", icon = Ic.Refresh, iconColor = t.inkIcon, onClick = c::testLatency)
+                    }
+                }
+
+                // 3. Ma connexion : rappel de ce que fait le bouton du bas.
+                GroupHeader("3 · Ma connexion")
+                cm.bouendji.vpn.ui.kit.GroupFooter(
+                    when {
+                        !c.accessActive -> "Paie un forfait (étape 1), puis connecte-toi avec le bouton en bas."
+                        state == TunnelState.CONNECTED -> "Le bouton en bas coupe la protection."
+                        else -> "Le bouton en bas chiffre ta connexion."
+                    },
+                )
+            }
+        }
+        // Action unique, zone pouce.
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 16.dp)) {
+            cm.bouendji.vpn.ui.kit.BlockBtn(
+                when {
+                    state == TunnelState.CONNECTED -> "Se déconnecter"
+                    busyState -> "Annuler la connexion"
+                    !c.accessActive -> "Payer pour se connecter"
+                    else -> "Se connecter"
+                },
+                ::onPower,
+                kind = if (state == TunnelState.CONNECTED) cm.bouendji.vpn.ui.kit.BtnKind.TINTED else cm.bouendji.vpn.ui.kit.BtnKind.FILLED,
+            )
+        }
+    }
 }

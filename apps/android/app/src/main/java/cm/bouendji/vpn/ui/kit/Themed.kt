@@ -25,7 +25,7 @@ import cm.bouendji.vpn.ui.theme.LocalTokens
 @Composable
 fun cardShape(radius: Dp = LocalStyle.current.radius): Shape = when (LocalStyle.current.decor) {
     Decor.TERMINAL -> CutCornerShape(minOf(radius * 2, 18.dp))
-    Decor.RULE -> RoundedCornerShape(0.dp)
+    Decor.RULE, Decor.LINE -> RoundedCornerShape(0.dp)
     else -> RoundedCornerShape(radius)
 }
 
@@ -76,5 +76,10 @@ fun Modifier.themedSurface(shape: Shape = cardShape(), fill: Color = LocalTokens
             .clip(shape)
             .background(fill)
             .border(s.stroke, t.label, shape)
+        Decor.LINE -> this
+            .background(fill)
+            .drawBehind {
+                drawLine(t.separator, Offset(0f, size.height - .5.dp.toPx()), Offset(size.width, size.height - .5.dp.toPx()), 1.dp.toPx())
+            }
     }
 }

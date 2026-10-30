@@ -1,0 +1,17 @@
+{
+  "_comment": "Marque de la communauté Solo (prod, créée le 2026-10-30). Valeurs reprises de la base (apps.solo-android). Logo source : tools/brands/solo/logo-source.webp (à convertir en icon.png). Accent et thème à confirmer par l'owner.",
+  "theme": "ligne",
+  "appName": "Solo VPN",
+  "packageName": "cm.solo.vpn",
+  "apiBaseUrl": "https://api.numzer0.store",
+  "appId": "f7bc9530-b783-4dce-9305-0465d534ea0b",
+  "supportUrl": "https://chat.whatsapp.com/KmhlhwdeTuV8npb7KKEktB",
+  "accent": "#0A5CF0",
+  "offlineBundleSigningKeyB64": "MCowBQYDK2VwAyEADpJiokJbnFPbgtdSPuweH+T6TpmP9TnY0i2lruG7KtQ=",
+  "memberWord": "",
+  "communityWhatsappUrl": "",
+  "communityTelegramUrl": "",
+  "defaultLocale": "fr",
+  "versionCode": 1,
+  "versionName": "1.0.0-beta.1"
+}

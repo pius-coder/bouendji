@@ -169,7 +169,7 @@ fun VpnApp(
                     Box(Modifier.fillMaxSize().background(tokens.bg)) { ScreenFor(target, ctx) }
                 }
 
-                val showTabs = controller.signedIn && controller.screen in TABS
+                val showTabs = !IS_LIGNE && controller.signedIn && controller.screen in TABS
                 AnimatedVisibility(
                     showTabs,
                     modifier = Modifier.align(Alignment.BottomCenter),

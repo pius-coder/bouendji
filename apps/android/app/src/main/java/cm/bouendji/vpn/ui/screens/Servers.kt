@@ -114,7 +114,7 @@ fun ServersScreen(ctx: ShellContext) {
         .sortedWith(compareBy<ServerStatus>({ rank(it) }, { it.latencyMs ?: Int.MAX_VALUE }))
 
     Column(Modifier.fillMaxSize()) {
-        NavBar(trailing = {
+        NavBar(backLabel = if (cm.bouendji.vpn.ui.IS_LIGNE) "Accueil" else null, onBack = if (cm.bouendji.vpn.ui.IS_LIGNE) ({ c.back() }) else null, trailing = {
             Btn(
                 if (testing) "Test…" else "Tester",
                 c::testLatency,
@@ -125,7 +125,7 @@ fun ServersScreen(ctx: ShellContext) {
                 enabled = servers.isNotEmpty(),
             )
         })
-        ScreenColumn(tabs = true) {
+        ScreenColumn(tabs = !cm.bouendji.vpn.ui.IS_LIGNE) {
             LargeTitle("Serveurs")
             c.me?.entitlement?.takeIf { it.active }?.let { entitlement ->
                 val isOwner = entitlement.planCode == "owner-vip"

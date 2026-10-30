@@ -11,3 +11,46 @@ binding = "ASSETS"
 # Le Worker doit d'abord s'exécuter pour rendre la page depuis l'API ; sinon
 # l'asset `/index.html` est servi avant lui et masque le rendu dynamique.
 run_worker_first = true
+
+
+# Domaines personnalisés : un sous-domaine par marque + www. Chaque déploiement
+# les réattache ; sans cette liste, wrangler les retire du Worker.
+[[routes]]
+pattern = "bouendji.cleanforceplus.online"
+custom_domain = true
+
+[[routes]]
+pattern = "teste.cleanforceplus.online"
+custom_domain = true
+
+[[routes]]
+pattern = "goatvpn.cleanforceplus.online"
+custom_domain = true
+
+[[routes]]
+pattern = "james-pro.cleanforceplus.online"
+custom_domain = true
+
+[[routes]]
+pattern = "gregor44.cleanforceplus.online"
+custom_domain = true
+
+[[routes]]
+pattern = "dalas-npv.cleanforceplus.online"
+custom_domain = true
+
+[[routes]]
+pattern = "saitrix.cleanforceplus.online"
+custom_domain = true
+
+[[routes]]
+pattern = "nevpn.cleanforceplus.online"
+custom_domain = true
+
+[[routes]]
+pattern = "solo.cleanforceplus.online"
+custom_domain = true
+
+[[routes]]
+pattern = "www.cleanforceplus.online"
+custom_domain = true

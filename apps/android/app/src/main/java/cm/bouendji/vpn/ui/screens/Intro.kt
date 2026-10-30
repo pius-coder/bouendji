@@ -80,6 +80,24 @@ import kotlinx.coroutines.launch
 @Composable
 fun SplashScreen() {
     val t = LocalTokens.current
+    if (cm.bouendji.vpn.ui.IS_LIGNE) {
+        // Solo : logo + filet bleu qui se dessine de haut en bas (spec §2.1).
+        val draw = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+        androidx.compose.runtime.LaunchedEffect(Unit) { draw.animateTo(1f, tween(900, easing = FastOutSlowInEasing)) }
+        Box(Modifier.fillMaxSize()) {
+            androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                val x = 24.dp.toPx()
+                drawLine(t.accent, androidx.compose.ui.geometry.Offset(x, 0f), androidx.compose.ui.geometry.Offset(x, size.height * draw.value), strokeWidth = 3.dp.toPx())
+            }
+            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                BrandIcon(96)
+                T(BrandTokens.appName, size = 22.sp, weight = FontWeight.Black)
+            }
+            T("v${BrandTokens.appVersion}", color = t.label2, size = 12.sp, family = androidx.compose.ui.text.font.FontFamily.Monospace,
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 44.dp))
+        }
+        return
+    }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Guilloche(Guil.ROSETTE, t.guilloche, Modifier.size(440.dp), spinSeconds = 120)
         BrandIcon(116)
@@ -125,6 +143,7 @@ private data class Slide(val title: String, val text: String)
 
 @Composable
 fun OnboardingScreen(c: AppController) {
+    if (cm.bouendji.vpn.ui.IS_LIGNE) { FilScreen(c); return }
     val t = LocalTokens.current
     val word = BrandTokens.memberWord.lowercase().replaceFirstChar { it.uppercase() }
     // Les textes viennent du thème : chaque marque a sa voix (Style.slides).
@@ -192,6 +211,69 @@ fun OnboardingScreen(c: AppController) {
     }
 }
 
+/* ------------------------------------------------------ Solo : le « Fil » */
+
+/**
+ * Les trois étapes du fil de Solo, posées sur un filet vertical. Chaque pastille
+ * s'allume quand l'étape précédente est faite (état réel : compte, forfait, consentement).
+ */
+@Composable
+fun FilSteps(c: AppController, current: Int, modifier: Modifier = Modifier) {
+    val t = LocalTokens.current
+    val done = listOf(c.signedIn, c.accessActive, c.signedIn && !c.platform.needsVpnConsent())
+    val labels = listOf("Ton compte", "Ton forfait", "Ta connexion")
+    Column(modifier) {
+        labels.forEachIndexed { i, label ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                    val on = done[i] || i == current
+                    Box(
+                        Modifier.size(14.dp).clip(CircleShape)
+                            .background(if (done[i]) t.accent else t.bg)
+                            .border(3.dp, if (on) t.accent else t.label3, CircleShape),
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+                T(
+                    label,
+                    size = 18.sp,
+                    weight = if (i == current) FontWeight.Black else FontWeight.Medium,
+                    color = if (done[i] || i == current) t.label else t.label3,
+                )
+                if (done[i]) {
+                    Spacer(Modifier.width(8.dp))
+                    T("fait", size = 13.sp, color = t.mint, family = androidx.compose.ui.text.font.FontFamily.Monospace)
+                }
+            }
+            if (i < labels.lastIndex) {
+                Box(Modifier.width(24.dp).height(28.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.width(3.dp).fillMaxHeight().background(if (done[i]) t.accent else t.label3))
+                }
+            }
+        }
+    }
+}
+
+/** Solo : la page « Fil » remplace les slides (onboarding + progression réelle). */
+@Composable
+private fun FilScreen(c: AppController) {
+    val t = LocalTokens.current
+    val slides = cm.bouendji.vpn.ui.theme.LocalStyle.current.slides
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.statusBarsPadding()) {
+            ScreenColumn(cta = true) {
+                Spacer(Modifier.height(40.dp))
+                DisplayTitle(slides.first().first, size = 38.sp)
+                Spacer(Modifier.height(10.dp))
+                T(slides.first().second, color = t.label2, size = 17.sp, lineHeight = 25.sp)
+                Spacer(Modifier.height(36.dp))
+                FilSteps(c, current = 0)
+            }
+        }
+        CtaBar { BlockBtn("Commencer", c::finishOnboarding) }
+    }
+}
+
 /* ----------------------------------------------------------- autorisation */
 
 @Composable
@@ -203,6 +285,7 @@ fun VpnAuthScreen(c: AppController) {
                 Spacer(Modifier.height(24.dp))
                 PermArt(Ic.Shield)
                 Spacer(Modifier.height(18.dp))
+                if (cm.bouendji.vpn.ui.IS_LIGNE) { FilSteps(c, current = 2); Spacer(Modifier.height(18.dp)) }
                 DisplayTitle("Une dernière étape.", align = TextAlign.Center)
                 Spacer(Modifier.height(10.dp))
                 Lead("${BrandTokens.appName} doit ajouter une configuration VPN à ton téléphone pour chiffrer ta connexion.", align = TextAlign.Center)
