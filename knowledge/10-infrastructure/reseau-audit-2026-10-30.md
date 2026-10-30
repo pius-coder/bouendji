@@ -127,7 +127,16 @@ Avec 3 appareils dans cet état, **tous les nœuds sains passent `down`**.
   sonde de démarrage 07:46:52 UTC : 13/13 actifs OK (82–93 ms) ; `readyz` → 401,
   `openapi.json` → 200 ; 358/358 tests API.
 
-- **Reste à faire** (§5 #5 côté dashboard uniquement) : `down_reason` traduit +
+- **Reste à faire** (§5 #5 côté dashboard uniquement) : ~~`down_reason` traduit +
+  résultat sonde/latence~~ **fait (2026-10-30, commit `4beceff`)** — le drawer
+  Réseau affiche la sonde (statut, latence, date, erreur) avec bouton
+  « Tester ce nœud » (`POST /endpoints/:id/test`), la raison traduite
+  (`downReasonLabel`, miroir de `healthReasonLabel`), « Rétablir en service »
+  depuis `unknown`/`degraded` (plus seulement `down`), latence = sonde en
+  priorité dans le tableau, copie de purge corrigée (« seuls les statut
+  Expiré »). Vérifié : tsc silencieux, **150/150 tests dashboard**, `next build`
+  exit 0. La fraîcheur/polling de la page reste à faire.
+  §5 #6 (app : file de rapports) non traité.
   résultat sonde/latence, bouton « Tester ce nœud », restauration depuis
   `unknown`, purge limitée, fraîcheur/polling. §5 #6 (app : file de rapports)
   non traité.
