@@ -1208,14 +1208,47 @@ const R6_ROUTE_DOCS: Record<string, RouteDoc> = {
     description:
       "Offres actives. `family` : `limited` (quota fixe, client 3x-ui dédié) ou `limited_night` (même quota le jour, " +
       "plus de l'illimité sur la plage choisie). `nightOptions` : plages proposées, actives seulement ; leur `priceXaf` " +
-      "s'ajoute au prix du forfait. `quotaBytes` : `null` pour une offre sans quota. `revision` à renvoyer à la commande. Route publique.",
+      "s'ajoute au prix du forfait. `quotaBytes` : `null` pour une offre sans quota. `revision` à renvoyer à la commande. " +
+      "`support` : contacts saisis par l'administrateur (WhatsApp de la communauté, e-mail de la marque), jamais le contact du build. Route publique.",
     tags: ["catalogue"],
     security: [],
     params: PARAM_APP_ID,
     response: withErrors({
       200: jsonResponse("Catalogue de la marque.", {
         properties: {
-          app: shape({ id: str("Marque."), name: str("Nom.") }),
+          app: shape({
+            id: str("Marque."),
+            name: str("Nom."),
+            minVersionCode: int("Version minimale de l'APK, 0 si non renseignée."),
+            latestVersionCode: int("Dernier build publié, 0 si aucun."),
+            latestVersionName: { type: ["string", "null"] },
+            updateUrl: { type: ["string", "null"], description: "APK signé à installer, ou null." },
+            updateSha256: { type: ["string", "null"] },
+          }),
+          announcement: {
+            type: ["object", "null"],
+            properties: {
+              id: str("Annonce."),
+              title: str("Titre."),
+              body: str("Texte."),
+              level: { type: "string", enum: ["info", "warning", "critical"] },
+              publishedAt: str("Publication."),
+            },
+          },
+          support: shape({
+            source: { type: "string", enum: ["community", "app", "none"] },
+            whatsapp: { type: ["string", "null"], description: "Numéro international sans +, ou null." },
+            whatsappUrl: { type: ["string", "null"] },
+            call: { type: ["string", "null"] },
+            email: { type: ["string", "null"], description: "E-mail saisi par l'administrateur, jamais celui du build." },
+            groupUrl: { type: ["string", "null"], description: "Lien du groupe WhatsApp de la communauté." },
+            hours: { type: ["string", "null"] },
+            responseHint: { type: ["string", "null"] },
+          }),
+          legal: shape({
+            privacyUrl: { type: ["string", "null"] },
+            termsUrl: { type: ["string", "null"] },
+          }),
           items: arrayOf(
             shape({
               id: str("Forfait."),

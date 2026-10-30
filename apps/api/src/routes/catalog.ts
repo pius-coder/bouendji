@@ -26,9 +26,65 @@ import {
 } from "../services/customOffer.js";
 import { NIGHT_WINDOWS } from "../services/pricing.js";
 
+/**
+ * Contacts d'exploitation d'une marque.
+ *
+ * Seul ce que l'administrateur a saisi est exposé : le numéro WhatsApp de la
+ * communauté (`communities.contact_whatsapp`) et, à défaut, l'e-mail de la
+ * marque (`apps.support_email`). Le `support_url` injecté au build n'est
+ * jamais lu : il contient le `mailto:` de la plateforme, qui s'affichait à la
+ * place du contact de la communauté.
+ */
+function supportDto(row: Row) {
+  const digits = String(row.contact_whatsapp ?? "").replace(/\D/g, "");
+  const local = digits.startsWith("237") ? digits.slice(3) : digits;
+  // Mobile camerounais : 9 chiffres commençant par 6 ; fixe : 2.
+  const whatsapp = /^[62]\d{8}$/.test(local) ? `237${local}` : null;
+  const email = String(row.support_email ?? "").trim();
+  const groupUrl = String(row.whatsapp_group_url ?? "").trim();
+  return {
+    source: whatsapp ? "community" : email ? "app" : "none",
+    whatsapp,
+    whatsappUrl: whatsapp ? `https://wa.me/${whatsapp}` : null,
+    call: whatsapp ? `tel:+${whatsapp}` : null,
+    email: email || null,
+    groupUrl: groupUrl || null,
+    hours: null,
+    responseHint: null,
+  };
+}
+
 export function registerCatalogRoutes(app: FastifyInstance, db: Database): void {
   app.get<{ Params: { appId: string } }>("/v1/apps/:appId/plans", async (req) => {
-    const appRow = await db.one<Row>("SELECT id, name FROM apps WHERE id = $1", [req.params.appId]);
+    const appRow = await db.one<Row>(
+      `SELECT a.id, a.name, a.support_email, a.privacy_url, a.terms_url, a.min_version_code,
+              c.contact_whatsapp, c.whatsapp_group_url,
+              b.version_code AS latest_version_code,
+              b.version_name AS latest_version_name,
+              COALESCE(b.apk_url, b.artifact_url) AS update_url,
+              b.sha256 AS update_sha256,
+              n.id AS announcement_id, n.title AS announcement_title,
+              n.body AS announcement_body, n.level AS announcement_level,
+              n.published_at AS announcement_published_at
+         FROM apps a
+         JOIN communities c ON c.id = a.community_id
+         LEFT JOIN LATERAL (
+           SELECT version_code, version_name, apk_url, artifact_url, sha256
+             FROM builds
+            WHERE app_id = a.id AND status = 'succeeded'
+            ORDER BY version_code DESC, created_at DESC
+            LIMIT 1
+         ) b ON true
+         LEFT JOIN LATERAL (
+           SELECT id, title, body, level, published_at
+             FROM announcements
+            WHERE active = true AND (app_id = a.id OR app_id IS NULL)
+            ORDER BY (app_id = a.id) DESC, published_at DESC
+            LIMIT 1
+         ) n ON true
+        WHERE a.id = $1`,
+      [req.params.appId],
+    );
     if (!appRow) throw fail.notFound("Application introuvable.");
 
     const rows = await db.query<Row>(
@@ -42,7 +98,37 @@ export function registerCatalogRoutes(app: FastifyInstance, db: Database): void 
     );
 
     return {
-      app: { id: appRow.id as string, name: appRow.name as string },
+      app: {
+        id: appRow.id as string,
+        name: appRow.name as string,
+        minVersionCode: Number(appRow.min_version_code ?? 0),
+        /** Dernier build signé publié : version et APK, pour la mise à jour in-app. */
+        latestVersionCode: Number(appRow.latest_version_code ?? 0),
+        latestVersionName: (appRow.latest_version_name as string | null) ?? null,
+        updateUrl: (appRow.update_url as string | null) ?? null,
+        updateSha256: (appRow.update_sha256 as string | null) ?? null,
+      },
+      /** Message d'exploitation (table `announcements`), affiché au démarrage. */
+      announcement: appRow.announcement_id
+        ? {
+            id: appRow.announcement_id as string,
+            title: appRow.announcement_title as string,
+            body: appRow.announcement_body as string,
+            level: (appRow.announcement_level as string | null) ?? "info",
+            publishedAt: String(appRow.announcement_published_at ?? ""),
+          }
+        : null,
+      /**
+       * Contacts d'exploitation, saisis par l'administrateur dans le
+       * dashboard. `apps.support_url` n'est volontairement pas utilisé : il
+       * contient le `mailto:` de la plateforme injecté au build, qui
+       * s'affichait à la place du contact de la communauté.
+       */
+      support: supportDto(appRow),
+      legal: {
+        privacyUrl: (appRow.privacy_url as string | null) ?? null,
+        termsUrl: (appRow.terms_url as string | null) ?? null,
+      },
       items: rows.map((row) => {
         const terms = planTermsDto(row);
         return {
