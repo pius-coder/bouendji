@@ -34,7 +34,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-brand-${{ github.ref }}-${{ github.event_name }}
+  # Un run = une marque : le groupe doit être unique, sinon GitHub annule les
+  # runs en attente et un seul build parallèle survit.
+  group: android-brand-${{ github.run_id }}
   cancel-in-progress: false
 
 env:
