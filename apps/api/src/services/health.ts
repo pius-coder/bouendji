@@ -150,6 +150,7 @@ export async function setHealth(
 export function healthReasonLabel(reason: string | null): string {
   if (!reason) return "état inchangé";
   if (reason === "probe") return "sonde serveur : point d'entrée injoignable";
+  if (reason === "probe:ok") return "sonde serveur : point d'entrée joignable";
   if (reason === "probe:clients") return "sonde serveur OK, mais plusieurs téléphones échouent";
   if (reason === "probation") return "fin de probation";
   if (reason === "witness") return "témoin différentiel : un téléphone échoue ici et réussit ailleurs";
@@ -274,7 +275,7 @@ export async function reconcileHealth(
       ? { health: "down" as const, reason: "probe" }
       : differential || doubters >= DOWN_QUORUM
         ? { health: "degraded" as const, reason: "probe:clients" }
-        : { health: "healthy" as const, reason: "probe" }
+        : { health: "healthy" as const, reason: "probe:ok" }
     : decideHealth({
         successes,
         doubters,
