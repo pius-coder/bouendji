@@ -157,11 +157,9 @@ export function PriceIndicator({
         />
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 text-caption text-muted-foreground">
-        <span>Serveur : {formatXaf(breakdown.costXaf)}</span>
-        <span>Plateforme : {formatXaf(breakdown.platformMarginXaf)}</span>
-        <span>Votre commission ({(commissionBpsCapped / 100).toFixed(0)} %) : {formatXaf(commissionXaf)}</span>
-      </div>
+      {/* Le récapitulatif « Serveur / Plateforme / Votre commission » a été
+          retiré du créateur de forfait : l'admin ne voit que le plancher et
+          l'alerte s'il passe en dessous. */}
 
       {belowFloor ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-footnote text-destructive">
