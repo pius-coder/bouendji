@@ -207,3 +207,14 @@ par ton administrateur » et n'ouvre plus le `mailto:` de la plateforme.
 4. Le profil porte-t-il aussi `minVersionCode` et les liens légaux dès la
    première version ?
 5. Redirection `/s/<slug>` : maintenant (QR/impression) ou plus tard ?
+
+## 2026-10-30 — WhatsApp admin Saitrix
+
+Le propriétaire a choisi de laisser **l'admin Saitrix remplir lui-même son
+numéro** dans le dashboard : carte « Paramètres de la communauté » →
+« Numéro WhatsApp du support » (`community-settings-card.tsx`, action
+`updateCommunityAction` → `PATCH /v1/admin/communities/:id` qui accepte
+`contactWhatsapp`). Aucune saisie à faire côté plateforme. Tant que le
+champ est vide, `support.source` reste `none` (comportement vérifié dans
+`catalog.ts` : fallback e-mail, puis rien).
+
