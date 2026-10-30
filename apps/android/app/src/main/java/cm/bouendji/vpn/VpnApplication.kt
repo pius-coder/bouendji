@@ -46,7 +46,9 @@ class AppContainer(private val application: Application) {
 
     val secureStore: SecureStore = SecureStore(application)
 
-    val deviceKeys: DeviceKeys = DeviceKeys()
+    // Le stockage chiffré sert aussi au repli logiciel de la clé d'accord
+    // (API 26–30) : le Keystore `PURPOSE_AGREE_KEY` n'existe qu'à partir d'Android 12.
+    val deviceKeys: DeviceKeys = DeviceKeys(secureStore)
 
     val deviceAuth: DeviceAuth = DeviceAuth(deviceKeys, secureStore)
 
@@ -79,8 +81,8 @@ class AppContainer(private val application: Application) {
     val tunnelEngine: TunnelEngine = LibboxTunnelEngine(application)
 
     /**
-     * Vrai quand l'appareil peut réellement participer : Android 12+ (clé
-     * d'accord), moteur disponible, et marque injectée.
+     * Vrai quand l'appareil peut réellement participer : clé d'accord possible
+     * (Keystore ou repli logiciel), moteur disponible, et marque injectée.
      */
     fun isOperational(): Boolean =
         DeviceKeys.supportsAgreement() && tunnelEngine.isAvailable() && BrandTokens.isValid()

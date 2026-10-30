@@ -238,27 +238,20 @@ class OfflineBundle(
         }
 
         // Déchiffrement : à partir d'ici, le contenu existe en mémoire.
-        val plain = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try {
-                DeviceEnvelope.open(
-                    keys = keys,
-                    deviceId = localDeviceId,
-                    revision = container.revision,
-                    ephemeralKeyB64 = container.envelope.ephemeralKey,
-                    saltB64 = container.envelope.salt,
-                    ivB64 = container.envelope.iv,
-                    ciphertextB64 = container.envelope.ciphertext,
-                    tagB64 = container.envelope.tag,
-                    digestB64 = container.envelope.digest,
-                )
-            } catch (error: Exception) {
-                return refuse(Reason.DECRYPT_FAILED, error.message ?: "Impossible de déchiffrer ce bundle.")
-            }
-        } else {
-            return refuse(
-                Reason.UNSUPPORTED_DEVICE,
-                "Le déchiffrement d'un bundle exige Android 12 ou plus récent.",
+        val plain = try {
+            DeviceEnvelope.open(
+                keys = keys,
+                deviceId = localDeviceId,
+                revision = container.revision,
+                ephemeralKeyB64 = container.envelope.ephemeralKey,
+                saltB64 = container.envelope.salt,
+                ivB64 = container.envelope.iv,
+                ciphertextB64 = container.envelope.ciphertext,
+                tagB64 = container.envelope.tag,
+                digestB64 = container.envelope.digest,
             )
+        } catch (error: Exception) {
+            return refuse(Reason.DECRYPT_FAILED, error.message ?: "Impossible de déchiffrer ce bundle.")
         }
 
         val payload = try {

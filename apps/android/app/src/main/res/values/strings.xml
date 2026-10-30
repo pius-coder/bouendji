@@ -56,7 +56,7 @@
     <string name="unavailable_body">Aucune sortie ne répond, ou aucune configuration n\'est installée. L\'application ne prétendra pas vous protéger.</string>
     <string name="unavailable_reason_engine">Le moteur de tunnel n\'est pas intégré à cette version.</string>
     <string name="unavailable_reason_brand">Ce build n\'a pas reçu sa configuration de marque.</string>
-    <string name="unavailable_reason_android">Android 12 ou plus récent est requis pour chiffrer les accès.</string>
+    <string name="unavailable_reason_android">Cet appareil ne peut pas générer ses clés de chiffrement.</string>
     <string name="unavailable_reason_empty">Aucune configuration n\'est enregistrée sur cet appareil.</string>
     <string name="unavailable_contact">Contacter l\'administrateur</string>
     <string name="unavailable_retry">Réessayer</string>

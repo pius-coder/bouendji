@@ -136,16 +136,10 @@ class ApiClient(
         androidVersion: Int = Build.VERSION.SDK_INT,
         integrityToken: String? = null,
     ): EnrollResponse {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            keys.ensureAgreementKey()
-        } else {
-            throw ApiException(
-                status = 0,
-                code = ApiCodes.DEVICE_PROOF_INVALID,
-                message = "Cet appareil (Android ${Build.VERSION.SDK_INT}) ne peut pas générer de clé " +
-                    "d'accord : l'enrôlement exige Android 12 ou plus récent.",
-            )
-        }
+        // La clé d'accord est Keystore (API 31+) ou logicielle chiffrée
+        // (API 26–30) : `ensureAgreementKey()` tranche, l'enrôlement n'a plus
+        // de plancher à Android 12.
+        keys.ensureAgreementKey()
         keys.ensureSigningKey()
 
         val installationId = auth.installationId()
@@ -358,24 +352,20 @@ class ApiClient(
         val deviceId = auth.deviceId()
             ?: throw ApiException(401, ApiCodes.UNAUTHENTICATED, "Appareil non enrôlé.")
 
-        val plain = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try {
-                DeviceEnvelope.open(
-                    keys = keys,
-                    deviceId = deviceId,
-                    revision = dto.revision,
-                    ephemeralKeyB64 = dto.envelope.ephemeralKey,
-                    saltB64 = dto.envelope.salt,
-                    ivB64 = dto.envelope.iv,
-                    ciphertextB64 = dto.envelope.ciphertext,
-                    tagB64 = dto.envelope.tag,
-                    digestB64 = dto.envelope.digest,
-                )
-            } catch (error: DeviceEnvelope.OpenException) {
-                throw ApiException(0, ApiCodes.DEVICE_PROOF_INVALID, error.message ?: "Bundle indéchiffrable.", cause = error)
-            }
-        } else {
-            throw ApiException(0, ApiCodes.DEVICE_PROOF_INVALID, "Déchiffrement impossible : Android 12 requis.")
+        val plain = try {
+            DeviceEnvelope.open(
+                keys = keys,
+                deviceId = deviceId,
+                revision = dto.revision,
+                ephemeralKeyB64 = dto.envelope.ephemeralKey,
+                saltB64 = dto.envelope.salt,
+                ivB64 = dto.envelope.iv,
+                ciphertextB64 = dto.envelope.ciphertext,
+                tagB64 = dto.envelope.tag,
+                digestB64 = dto.envelope.digest,
+            )
+        } catch (error: DeviceEnvelope.OpenException) {
+            throw ApiException(0, ApiCodes.DEVICE_PROOF_INVALID, error.message ?: "Bundle indéchiffrable.", cause = error)
         }
 
         val payload = try {
