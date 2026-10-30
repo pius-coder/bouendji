@@ -77,10 +77,10 @@ function pricingDto(settings: PricingSettings) {
     maxCommissionBps: settings.maxCommissionBps,
     /** Plafond réellement appliqué : le réglage, sinon le repli de D35. */
     effectiveMaxCommissionBps: commissionCapBps(settings),
-    /** Vrai quand le plancher peut être calculé (coût du Go et marge saisis). */
-    floorConfigured: settings.costPerGbXaf !== null && settings.platformMarginBps !== null,
+    /** Vrai quand le plancher peut être calculé (coût du Go saisi). */
+    floorConfigured: settings.costPerGbXaf !== null,
     /** D132 : vrai quand le plancher des forfaits illimités peut être calculé. */
-    unlimitedFloorConfigured: settings.unlimitedCostPerDayXaf !== null && settings.platformMarginBps !== null,
+    unlimitedFloorConfigured: settings.unlimitedCostPerDayXaf !== null,
     updatedAt: settings.updatedAt,
     updatedBy: settings.updatedBy,
   };

@@ -3,9 +3,11 @@
  *
  * Aucune valeur tarifaire n'est codée ici. Les coûts, la marge et le plafond de
  * commission sont saisis par les owners (`PUT /v1/admin/pricing`). Tant qu'un
- * réglage est absent, la règle correspondante ne s'applique pas : le plancher
- * n'est pas calculé, et le plafond de commission retombe sur l'ancien 30 % (D35),
- * seule valeur conservée en dur, et seulement comme repli.
+ * coût est absent, le plancher correspondant n'est pas calculé. Une marge
+ * absente vaut **0 %** : le plancher reste le coût, il n'est jamais masqué par
+ * un champ facultatif laissé vide (corrigé le 2026-10-30 : le dashboard
+ * affichait « plancher 0 »). Le plafond de commission retombe sur l'ancien
+ * 30 % (D35) tant que l'owner n'a rien réglé.
  */
 import type { Queryable, Row } from "../db.js";
 import { ApiFailure } from "../lib/errors.js";
@@ -91,28 +93,29 @@ function withMargin(costXaf: number, marginBps: number): number {
 
 /**
  * Plancher du forfait de base : coût du Go × quota (arrondi au Go supérieur),
- * plus la marge. `null` si les réglages nécessaires ne sont pas saisis.
+ * plus la marge. `null` si le coût du Go n'est pas saisi ; une marge absente
+ * signifie 0 %.
  */
 export function baseFloorXaf(quotaBytes: number, settings: PricingSettings): number | null {
-  if (settings.costPerGbXaf === null || settings.platformMarginBps === null) return null;
+  if (settings.costPerGbXaf === null) return null;
   const gigabytes = Math.ceil(quotaBytes / BYTES_PER_GB);
-  return withMargin(gigabytes * settings.costPerGbXaf, settings.platformMarginBps);
+  return withMargin(gigabytes * settings.costPerGbXaf, settings.platformMarginBps ?? 0);
 }
 
-/** Plancher d'une option de nuit : coût de la plage plus la marge. */
+/** Plancher d'une option de nuit : coût de la plage plus la marge (0 % si absente). */
 export function nightOptionFloorXaf(window: NightWindow, settings: PricingSettings): number | null {
   const cost = settings.nightWindowCostXaf[window];
-  if (cost === null || settings.platformMarginBps === null) return null;
-  return withMargin(cost, settings.platformMarginBps);
+  if (cost === null) return null;
+  return withMargin(cost, settings.platformMarginBps ?? 0);
 }
 
 /**
  * D132 : plancher d'un forfait illimité = coût d'un jour d'illimité × durée,
- * plus la marge. `null` tant que ce coût ou la marge ne sont pas saisis.
+ * plus la marge (0 % si absente). `null` tant que ce coût n'est pas saisi.
  */
 export function unlimitedFloorXaf(durationDays: number, settings: PricingSettings): number | null {
-  if (settings.unlimitedCostPerDayXaf === null || settings.platformMarginBps === null) return null;
-  return withMargin(durationDays * settings.unlimitedCostPerDayXaf, settings.platformMarginBps);
+  if (settings.unlimitedCostPerDayXaf === null) return null;
+  return withMargin(durationDays * settings.unlimitedCostPerDayXaf, settings.platformMarginBps ?? 0);
 }
 
 export interface FloorCheckInput {
